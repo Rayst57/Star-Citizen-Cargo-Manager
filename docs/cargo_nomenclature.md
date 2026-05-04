@@ -1,173 +1,182 @@
 # Cargo Position Nomenclature
 
-A unified naming system for every cargo position on every ship in the
-dataset, modeled on real-world container shipping (BAY-ROW-TIER) and
-adapted for ship sizes ranging from a 1 SCU skiff to a Hull E.
+Simple, ship-specific pallet position labels. Two label styles depending
+on what fits the ship:
 
-**Status:** proposal — not yet applied to `data/ships.json`.
+1. **Small ships (1 SCU pallets only)** — Lateral letter + sequence number.
+2. **Larger ships (8 SCU pallets)** — Section letter + column letter + row
+   number, with each ship defining its own position grid.
 
----
-
-## Real-world precedents
-
-### Container ships (commercial maritime)
-
-The international stowage plan format is **BAY-ROW-TIER**, expressed as a
-6-digit code (`BBRRTT`):
-
-- **Bay** — numbered from the **bow (01)** aft. Odd bays for 20 ft
-  containers, even for 40 ft.
-- **Row** — numbered from the **centerline outward**. **Even on port,
-  odd on starboard.** Centerline = 00.
-- **Tier** — numbered from the bottom. Under-deck: 02, 04, 06… On deck:
-  82, 84, 86…
-
-This is what every dockworker on Earth uses to address a cargo cell.
-
-### Military cargo aircraft (USAF)
-
-C-130 / C-17 use sequential **pallet positions** (P1 → P6 for C-130, P1
-→ P18 for C-17), numbered front-to-back. Side-by-side rows are denoted
-L/R suffixes (e.g. P9L, P9R on C-17 LGS).
-
-This is what loadmasters use for small/medium aircraft.
-
-### Naval (warships, large vessels)
-
-Large vessels use named **holds** and **decks**:
-
-- **Holds** — numbered from bow (No. 1 Hold, No. 2 Hold) or named by
-  position (Forward Hold, Aft Hold, Stern Bay).
-- **Decks** — named by level (Main Deck, Tween Deck, Lower Hold).
-- **Frames** — transverse structural bulkheads, numbered from bow.
-  Used for compartment addressing on warships.
-- **Port / Starboard / Bow / Stern / Amidships** — directional terms.
+The underlying 1-SCU grid in `data/ships.json` is preserved for capacity
+math. This document defines the *display* labels used in the UI legend,
+on the illustration window, and in voice readback.
 
 ---
 
-## Proposed SC system
+## Style 1 — Small ships (1 SCU only)
 
-Apply a different scheme based on ship size class. Every scheme rolls up
-to the same canonical address format so the planner can speak one
-language internally.
+Pallet positions arranged on a single deck. Label each position with a
+**lateral letter** and **sequence number from the loading face**.
 
-### Tier classification
+| Letter | Meaning |
+|--------|---------|
+| `L` | Left |
+| `C` | Center (only when there's a true center column) |
+| `R` | Right |
 
-| Class | Total SCU | Naming style | Example ships |
-|-------|-----------|--------------|---------------|
-| **Skiff** | ≤ 16 | Pallet positions (aircraft style) | MPUV-Cargo, Cutter, Mustang Alpha, Pisces C8X, Nomad |
-| **Hauler** | 17 – 200 | Single-hold BAY-ROW-TIER | Cutlass Black, Avenger Titan, Freelancer, Constellation Taurus |
-| **Heavy** | 201 – 1000 | Named holds + BAY-ROW-TIER | C2/M2 Hercules, Caterpillar, Mercury, Starlancer MAX, 600i |
-| **Capital** | > 1000 | Full naval nomenclature (multi-hold, multi-deck) | Carrack, Polaris, Galaxy, Hull C/D/E, Reclaimer |
-
-### Canonical address format
-
-`[Hold]-B[Bay]-[Side][Row]-T[Tier]`
-
-- **Hold** — named compartment. Omitted on single-hold ships. Examples:
-  `MAIN`, `MOD2`, `HOLD-FWD`, `RACK-3`, `PORT-HOLD`.
-- **Bay** — 2-digit longitudinal index from bow. `B01` = bow-most.
-- **Side** — `P` (port), `S` (starboard), `C` (centerline, for
-  odd-width bays only).
-- **Row** — 2-digit lateral index outward from centerline. `P01` = first
-  port column, `P02` = second, etc. Note: this departs from the
-  commercial even/odd convention because it reads more naturally aloud
-  ("port one tier two" vs "row two tier two").
-- **Tier** — 2-digit vertical index from deck up. `T01` = deck level.
+Number 1 starts at the loading face (ramp / cargo door). 2, 3, 4 progress
+inward.
 
 ### Examples
 
-| Ship | Position | Address | Spoken |
-|------|----------|---------|--------|
-| Cutter | only pallet slot | `P1` | "pallet one" |
-| Avenger Titan | port column, 3 frames in, deck | `B03-P01-T01` | "bay 3 port 1 tier 1" |
-| C2 Hercules main bay | starboard 2, frame 7, tier 2 | `MAIN-B07-S02-T02` | "main bay 7 starboard 2 tier 2" |
-| Caterpillar module 3 | center, frame 2, tier 3 | `MOD3-B02-C00-T03` | "mod 3 bay 2 center tier 3" |
-| Carrack mid hold | port 3, frame 5, tier 1 | `HOLD-MID-B05-P03-T01` | "mid hold bay 5 port 3 tier 1" |
-| Hull D rack 4 | port 1 frame 8 tier 1 | `RACK4-B08-P01-T01` | "rack 4 bay 8 port 1 tier 1" |
+- A 4-position skiff with two rows: `L1, L2, R1, R2`
+- A 6-position bay with three columns: `L1, C1, R1, L2, C2, R2`
+- A single-file bay: `C1, C2, C3` (or `1, 2, 3` if center is implied)
 
-### Skiff exception
-
-Class **Skiff** ships skip the full address and just use `P1`, `P2`, …
-sequential from the loading face. A 4 SCU pallet on a Cutter is `P1`,
-not `B01-P01-T01`. The data file still stores the underlying grid for
-the planner; the display label is the simplified form.
+Applies to: MPUV-Cargo, Cutter, Mustang Alpha, Pisces C8X, Nomad, ROC,
+Avenger Titan, and similar small haulers.
 
 ---
 
-## Hold naming convention (multi-hold ships)
+## Style 2 — Larger ships (8 SCU pallets)
 
-Names should describe physical position so the loadmaster can speak them
-naturally. Standard tokens:
+Larger ships are gridded **by 8 SCU pallet footprints** (each occupying
+a 2 × 2 × 2 block of the underlying 1 SCU cells). Each ship defines its
+own position grid because layouts vary too much for one universal scheme.
 
-| Token | Meaning |
-|-------|---------|
-| `MAIN` | the only / primary hold on a single-hold ship |
-| `FWD` / `MID` / `AFT` / `STERN` | longitudinal section |
-| `PORT` / `STBD` | lateral position (paired holds) |
-| `UPPER` / `LOWER` | deck level on multi-deck ships |
-| `MOD1`–`MODn` | numbered modules (Caterpillar, Galaxy) |
-| `RACK1`–`RACKn` | external rack rings (Hull series) |
-| `NOSE` | nose / bow-most cargo space |
-| `STEP` | stepped section of a tapered bay (Hercules series) |
+### Address format
 
-Concrete assignments per ship will be done in the labeling pass. Sample
-proposed names:
+`[Section][Column][Row]`
 
-- C2 / M2 Hercules: `MAIN`, `STEP-AFT`
-- 600i Explorer: `BAY-FWD`, `STALL-PORT`, `STALL-STBD`
-- Caterpillar: `NOSE`, `MOD1`, `MOD2`, `MOD3`, `MOD4`
-- Carrack: `HOLD-FWD`, `HOLD-MID`, `HOLD-AFT`, `STERN`
-- Polaris: `HOLD-PORT`, `HOLD-STBD`
-- Hull C/D/E: `RACK1` … `RACKn` (per ring)
-- Galaxy Cargo: `DECK-UPPER`, `DECK-LOWER`
-- Mercury Star Runner: `MAIN`, `NOOK`
-- Starlancer MAX: `BAY-MID`, `BAY-AFT-PORT`, `BAY-AFT-STBD`
+- **Section** — single letter for the part of the ship the position is in.
+  Omitted on ships with only one section.
+- **Column** — letter starting at `A`, port → starboard.
+- **Row** — number starting at `1`, from the loading face inward.
 
----
+### Example: C1 Spirit
 
-## Loading face metadata
+C1 has 2 columns × 4 rows on a single section.
 
-Independent of bay numbering, every bay records which face the cargo
-ramp/door is on. This drives "first off, last on" logic without
-forcing the bay numbering itself to follow loading order.
-
-```json
-{
-  "id": "MAIN",
-  "ramp_face": "stern",
-  "columns": 8,
-  "rows": 15,
-  "layers": 4
-}
+```
+       Loading face (rear ramp)
+       ┌────┬────┐
+   1   │ L1 │ R1 │
+       ├────┼────┤
+   2   │ L2 │ R2 │
+       ├────┼────┤
+   3   │ L3 │ R3 │
+       ├────┼────┤
+   4   │ L4 │ R4 │
+       └────┴────┘
+         L    R
 ```
 
-Possible values: `bow`, `stern`, `port`, `starboard`, `top`.
+Single-section ship → use lateral letters `L`/`R` directly instead of
+`A`/`B`. Cleaner to read aloud.
+
+### Example: C2 Hercules
+
+C2 has a fore deck and an aft deck (the stepped bay). Each deck has its
+own column-letter grid.
+
+```
+       Loading face (rear ramp)
+       ┌──────────────┐
+       │   AFT DECK   │
+       │ A  B  C  D   │
+   1   │ AA1 AB1 AC1 AD1
+   2   │ AA2 AB2 AC2 AD2
+   ...                ┘
+       ┌──────────────────┐
+       │   FORE DECK      │
+       │ A  B  C  D       │
+   1   │ FA1 FB1 FC1 FD1
+   ...
+```
+
+- `AA1` = **A**ft deck, column **A**, row **1**
+- `FA1` = **F**ore deck, column **A**, row **1**
+- `FB3` = **F**ore deck, column **B**, row **3**
+
+Two tiers stacked? Append a tier suffix only when more than one tier
+exists: `FA1` (deck level) and `FA1-T2` (above it). On ships with a
+single tier, no suffix.
+
+### Section letter conventions
+
+Used only when a ship has multiple sections.
+
+| Letter | Meaning | Used on |
+|--------|---------|---------|
+| `F` | Forward / Fore deck | C2, M2, A2 Hercules; multi-section haulers |
+| `A` | Aft deck | C2, M2, A2 Hercules |
+| `M` | Mid / Middle | Carrack, Polaris |
+| `N` | Nose | Caterpillar, Cutlass Black nose |
+| `1`–`4` | Numbered modules | Caterpillar (`MOD1` → `1`-prefix) |
+| `P` | Port-side hold | Polaris, Hull series |
+| `S` | Starboard-side hold | Polaris, Hull series |
+| `U` | Upper deck | Galaxy |
+| `L` | Lower deck | Galaxy |
+| `R` | Rack (Hull series) | `R1A1` = Rack 1, column A, row 1 |
+
+### Section letter conflict resolution
+
+The lateral letters `L`/`R` are also section letters (Lower / Rack) on
+some ships. To avoid ambiguity:
+
+- A ship uses **either** lateral L/R style (Style 1 or single-section
+  Style 2) **or** section L/R, never both.
+- On multi-section ships using Style 2, columns always start at `A` (no
+  L/R lateral shorthand).
+
+So the C2 fore deck has columns `A, B, C, D` not `L, ML, MR, R`.
 
 ---
 
-## Legend on the illustration window
+## Per-ship position definitions
 
-Top of the per-stop illustration window shows:
+`data/ships.json` already stores the raw 1-SCU grid. We'll add a
+sibling field, `pallet_positions`, listing each 8-SCU position with
+its label and which underlying cells it occupies.
 
-1. A small key diagram of the ship with **bow / stern / port / stbd**
-   labeled.
-2. The hold(s) outlined and labeled in their bay names.
-3. Tier indicator (small stack diagram showing T01 → Tn).
-4. A direction arrow from the ramp face into the hold.
+```json
+"pallet_positions": [
+  { "label": "FA1", "section": "F", "column": "A", "row": 1, "tier": 1,
+    "cells": [[0,0,0],[1,0,0],[0,1,0],[1,1,0],[0,0,1],[1,0,1],[0,1,1],[1,1,1]] },
+  { "label": "FB1", "section": "F", "column": "B", "row": 1, "tier": 1,
+    "cells": [...] }
+]
+```
 
-No prose. Just labels on a simplified ship outline.
+Cells are referenced as `[col, row, layer]` indices into the underlying
+1-SCU grid. This lets the planner work in 8-SCU units for placement but
+still validate against the real bay shape (and handle smaller pallets
+that occupy a fraction of a position).
+
+### Smaller pallets in 8-SCU positions
+
+When a contract is for a 4 SCU pallet (2×2×1) or smaller, the planner
+splits an 8 SCU position into its constituent 1-SCU cells and places
+the pallet inside. The position label stays — a 4 SCU pallet at `FA1`
+just occupies the lower half. The illustration shows the partial fill.
+
+---
+
+## Loading face
+
+Each ship records its loading face (rear ramp, side door, top, etc.) so
+that "row 1 = nearest the loading face" is unambiguous.
+
+```json
+{ "loading_face": "stern" }
+```
 
 ---
 
 ## Open questions
 
-1. **Bow-relative vs ramp-relative bay numbering.** Maritime convention
-   is bow = 01. SC players unload from the ramp first — should `B01`
-   mean bow (universal) or nearest ramp (player-mental-model)? My pick:
-   bow, because it's stable across ship orientation and matches every
-   real-world precedent. "First-off" reasoning uses `ramp_face`.
-2. **Side letter style** — `P/S/C` (1 char) vs `PORT/STBD/CTR` (verbose).
-   Pick: `P/S/C` for compact display, full words for voice readback.
-3. **Class boundaries** — the 16 / 200 / 1000 SCU thresholds are my
-   best guess. Should I adjust to natural fleet groupings instead?
+1. **Tier suffix style** — `FA1-T2` vs `FA1U` (upper) vs `FA1.2`?
+2. **Skiff numbering direction** — confirm "1 = nearest loading face" not
+   "1 = nose-most"?
+3. **Caterpillar modules** — number-prefixed (`1A1`, `2A1`) clean, or do
+   you want `MOD1-A1`?
