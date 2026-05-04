@@ -24,14 +24,16 @@ verified** from sources during the ship-data research pass:
 | SCU | Footprint (W × D × H units) | Notes |
 |-----|------------------------------|-------|
 | 1   | 1 × 1 × 1                    | base cube |
-| 2   | 1 × 2 × 1                    | rectangular |
-| 4   | 2 × 2 × 1                    | square |
-| 8   | 2 × 4 × 1                    | long |
-| 16  | 2 × 4 × 2                    | stacked-equivalent |
-| 24  | 2 × 4 × 3 *(tentative)*      | confirm |
-| 32  | 2 × 4 × 4 *(tentative)*      | confirm |
+| 2   | 2 × 1 × 1                    | rectangular |
+| 4   | 2 × 2 × 1                    | flat square |
+| 8   | 2 × 2 × 2                    | cube |
+| 16  | *(to confirm)*               | likely 2 × 2 × 4 or 4 × 2 × 2 |
+| 24  | *(to confirm)*               | |
+| 32  | *(to confirm)*               | |
 
-These are placeholders. Real values land in `data/scu_boxes.json`.
+1 / 2 / 4 / 8 SCU dimensions are user-confirmed. 16 / 24 / 32 to be
+verified during the ship-data research pass and stored in
+`data/scu_boxes.json`.
 
 ## Ship grid representation
 
