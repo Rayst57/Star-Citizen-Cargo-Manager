@@ -1,0 +1,3336 @@
+{
+  "_meta": {
+    "description": "Star Citizen ship cargo grid dataset for cargo loading planner.",
+    "data_source": "Cargo Grid Viewer (sc-cargo.space) community-maintained dataset, current as of patch 4.4.x (May 2026); cross-referenced against starcitizen.tools.",
+    "grid_axes": "columns = grid width (transverse); rows = grid length (along ship length); layers = vertical stack height. Each cell holds 1 SCU.",
+    "scu_in_bay_note": "scu_in_bay is the SCU contribution of that bay assuming 1 SCU per cell; sum equals total_scu.",
+    "ship_count": 88
+  },
+  "ships": [
+    {
+      "name": "Avenger Titan",
+      "short_name": "Avenger Titan",
+      "manufacturer": "Aegis",
+      "role": "Light cargo / multirole",
+      "total_scu": 8,
+      "cargo_grid": {
+        "description": "Small rear bay accessed via ramp",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 2,
+            "rows": 4,
+            "layers": 1,
+            "scu_in_bay": 8
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Avenger_Titan"
+    },
+    {
+      "name": "Hammerhead",
+      "short_name": "Hammerhead",
+      "manufacturer": "Aegis",
+      "role": "Heavy fighter",
+      "total_scu": 40,
+      "cargo_grid": {
+        "description": "Small storage bays (combat ship)",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 4,
+            "rows": 5,
+            "layers": 2,
+            "scu_in_bay": 40
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Hammerhead"
+    },
+    {
+      "name": "Idris-M",
+      "short_name": "Idris-M",
+      "manufacturer": "Aegis",
+      "role": "Frigate (capital)",
+      "total_scu": 1326,
+      "cargo_grid": {
+        "description": "Capital frigate cargo deck",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 4,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 64
+          },
+          {
+            "id": "g0_1",
+            "columns": 4,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 64
+          },
+          {
+            "id": "g0_2",
+            "columns": 4,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 64
+          },
+          {
+            "id": "g0_3",
+            "columns": 4,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 64
+          },
+          {
+            "id": "g0_4",
+            "columns": 4,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 64
+          },
+          {
+            "id": "g0_5",
+            "columns": 4,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 64
+          },
+          {
+            "id": "g0_6",
+            "columns": 4,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 64
+          },
+          {
+            "id": "g0_7",
+            "columns": 4,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 64
+          },
+          {
+            "id": "g0_8",
+            "columns": 4,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 64
+          },
+          {
+            "id": "g0_9",
+            "columns": 4,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 64
+          },
+          {
+            "id": "g0_10",
+            "columns": 4,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 64
+          },
+          {
+            "id": "g0_11",
+            "columns": 4,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 64
+          },
+          {
+            "id": "g0_12",
+            "columns": 4,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 64
+          },
+          {
+            "id": "g0_13",
+            "columns": 4,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 64
+          },
+          {
+            "id": "g0_14",
+            "columns": 4,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 64
+          },
+          {
+            "id": "g0_15",
+            "columns": 4,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 64
+          },
+          {
+            "id": "g1_0",
+            "columns": 18,
+            "rows": 4,
+            "layers": 2,
+            "max_unit_scu": 16,
+            "scu_in_bay": 144
+          },
+          {
+            "id": "g1_1",
+            "columns": 14,
+            "rows": 5,
+            "layers": 2,
+            "max_unit_scu": 16,
+            "scu_in_bay": 140
+          },
+          {
+            "id": "g1_2",
+            "columns": 2,
+            "rows": 1,
+            "layers": 2,
+            "max_unit_scu": 16,
+            "scu_in_bay": 4
+          },
+          {
+            "id": "g1_3",
+            "columns": 5,
+            "rows": 1,
+            "layers": 2,
+            "max_unit_scu": 16,
+            "scu_in_bay": 10
+          },
+          {
+            "id": "g1_4",
+            "columns": 2,
+            "rows": 1,
+            "layers": 2,
+            "max_unit_scu": 16,
+            "scu_in_bay": 4
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Idris-M"
+    },
+    {
+      "name": "Idris-P",
+      "short_name": "Idris-P",
+      "manufacturer": "Aegis",
+      "role": "Frigate (capital)",
+      "total_scu": 1374,
+      "cargo_grid": {
+        "description": "Capital frigate cargo deck",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 4,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 64
+          },
+          {
+            "id": "g0_1",
+            "columns": 4,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 64
+          },
+          {
+            "id": "g0_2",
+            "columns": 4,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 64
+          },
+          {
+            "id": "g0_3",
+            "columns": 4,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 64
+          },
+          {
+            "id": "g0_4",
+            "columns": 4,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 64
+          },
+          {
+            "id": "g0_5",
+            "columns": 4,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 64
+          },
+          {
+            "id": "g0_6",
+            "columns": 4,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 64
+          },
+          {
+            "id": "g0_7",
+            "columns": 4,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 64
+          },
+          {
+            "id": "g0_8",
+            "columns": 4,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 64
+          },
+          {
+            "id": "g0_9",
+            "columns": 4,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 64
+          },
+          {
+            "id": "g0_10",
+            "columns": 4,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 64
+          },
+          {
+            "id": "g0_11",
+            "columns": 4,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 64
+          },
+          {
+            "id": "g0_12",
+            "columns": 4,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 64
+          },
+          {
+            "id": "g0_13",
+            "columns": 4,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 64
+          },
+          {
+            "id": "g0_14",
+            "columns": 4,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 64
+          },
+          {
+            "id": "g0_15",
+            "columns": 4,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 64
+          },
+          {
+            "id": "g1_0",
+            "columns": 18,
+            "rows": 4,
+            "layers": 2,
+            "max_unit_scu": 16,
+            "scu_in_bay": 144
+          },
+          {
+            "id": "g1_1",
+            "columns": 14,
+            "rows": 5,
+            "layers": 2,
+            "max_unit_scu": 16,
+            "scu_in_bay": 140
+          },
+          {
+            "id": "g1_2",
+            "columns": 2,
+            "rows": 1,
+            "layers": 2,
+            "max_unit_scu": 16,
+            "scu_in_bay": 4
+          },
+          {
+            "id": "g1_3",
+            "columns": 5,
+            "rows": 1,
+            "layers": 2,
+            "max_unit_scu": 16,
+            "scu_in_bay": 10
+          },
+          {
+            "id": "g1_4",
+            "columns": 2,
+            "rows": 1,
+            "layers": 2,
+            "max_unit_scu": 16,
+            "scu_in_bay": 4
+          },
+          {
+            "id": "g2_0",
+            "columns": 3,
+            "rows": 4,
+            "layers": 2,
+            "max_unit_scu": 2,
+            "scu_in_bay": 24
+          },
+          {
+            "id": "g2_1",
+            "columns": 3,
+            "rows": 4,
+            "layers": 2,
+            "max_unit_scu": 2,
+            "scu_in_bay": 24
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Idris-P"
+    },
+    {
+      "name": "Reclaimer",
+      "short_name": "Reclaimer",
+      "manufacturer": "Aegis",
+      "role": "Salvage capital ship",
+      "total_scu": 420,
+      "cargo_grid": {
+        "description": "Salvage processing area + main cargo hold; 16 SCU max box",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 5,
+            "rows": 7,
+            "layers": 2,
+            "max_unit_scu": 16,
+            "scu_in_bay": 70
+          },
+          {
+            "id": "g0_1",
+            "columns": 5,
+            "rows": 7,
+            "layers": 2,
+            "max_unit_scu": 16,
+            "scu_in_bay": 70
+          },
+          {
+            "id": "g0_2",
+            "columns": 5,
+            "rows": 5,
+            "layers": 2,
+            "max_unit_scu": 16,
+            "scu_in_bay": 50
+          },
+          {
+            "id": "g0_3",
+            "columns": 5,
+            "rows": 5,
+            "layers": 2,
+            "max_unit_scu": 16,
+            "scu_in_bay": 50
+          },
+          {
+            "id": "g1_0",
+            "columns": 3,
+            "rows": 2,
+            "layers": 3,
+            "max_unit_scu": 16,
+            "scu_in_bay": 18
+          },
+          {
+            "id": "g1_1",
+            "columns": 3,
+            "rows": 3,
+            "layers": 3,
+            "max_unit_scu": 16,
+            "scu_in_bay": 27
+          },
+          {
+            "id": "g1_2",
+            "columns": 3,
+            "rows": 3,
+            "layers": 3,
+            "max_unit_scu": 16,
+            "scu_in_bay": 27
+          },
+          {
+            "id": "g1_3",
+            "columns": 3,
+            "rows": 2,
+            "layers": 3,
+            "max_unit_scu": 16,
+            "scu_in_bay": 18
+          },
+          {
+            "id": "g1_4",
+            "columns": 3,
+            "rows": 2,
+            "layers": 3,
+            "max_unit_scu": 16,
+            "scu_in_bay": 18
+          },
+          {
+            "id": "g1_5",
+            "columns": 3,
+            "rows": 3,
+            "layers": 3,
+            "max_unit_scu": 16,
+            "scu_in_bay": 27
+          },
+          {
+            "id": "g1_6",
+            "columns": 3,
+            "rows": 3,
+            "layers": 3,
+            "max_unit_scu": 16,
+            "scu_in_bay": 27
+          },
+          {
+            "id": "g1_7",
+            "columns": 3,
+            "rows": 2,
+            "layers": 3,
+            "max_unit_scu": 16,
+            "scu_in_bay": 18
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Reclaimer"
+    },
+    {
+      "name": "Retaliator",
+      "short_name": "Retaliator",
+      "manufacturer": "Aegis",
+      "role": "Bomber",
+      "total_scu": 74,
+      "cargo_grid": {
+        "description": "Bomb-bay-converted cargo modules",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 3,
+            "rows": 6,
+            "layers": 2,
+            "scu_in_bay": 36
+          },
+          {
+            "id": "g1_0",
+            "columns": 2,
+            "rows": 6,
+            "layers": 2,
+            "scu_in_bay": 24
+          },
+          {
+            "id": "g1_1",
+            "columns": 2,
+            "rows": 1,
+            "layers": 2,
+            "scu_in_bay": 4
+          },
+          {
+            "id": "g1_2",
+            "columns": 1,
+            "rows": 5,
+            "layers": 2,
+            "scu_in_bay": 10
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Retaliator"
+    },
+    {
+      "name": "Asgard",
+      "short_name": "Asgard",
+      "manufacturer": "Anvil",
+      "role": "Heavy gunship",
+      "total_scu": 180,
+      "cargo_grid": {
+        "description": "Heavy gunship cargo bay",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 5,
+            "rows": 9,
+            "layers": 4,
+            "scu_in_bay": 180
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Asgard"
+    },
+    {
+      "name": "C8 Pisces",
+      "short_name": "C8 Pisces",
+      "manufacturer": "Anvil",
+      "role": "Snub utility",
+      "total_scu": 4,
+      "cargo_grid": {
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 1,
+            "rows": 2,
+            "layers": 1,
+            "scu_in_bay": 2
+          },
+          {
+            "id": "g0_1",
+            "columns": 1,
+            "rows": 2,
+            "layers": 1,
+            "scu_in_bay": 2
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/C8_Pisces"
+    },
+    {
+      "name": "C8X Pisces",
+      "short_name": "C8X Pisces",
+      "manufacturer": "Anvil",
+      "role": "Snub utility (combat)",
+      "total_scu": 4,
+      "cargo_grid": {
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 1,
+            "rows": 2,
+            "layers": 1,
+            "scu_in_bay": 2
+          },
+          {
+            "id": "g0_1",
+            "columns": 1,
+            "rows": 2,
+            "layers": 1,
+            "scu_in_bay": 2
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/C8X_Pisces"
+    },
+    {
+      "name": "Carrack",
+      "short_name": "Carrack",
+      "manufacturer": "Anvil",
+      "role": "Expedition / explorer",
+      "total_scu": 456,
+      "cargo_grid": {
+        "description": "Three internal bays plus stern bay; each main bay has two 4x4x4 stacks flanking a 4x3x2 (8 SCU max) center",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 4,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 64
+          },
+          {
+            "id": "g0_1",
+            "columns": 4,
+            "rows": 3,
+            "layers": 2,
+            "max_unit_scu": 8,
+            "scu_in_bay": 24
+          },
+          {
+            "id": "g0_2",
+            "columns": 4,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 64
+          },
+          {
+            "id": "g1_0",
+            "columns": 4,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 64
+          },
+          {
+            "id": "g1_1",
+            "columns": 4,
+            "rows": 3,
+            "layers": 2,
+            "max_unit_scu": 8,
+            "scu_in_bay": 24
+          },
+          {
+            "id": "g1_2",
+            "columns": 4,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 64
+          },
+          {
+            "id": "g2_0",
+            "columns": 4,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 64
+          },
+          {
+            "id": "g2_1",
+            "columns": 4,
+            "rows": 3,
+            "layers": 2,
+            "max_unit_scu": 8,
+            "scu_in_bay": 24
+          },
+          {
+            "id": "g2_2",
+            "columns": 4,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 64
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Carrack"
+    },
+    {
+      "name": "Liberator [Concept]",
+      "short_name": "Liberator",
+      "manufacturer": "Anvil",
+      "role": "Carrier (concept)",
+      "total_scu": 400,
+      "cargo_grid": {
+        "description": "Two parallel deck cargo strips on lower aft (5x10x4 each)",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 5,
+            "rows": 10,
+            "layers": 4,
+            "scu_in_bay": 200
+          },
+          {
+            "id": "g1_0",
+            "columns": 5,
+            "rows": 10,
+            "layers": 4,
+            "scu_in_bay": 200
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Liberator"
+    },
+    {
+      "name": "Paladin",
+      "short_name": "Paladin",
+      "manufacturer": "Anvil",
+      "role": "Heavy fighter",
+      "total_scu": 4,
+      "cargo_grid": {
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 1,
+            "rows": 4,
+            "layers": 1,
+            "scu_in_bay": 4
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Paladin"
+    },
+    {
+      "name": "Valkyrie",
+      "short_name": "Valkyrie",
+      "manufacturer": "Anvil",
+      "role": "Dropship",
+      "total_scu": 90,
+      "cargo_grid": {
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 5,
+            "rows": 6,
+            "layers": 3,
+            "scu_in_bay": 90
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Valkyrie"
+    },
+    {
+      "name": "CSV-SM",
+      "short_name": "CSV-SM",
+      "manufacturer": "Argo",
+      "role": "Salvage skiff",
+      "total_scu": 4,
+      "cargo_grid": {
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 2,
+            "rows": 2,
+            "layers": 1,
+            "scu_in_bay": 4
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/CSV-SM"
+    },
+    {
+      "name": "MOLE",
+      "short_name": "MOLE",
+      "manufacturer": "Argo",
+      "role": "Mining",
+      "total_scu": 32,
+      "cargo_grid": {
+        "description": "Single 4 wide x 4 long x 2 high pod",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 4,
+            "rows": 4,
+            "layers": 2,
+            "scu_in_bay": 32
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/MOLE"
+    },
+    {
+      "name": "MOTH",
+      "short_name": "MOTH",
+      "manufacturer": "Argo",
+      "role": "Refinery",
+      "total_scu": 224,
+      "cargo_grid": {
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 4,
+            "rows": 6,
+            "layers": 4,
+            "max_unit_scu": 8,
+            "scu_in_bay": 96
+          },
+          {
+            "id": "g0_1",
+            "columns": 4,
+            "rows": 6,
+            "layers": 4,
+            "max_unit_scu": 8,
+            "scu_in_bay": 96
+          },
+          {
+            "id": "g1_0",
+            "columns": 4,
+            "rows": 4,
+            "layers": 2,
+            "max_unit_scu": 16,
+            "scu_in_bay": 32
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/MOTH"
+    },
+    {
+      "name": "MPUV-C",
+      "short_name": "MPUV Cargo",
+      "manufacturer": "Argo",
+      "role": "Cargo skiff",
+      "total_scu": 2,
+      "cargo_grid": {
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 1,
+            "rows": 2,
+            "layers": 1,
+            "scu_in_bay": 2
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/MPUV-C"
+    },
+    {
+      "name": "MPUV-T",
+      "short_name": "MPUV Personnel",
+      "manufacturer": "Argo",
+      "role": "Personnel transport (cargo variant)",
+      "total_scu": 16,
+      "cargo_grid": {
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 2,
+            "rows": 4,
+            "layers": 2,
+            "scu_in_bay": 16
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/MPUV-T"
+    },
+    {
+      "name": "Raft",
+      "short_name": "RAFT",
+      "manufacturer": "Argo",
+      "role": "Light cargo",
+      "total_scu": 192,
+      "cargo_grid": {
+        "description": "Single open frame: 8 wide x 12 long x 2 high (deck mounts)",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 8,
+            "rows": 12,
+            "layers": 2,
+            "scu_in_bay": 192
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Raft"
+    },
+    {
+      "name": "SRV",
+      "short_name": "SRV",
+      "manufacturer": "Argo",
+      "role": "Tow / utility",
+      "total_scu": 12,
+      "cargo_grid": {
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 4,
+            "rows": 3,
+            "layers": 1,
+            "scu_in_bay": 12
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/SRV"
+    },
+    {
+      "name": "Merchantman [Concept]",
+      "short_name": "Merchantman",
+      "manufacturer": "Banu",
+      "role": "Heavy cargo / capital trader",
+      "total_scu": 2880,
+      "cargo_grid": {
+        "description": "Banu trader cargo decks (concept)",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 6,
+            "rows": 24,
+            "layers": 10,
+            "scu_in_bay": 1440
+          },
+          {
+            "id": "g1_0",
+            "columns": 6,
+            "rows": 24,
+            "layers": 10,
+            "scu_in_bay": 1440
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Merchantman"
+    },
+    {
+      "name": "Mustang Alpha",
+      "short_name": "Mustang Alpha",
+      "manufacturer": "Consolidated Outland",
+      "role": "Light cargo / starter",
+      "total_scu": 4,
+      "cargo_grid": {
+        "description": "Single small belly bay",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 1,
+            "rows": 4,
+            "layers": 1,
+            "scu_in_bay": 4
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Mustang_Alpha"
+    },
+    {
+      "name": "Nomad",
+      "short_name": "Nomad",
+      "manufacturer": "Consolidated Outland",
+      "role": "Light cargo",
+      "total_scu": 24,
+      "cargo_grid": {
+        "description": "Open rear deck 3-wide bay",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 3,
+            "rows": 4,
+            "layers": 2,
+            "scu_in_bay": 24
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Nomad"
+    },
+    {
+      "name": "A2 Hercules",
+      "short_name": "A2",
+      "manufacturer": "Crusader",
+      "role": "Heavy bomber",
+      "total_scu": 216,
+      "cargo_grid": {
+        "description": "Bomb-bay-converted cargo deck; 6 wide x 18 long x 2 high",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 6,
+            "rows": 18,
+            "layers": 2,
+            "scu_in_bay": 216
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/A2_Hercules"
+    },
+    {
+      "name": "C1 Spirit",
+      "short_name": "C1",
+      "manufacturer": "Crusader",
+      "role": "Light cargo",
+      "total_scu": 64,
+      "cargo_grid": {
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 2,
+            "rows": 8,
+            "layers": 2,
+            "scu_in_bay": 32
+          },
+          {
+            "id": "g0_1",
+            "columns": 2,
+            "rows": 8,
+            "layers": 2,
+            "scu_in_bay": 32
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/C1_Spirit"
+    },
+    {
+      "name": "C2 Hercules",
+      "short_name": "C2",
+      "manufacturer": "Crusader",
+      "role": "Heavy cargo",
+      "total_scu": 696,
+      "cargo_grid": {
+        "description": "Single open bay accessed via rear ramp; main 8-wide x 15-long x 4 layers section plus aft 6x9x4 step",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 8,
+            "rows": 15,
+            "layers": 4,
+            "scu_in_bay": 480
+          },
+          {
+            "id": "g0_1",
+            "columns": 6,
+            "rows": 9,
+            "layers": 4,
+            "scu_in_bay": 216
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/C2_Hercules"
+    },
+    {
+      "name": "Intrepid",
+      "short_name": "Intrepid",
+      "manufacturer": "Crusader",
+      "role": "Starter / patrol",
+      "total_scu": 8,
+      "cargo_grid": {
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 1,
+            "rows": 4,
+            "layers": 1,
+            "scu_in_bay": 4
+          },
+          {
+            "id": "g0_1",
+            "columns": 1,
+            "rows": 4,
+            "layers": 1,
+            "scu_in_bay": 4
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Intrepid"
+    },
+    {
+      "name": "M2 Hercules",
+      "short_name": "M2",
+      "manufacturer": "Crusader",
+      "role": "Military transport",
+      "total_scu": 522,
+      "cargo_grid": {
+        "description": "Same hull as C2 but 3 layers high; main 8-wide x 15-long plus aft 6x9 step",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 8,
+            "rows": 15,
+            "layers": 3,
+            "scu_in_bay": 360
+          },
+          {
+            "id": "g0_1",
+            "columns": 6,
+            "rows": 9,
+            "layers": 3,
+            "scu_in_bay": 162
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/M2_Hercules"
+    },
+    {
+      "name": "Mercury Star Runner",
+      "short_name": "Mercury",
+      "manufacturer": "Crusader",
+      "role": "Data runner / cargo",
+      "total_scu": 114,
+      "cargo_grid": {
+        "description": "Main bay 6x6x3 plus 1x3x2 side nook",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 6,
+            "rows": 6,
+            "layers": 3,
+            "scu_in_bay": 108
+          },
+          {
+            "id": "g0_1",
+            "columns": 1,
+            "rows": 3,
+            "layers": 2,
+            "scu_in_bay": 6
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Mercury_Star_Runner"
+    },
+    {
+      "name": "Caterpillar",
+      "short_name": "Caterpillar",
+      "manufacturer": "Drake",
+      "role": "Heavy modular cargo",
+      "total_scu": 576,
+      "cargo_grid": {
+        "description": "Modular ship: 4 detachable cargo modules + nose bay; each module is multi-sub-grid",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 5,
+            "rows": 6,
+            "layers": 2,
+            "scu_in_bay": 60
+          },
+          {
+            "id": "g0_1",
+            "columns": 5,
+            "rows": 4,
+            "layers": 1,
+            "scu_in_bay": 20
+          },
+          {
+            "id": "g1_0",
+            "columns": 1,
+            "rows": 4,
+            "layers": 2,
+            "scu_in_bay": 8
+          },
+          {
+            "id": "g1_1",
+            "columns": 6,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 96
+          },
+          {
+            "id": "g1_2",
+            "columns": 5,
+            "rows": 1,
+            "layers": 4,
+            "scu_in_bay": 20
+          },
+          {
+            "id": "g2_0",
+            "columns": 1,
+            "rows": 4,
+            "layers": 2,
+            "scu_in_bay": 8
+          },
+          {
+            "id": "g2_1",
+            "columns": 6,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 96
+          },
+          {
+            "id": "g2_2",
+            "columns": 5,
+            "rows": 1,
+            "layers": 4,
+            "scu_in_bay": 20
+          },
+          {
+            "id": "g3_0",
+            "columns": 1,
+            "rows": 4,
+            "layers": 2,
+            "scu_in_bay": 8
+          },
+          {
+            "id": "g3_1",
+            "columns": 6,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 96
+          },
+          {
+            "id": "g3_2",
+            "columns": 5,
+            "rows": 1,
+            "layers": 4,
+            "scu_in_bay": 20
+          },
+          {
+            "id": "g4_0",
+            "columns": 1,
+            "rows": 4,
+            "layers": 2,
+            "scu_in_bay": 8
+          },
+          {
+            "id": "g4_1",
+            "columns": 6,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 96
+          },
+          {
+            "id": "g4_2",
+            "columns": 5,
+            "rows": 1,
+            "layers": 4,
+            "scu_in_bay": 20
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Caterpillar"
+    },
+    {
+      "name": "Clipper",
+      "short_name": "Clipper",
+      "manufacturer": "Drake",
+      "role": "Light cargo / vehicle hauler",
+      "total_scu": 12,
+      "cargo_grid": {
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 2,
+            "rows": 3,
+            "layers": 2,
+            "max_unit_scu": 2,
+            "scu_in_bay": 12
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Clipper"
+    },
+    {
+      "name": "Corsair",
+      "short_name": "Corsair",
+      "manufacturer": "Drake",
+      "role": "Exploration / heavy fighter",
+      "total_scu": 72,
+      "cargo_grid": {
+        "description": "Single rear bay accessed via ramp",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 4,
+            "rows": 6,
+            "layers": 3,
+            "scu_in_bay": 72
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Corsair"
+    },
+    {
+      "name": "Cutlass Black",
+      "short_name": "Cutlass Black",
+      "manufacturer": "Drake",
+      "role": "Multirole / light cargo",
+      "total_scu": 46,
+      "cargo_grid": {
+        "description": "Single rear bay (4 wide x 5 long x 2 high) plus front lip 1x3x2",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 1,
+            "rows": 3,
+            "layers": 2,
+            "scu_in_bay": 6
+          },
+          {
+            "id": "g0_1",
+            "columns": 4,
+            "rows": 5,
+            "layers": 2,
+            "scu_in_bay": 40
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Cutlass_Black"
+    },
+    {
+      "name": "Cutlass Blue",
+      "short_name": "Cutlass Blue",
+      "manufacturer": "Drake",
+      "role": "Police interceptor",
+      "total_scu": 12,
+      "cargo_grid": {
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 1,
+            "rows": 3,
+            "layers": 2,
+            "scu_in_bay": 6
+          },
+          {
+            "id": "g0_1",
+            "columns": 1,
+            "rows": 3,
+            "layers": 2,
+            "scu_in_bay": 6
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Cutlass_Blue"
+    },
+    {
+      "name": "Cutlass Red",
+      "short_name": "Cutlass Red",
+      "manufacturer": "Drake",
+      "role": "Medical",
+      "total_scu": 12,
+      "cargo_grid": {
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 1,
+            "rows": 3,
+            "layers": 2,
+            "scu_in_bay": 6
+          },
+          {
+            "id": "g0_1",
+            "columns": 1,
+            "rows": 3,
+            "layers": 2,
+            "scu_in_bay": 6
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Cutlass_Red"
+    },
+    {
+      "name": "Cutter",
+      "short_name": "Cutter",
+      "manufacturer": "Drake",
+      "role": "Starter",
+      "total_scu": 4,
+      "cargo_grid": {
+        "description": "Single small bay",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 1,
+            "rows": 2,
+            "layers": 2,
+            "scu_in_bay": 4
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Cutter"
+    },
+    {
+      "name": "Golem Ox",
+      "short_name": "Golem Ox",
+      "manufacturer": "Drake",
+      "role": "Salvage tug",
+      "total_scu": 64,
+      "cargo_grid": {
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 4,
+            "rows": 8,
+            "layers": 2,
+            "scu_in_bay": 64
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Golem_Ox"
+    },
+    {
+      "name": "Ironclad Assault [Concept]",
+      "short_name": "Ironclad Assault",
+      "manufacturer": "Drake",
+      "role": "Heavy gunship (concept)",
+      "total_scu": 1440,
+      "cargo_grid": {
+        "description": "Combat hauler decks (concept)",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 8,
+            "rows": 18,
+            "layers": 5,
+            "scu_in_bay": 720
+          },
+          {
+            "id": "g0_1",
+            "columns": 8,
+            "rows": 18,
+            "layers": 5,
+            "scu_in_bay": 720
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Ironclad_Assault"
+    },
+    {
+      "name": "Ironclad [Concept 1]",
+      "short_name": "Ironclad",
+      "manufacturer": "Drake",
+      "role": "Heavy cargo (concept)",
+      "total_scu": 2204,
+      "cargo_grid": {
+        "description": "Heavy hauler decks (concept)",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 8,
+            "rows": 24,
+            "layers": 5,
+            "scu_in_bay": 960
+          },
+          {
+            "id": "g0_1",
+            "columns": 8,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 128
+          },
+          {
+            "id": "g0_2",
+            "columns": 8,
+            "rows": 24,
+            "layers": 5,
+            "scu_in_bay": 960
+          },
+          {
+            "id": "g0_3",
+            "columns": 8,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 128
+          },
+          {
+            "id": "g1_0",
+            "columns": 2,
+            "rows": 7,
+            "layers": 2,
+            "scu_in_bay": 28
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Ironclad_[Concept_1]"
+    },
+    {
+      "name": "Ironclad [Concept 2]",
+      "short_name": "Ironclad C2",
+      "manufacturer": "Drake",
+      "role": "Heavy cargo (concept)",
+      "total_scu": 2204,
+      "cargo_grid": {
+        "description": "Heavy hauler decks (concept)",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 2,
+            "rows": 3,
+            "layers": 2,
+            "scu_in_bay": 12
+          },
+          {
+            "id": "g0_1",
+            "columns": 2,
+            "rows": 3,
+            "layers": 2,
+            "scu_in_bay": 12
+          },
+          {
+            "id": "g0_2",
+            "columns": 8,
+            "rows": 24,
+            "layers": 5,
+            "scu_in_bay": 960
+          },
+          {
+            "id": "g0_3",
+            "columns": 8,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 128
+          },
+          {
+            "id": "g0_4",
+            "columns": 8,
+            "rows": 24,
+            "layers": 5,
+            "scu_in_bay": 960
+          },
+          {
+            "id": "g0_5",
+            "columns": 8,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 128
+          },
+          {
+            "id": "g1_0",
+            "columns": 2,
+            "rows": 2,
+            "layers": 1,
+            "max_unit_scu": 2,
+            "scu_in_bay": 4
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Ironclad_[Concept_2]"
+    },
+    {
+      "name": "Ironclad [Concept 3]",
+      "short_name": "Ironclad C3",
+      "manufacturer": "Drake",
+      "role": "Heavy cargo (concept)",
+      "total_scu": 2204,
+      "cargo_grid": {
+        "description": "Heavy hauler decks (concept)",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 8,
+            "rows": 34,
+            "layers": 4,
+            "scu_in_bay": 1088
+          },
+          {
+            "id": "g0_1",
+            "columns": 8,
+            "rows": 34,
+            "layers": 4,
+            "scu_in_bay": 1088
+          },
+          {
+            "id": "g1_0",
+            "columns": 2,
+            "rows": 7,
+            "layers": 2,
+            "scu_in_bay": 28
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Ironclad_[Concept_3]"
+    },
+    {
+      "name": "Vulture",
+      "short_name": "Vulture",
+      "manufacturer": "Drake",
+      "role": "Salvage",
+      "total_scu": 13,
+      "cargo_grid": {
+        "description": "Single salvage hold: 1x1x1 plus 2x3x2 (max box size 1 SCU)",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 1,
+            "rows": 1,
+            "layers": 1,
+            "max_unit_scu": 1,
+            "scu_in_bay": 1
+          },
+          {
+            "id": "g0_1",
+            "columns": 2,
+            "rows": 3,
+            "layers": 2,
+            "max_unit_scu": 1,
+            "scu_in_bay": 12
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Vulture"
+    },
+    {
+      "name": "Prowler Utility",
+      "short_name": "Prowler",
+      "manufacturer": "Esperia",
+      "role": "Dropship (cargo conv.)",
+      "total_scu": 32,
+      "cargo_grid": {
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 2,
+            "rows": 4,
+            "layers": 2,
+            "scu_in_bay": 16
+          },
+          {
+            "id": "g0_1",
+            "columns": 2,
+            "rows": 4,
+            "layers": 2,
+            "scu_in_bay": 16
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Prowler_Utility"
+    },
+    {
+      "name": "Railen [Concept]",
+      "short_name": "Railen",
+      "manufacturer": "Gatac",
+      "role": "Cargo (concept)",
+      "total_scu": 640,
+      "cargo_grid": {
+        "description": "Pod-rack cargo (concept)",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 8,
+            "rows": 10,
+            "layers": 8,
+            "scu_in_bay": 640
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Railen"
+    },
+    {
+      "name": "Syulen",
+      "short_name": "Syulen",
+      "manufacturer": "Gatac",
+      "role": "Light explorer",
+      "total_scu": 6,
+      "cargo_grid": {
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 3,
+            "rows": 2,
+            "layers": 1,
+            "max_unit_scu": 1,
+            "scu_in_bay": 6
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Syulen"
+    },
+    {
+      "name": "Shiv",
+      "short_name": "Shiv",
+      "manufacturer": "Greycat Industrial",
+      "role": "Light fighter (with cargo)",
+      "total_scu": 32,
+      "cargo_grid": {
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 2,
+            "rows": 8,
+            "layers": 2,
+            "scu_in_bay": 32
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Shiv"
+    },
+    {
+      "name": "Fortune",
+      "short_name": "Fortune",
+      "manufacturer": "MISC",
+      "role": "Mining",
+      "total_scu": 16,
+      "cargo_grid": {
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 1,
+            "rows": 3,
+            "layers": 2,
+            "max_unit_scu": 1,
+            "scu_in_bay": 6
+          },
+          {
+            "id": "g1_0",
+            "columns": 1,
+            "rows": 3,
+            "layers": 2,
+            "max_unit_scu": 1,
+            "scu_in_bay": 6
+          },
+          {
+            "id": "g2_0",
+            "columns": 2,
+            "rows": 2,
+            "layers": 1,
+            "max_unit_scu": 1,
+            "scu_in_bay": 4
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Fortune"
+    },
+    {
+      "name": "Freelancer",
+      "short_name": "Freelancer",
+      "manufacturer": "MISC",
+      "role": "Medium cargo",
+      "total_scu": 66,
+      "cargo_grid": {
+        "description": "Two side stalls (1x3x2) each plus main bay (2x9x3)",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 1,
+            "rows": 2,
+            "layers": 3,
+            "scu_in_bay": 6
+          },
+          {
+            "id": "g0_1",
+            "columns": 1,
+            "rows": 2,
+            "layers": 3,
+            "scu_in_bay": 6
+          },
+          {
+            "id": "g1_0",
+            "columns": 2,
+            "rows": 9,
+            "layers": 3,
+            "scu_in_bay": 54
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Freelancer"
+    },
+    {
+      "name": "Freelancer DUR",
+      "short_name": "Freelancer DUR",
+      "manufacturer": "MISC",
+      "role": "Long-range explorer",
+      "total_scu": 36,
+      "cargo_grid": {
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 1,
+            "rows": 2,
+            "layers": 3,
+            "scu_in_bay": 6
+          },
+          {
+            "id": "g0_1",
+            "columns": 1,
+            "rows": 2,
+            "layers": 3,
+            "scu_in_bay": 6
+          },
+          {
+            "id": "g1_0",
+            "columns": 2,
+            "rows": 4,
+            "layers": 3,
+            "scu_in_bay": 24
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Freelancer_DUR"
+    },
+    {
+      "name": "Freelancer MAX",
+      "short_name": "Freelancer MAX",
+      "manufacturer": "MISC",
+      "role": "Heavy cargo (medium)",
+      "total_scu": 120,
+      "cargo_grid": {
+        "description": "Main 4 wide x 9 long x 3 high plus two side stalls",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 1,
+            "rows": 2,
+            "layers": 3,
+            "scu_in_bay": 6
+          },
+          {
+            "id": "g0_1",
+            "columns": 1,
+            "rows": 2,
+            "layers": 3,
+            "scu_in_bay": 6
+          },
+          {
+            "id": "g1_0",
+            "columns": 4,
+            "rows": 9,
+            "layers": 3,
+            "scu_in_bay": 108
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Freelancer_MAX"
+    },
+    {
+      "name": "Freelancer MIS",
+      "short_name": "Freelancer MIS",
+      "manufacturer": "MISC",
+      "role": "Missile boat",
+      "total_scu": 36,
+      "cargo_grid": {
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 1,
+            "rows": 2,
+            "layers": 3,
+            "scu_in_bay": 6
+          },
+          {
+            "id": "g0_1",
+            "columns": 1,
+            "rows": 2,
+            "layers": 3,
+            "scu_in_bay": 6
+          },
+          {
+            "id": "g1_0",
+            "columns": 2,
+            "rows": 4,
+            "layers": 3,
+            "scu_in_bay": 24
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Freelancer_MIS"
+    },
+    {
+      "name": "Hull-A",
+      "short_name": "Hull A",
+      "manufacturer": "MISC",
+      "role": "Cargo (small Hull)",
+      "total_scu": 64,
+      "cargo_grid": {
+        "description": "Spindle exterior racks; two 2x4x4 stacks",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 2,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 32
+          },
+          {
+            "id": "g0_1",
+            "columns": 2,
+            "rows": 4,
+            "layers": 4,
+            "scu_in_bay": 32
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Hull-A"
+    },
+    {
+      "name": "Hull-B",
+      "short_name": "Hull B",
+      "manufacturer": "MISC",
+      "role": "Cargo (medium Hull)",
+      "total_scu": 512,
+      "cargo_grid": {
+        "description": "Spindle exterior racks split into 16 sub-stacks across 2 deck rings",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 2,
+            "rows": 8,
+            "layers": 2,
+            "scu_in_bay": 32
+          },
+          {
+            "id": "g0_1",
+            "columns": 2,
+            "rows": 8,
+            "layers": 2,
+            "scu_in_bay": 32
+          },
+          {
+            "id": "g0_2",
+            "columns": 2,
+            "rows": 8,
+            "layers": 2,
+            "scu_in_bay": 32
+          },
+          {
+            "id": "g0_3",
+            "columns": 2,
+            "rows": 8,
+            "layers": 2,
+            "scu_in_bay": 32
+          },
+          {
+            "id": "g0_4",
+            "columns": 2,
+            "rows": 8,
+            "layers": 2,
+            "scu_in_bay": 32
+          },
+          {
+            "id": "g0_5",
+            "columns": 2,
+            "rows": 8,
+            "layers": 2,
+            "scu_in_bay": 32
+          },
+          {
+            "id": "g0_6",
+            "columns": 2,
+            "rows": 8,
+            "layers": 2,
+            "scu_in_bay": 32
+          },
+          {
+            "id": "g0_7",
+            "columns": 2,
+            "rows": 8,
+            "layers": 2,
+            "scu_in_bay": 32
+          },
+          {
+            "id": "g1_0",
+            "columns": 2,
+            "rows": 8,
+            "layers": 2,
+            "scu_in_bay": 32
+          },
+          {
+            "id": "g1_1",
+            "columns": 2,
+            "rows": 8,
+            "layers": 2,
+            "scu_in_bay": 32
+          },
+          {
+            "id": "g1_2",
+            "columns": 2,
+            "rows": 8,
+            "layers": 2,
+            "scu_in_bay": 32
+          },
+          {
+            "id": "g1_3",
+            "columns": 2,
+            "rows": 8,
+            "layers": 2,
+            "scu_in_bay": 32
+          },
+          {
+            "id": "g1_4",
+            "columns": 2,
+            "rows": 8,
+            "layers": 2,
+            "scu_in_bay": 32
+          },
+          {
+            "id": "g1_5",
+            "columns": 2,
+            "rows": 8,
+            "layers": 2,
+            "scu_in_bay": 32
+          },
+          {
+            "id": "g1_6",
+            "columns": 2,
+            "rows": 8,
+            "layers": 2,
+            "scu_in_bay": 32
+          },
+          {
+            "id": "g1_7",
+            "columns": 2,
+            "rows": 8,
+            "layers": 2,
+            "scu_in_bay": 32
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Hull-B"
+    },
+    {
+      "name": "Hull-C",
+      "short_name": "Hull C",
+      "manufacturer": "MISC",
+      "role": "Cargo (large Hull)",
+      "total_scu": 4608,
+      "cargo_grid": {
+        "description": "Spindle exterior racks: 8 large 12x6x8 sub-grids in two rings",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 12,
+            "rows": 8,
+            "layers": 6,
+            "scu_in_bay": 576
+          },
+          {
+            "id": "g0_1",
+            "columns": 12,
+            "rows": 8,
+            "layers": 6,
+            "scu_in_bay": 576
+          },
+          {
+            "id": "g0_2",
+            "columns": 12,
+            "rows": 8,
+            "layers": 6,
+            "scu_in_bay": 576
+          },
+          {
+            "id": "g0_3",
+            "columns": 12,
+            "rows": 8,
+            "layers": 6,
+            "scu_in_bay": 576
+          },
+          {
+            "id": "g1_0",
+            "columns": 12,
+            "rows": 8,
+            "layers": 6,
+            "scu_in_bay": 576
+          },
+          {
+            "id": "g1_1",
+            "columns": 12,
+            "rows": 8,
+            "layers": 6,
+            "scu_in_bay": 576
+          },
+          {
+            "id": "g1_2",
+            "columns": 12,
+            "rows": 8,
+            "layers": 6,
+            "scu_in_bay": 576
+          },
+          {
+            "id": "g1_3",
+            "columns": 12,
+            "rows": 8,
+            "layers": 6,
+            "scu_in_bay": 576
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Hull-C"
+    },
+    {
+      "name": "Hull-D [Concept]",
+      "short_name": "Hull D",
+      "manufacturer": "MISC",
+      "role": "Cargo (heavy Hull, concept)",
+      "total_scu": 6912,
+      "cargo_grid": {
+        "description": "Spindle exterior racks (concept-stage layout)",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 12,
+            "rows": 8,
+            "layers": 6,
+            "scu_in_bay": 576
+          },
+          {
+            "id": "g0_1",
+            "columns": 12,
+            "rows": 8,
+            "layers": 6,
+            "scu_in_bay": 576
+          },
+          {
+            "id": "g0_2",
+            "columns": 12,
+            "rows": 8,
+            "layers": 6,
+            "scu_in_bay": 576
+          },
+          {
+            "id": "g0_3",
+            "columns": 12,
+            "rows": 8,
+            "layers": 6,
+            "scu_in_bay": 576
+          },
+          {
+            "id": "g1_0",
+            "columns": 12,
+            "rows": 8,
+            "layers": 6,
+            "scu_in_bay": 576
+          },
+          {
+            "id": "g1_1",
+            "columns": 12,
+            "rows": 8,
+            "layers": 6,
+            "scu_in_bay": 576
+          },
+          {
+            "id": "g1_2",
+            "columns": 12,
+            "rows": 8,
+            "layers": 6,
+            "scu_in_bay": 576
+          },
+          {
+            "id": "g1_3",
+            "columns": 12,
+            "rows": 8,
+            "layers": 6,
+            "scu_in_bay": 576
+          },
+          {
+            "id": "g2_0",
+            "columns": 12,
+            "rows": 8,
+            "layers": 6,
+            "scu_in_bay": 576
+          },
+          {
+            "id": "g2_1",
+            "columns": 12,
+            "rows": 8,
+            "layers": 6,
+            "scu_in_bay": 576
+          },
+          {
+            "id": "g2_2",
+            "columns": 12,
+            "rows": 8,
+            "layers": 6,
+            "scu_in_bay": 576
+          },
+          {
+            "id": "g2_3",
+            "columns": 12,
+            "rows": 8,
+            "layers": 6,
+            "scu_in_bay": 576
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Hull-D"
+    },
+    {
+      "name": "Hull-E [Concept]",
+      "short_name": "Hull E",
+      "manufacturer": "MISC",
+      "role": "Cargo (super Hull, concept)",
+      "total_scu": 12288,
+      "cargo_grid": {
+        "description": "Spindle exterior racks (concept-stage layout)",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 16,
+            "rows": 8,
+            "layers": 6,
+            "scu_in_bay": 768
+          },
+          {
+            "id": "g0_1",
+            "columns": 16,
+            "rows": 8,
+            "layers": 6,
+            "scu_in_bay": 768
+          },
+          {
+            "id": "g0_2",
+            "columns": 16,
+            "rows": 8,
+            "layers": 6,
+            "scu_in_bay": 768
+          },
+          {
+            "id": "g0_3",
+            "columns": 16,
+            "rows": 8,
+            "layers": 6,
+            "scu_in_bay": 768
+          },
+          {
+            "id": "g1_0",
+            "columns": 16,
+            "rows": 8,
+            "layers": 6,
+            "scu_in_bay": 768
+          },
+          {
+            "id": "g1_1",
+            "columns": 16,
+            "rows": 8,
+            "layers": 6,
+            "scu_in_bay": 768
+          },
+          {
+            "id": "g1_2",
+            "columns": 16,
+            "rows": 8,
+            "layers": 6,
+            "scu_in_bay": 768
+          },
+          {
+            "id": "g1_3",
+            "columns": 16,
+            "rows": 8,
+            "layers": 6,
+            "scu_in_bay": 768
+          },
+          {
+            "id": "g2_0",
+            "columns": 16,
+            "rows": 8,
+            "layers": 6,
+            "scu_in_bay": 768
+          },
+          {
+            "id": "g2_1",
+            "columns": 16,
+            "rows": 8,
+            "layers": 6,
+            "scu_in_bay": 768
+          },
+          {
+            "id": "g2_2",
+            "columns": 16,
+            "rows": 8,
+            "layers": 6,
+            "scu_in_bay": 768
+          },
+          {
+            "id": "g2_3",
+            "columns": 16,
+            "rows": 8,
+            "layers": 6,
+            "scu_in_bay": 768
+          },
+          {
+            "id": "g3_0",
+            "columns": 16,
+            "rows": 8,
+            "layers": 6,
+            "scu_in_bay": 768
+          },
+          {
+            "id": "g3_1",
+            "columns": 16,
+            "rows": 8,
+            "layers": 6,
+            "scu_in_bay": 768
+          },
+          {
+            "id": "g3_2",
+            "columns": 16,
+            "rows": 8,
+            "layers": 6,
+            "scu_in_bay": 768
+          },
+          {
+            "id": "g3_3",
+            "columns": 16,
+            "rows": 8,
+            "layers": 6,
+            "scu_in_bay": 768
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Hull-E"
+    },
+    {
+      "name": "Reliant Kore",
+      "short_name": "Reliant Kore",
+      "manufacturer": "MISC",
+      "role": "Mini hauler",
+      "total_scu": 6,
+      "cargo_grid": {
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 1,
+            "rows": 3,
+            "layers": 1,
+            "scu_in_bay": 3
+          },
+          {
+            "id": "g0_1",
+            "columns": 1,
+            "rows": 3,
+            "layers": 1,
+            "scu_in_bay": 3
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Reliant_Kore"
+    },
+    {
+      "name": "Starfarer",
+      "short_name": "Starfarer",
+      "manufacturer": "MISC",
+      "role": "Refueling / heavy cargo",
+      "total_scu": 291,
+      "cargo_grid": {
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 5,
+            "rows": 7,
+            "layers": 5,
+            "scu_in_bay": 175
+          },
+          {
+            "id": "g1_0",
+            "columns": 2,
+            "rows": 2,
+            "layers": 2,
+            "scu_in_bay": 8
+          },
+          {
+            "id": "g1_1",
+            "columns": 2,
+            "rows": 5,
+            "layers": 5,
+            "scu_in_bay": 50
+          },
+          {
+            "id": "g2_0",
+            "columns": 2,
+            "rows": 2,
+            "layers": 2,
+            "scu_in_bay": 8
+          },
+          {
+            "id": "g2_1",
+            "columns": 2,
+            "rows": 5,
+            "layers": 5,
+            "scu_in_bay": 50
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Starfarer"
+    },
+    {
+      "name": "Starfarer Gemini",
+      "short_name": "Starfarer Gemini",
+      "manufacturer": "MISC",
+      "role": "Military refueling",
+      "total_scu": 291,
+      "cargo_grid": {
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 5,
+            "rows": 7,
+            "layers": 5,
+            "scu_in_bay": 175
+          },
+          {
+            "id": "g1_0",
+            "columns": 2,
+            "rows": 2,
+            "layers": 2,
+            "scu_in_bay": 8
+          },
+          {
+            "id": "g1_1",
+            "columns": 2,
+            "rows": 5,
+            "layers": 5,
+            "scu_in_bay": 50
+          },
+          {
+            "id": "g2_0",
+            "columns": 2,
+            "rows": 2,
+            "layers": 2,
+            "scu_in_bay": 8
+          },
+          {
+            "id": "g2_1",
+            "columns": 2,
+            "rows": 5,
+            "layers": 5,
+            "scu_in_bay": 50
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Starfarer_Gemini"
+    },
+    {
+      "name": "Starlancer MAX",
+      "short_name": "Starlancer MAX",
+      "manufacturer": "MISC",
+      "role": "Heavy cargo (medium)",
+      "total_scu": 224,
+      "cargo_grid": {
+        "description": "Mid bay (2x16x2 each side) + aft bay (2x8x3 each side); split by walkway",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 2,
+            "rows": 8,
+            "layers": 3,
+            "label": "Aft Cargo Bay - Port Side",
+            "scu_in_bay": 48
+          },
+          {
+            "id": "g0_1",
+            "columns": 2,
+            "rows": 8,
+            "layers": 3,
+            "label": "Aft Cargo Bay - Starboard Side",
+            "scu_in_bay": 48
+          },
+          {
+            "id": "g1_0",
+            "columns": 2,
+            "rows": 16,
+            "layers": 2,
+            "label": "Mid Cargo Bay - Port Side",
+            "scu_in_bay": 64
+          },
+          {
+            "id": "g1_1",
+            "columns": 2,
+            "rows": 16,
+            "layers": 2,
+            "label": "Mid Cargo Bay - Starboard Side",
+            "scu_in_bay": 64
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Starlancer_MAX"
+    },
+    {
+      "name": "Starlancer TAC",
+      "short_name": "Starlancer TAC",
+      "manufacturer": "MISC",
+      "role": "Troop transport (with cargo)",
+      "total_scu": 96,
+      "cargo_grid": {
+        "description": "Aft bay only (2x8x3 each side)",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 2,
+            "rows": 8,
+            "layers": 3,
+            "label": "Aft Cargo Bay - Port Side",
+            "scu_in_bay": 48
+          },
+          {
+            "id": "g0_1",
+            "columns": 2,
+            "rows": 8,
+            "layers": 3,
+            "label": "Aft Cargo Bay - Starboard Side",
+            "scu_in_bay": 48
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Starlancer_TAC"
+    },
+    {
+      "name": "135c",
+      "short_name": "135c",
+      "manufacturer": "Origin",
+      "role": "Light cargo",
+      "total_scu": 6,
+      "cargo_grid": {
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 1,
+            "rows": 4,
+            "layers": 1,
+            "scu_in_bay": 4
+          },
+          {
+            "id": "g0_1",
+            "columns": 1,
+            "rows": 2,
+            "layers": 1,
+            "scu_in_bay": 2
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/135c"
+    },
+    {
+      "name": "300i",
+      "short_name": "300i",
+      "manufacturer": "Origin",
+      "role": "Touring",
+      "total_scu": 8,
+      "cargo_grid": {
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 2,
+            "rows": 4,
+            "layers": 1,
+            "scu_in_bay": 8
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/300i"
+    },
+    {
+      "name": "315p",
+      "short_name": "315p",
+      "manufacturer": "Origin",
+      "role": "Path-finder",
+      "total_scu": 12,
+      "cargo_grid": {
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 2,
+            "rows": 2,
+            "layers": 1,
+            "scu_in_bay": 4
+          },
+          {
+            "id": "g0_1",
+            "columns": 2,
+            "rows": 4,
+            "layers": 1,
+            "scu_in_bay": 8
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/315p"
+    },
+    {
+      "name": "325a",
+      "short_name": "325a",
+      "manufacturer": "Origin",
+      "role": "Combat",
+      "total_scu": 4,
+      "cargo_grid": {
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 2,
+            "rows": 2,
+            "layers": 1,
+            "scu_in_bay": 4
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/325a"
+    },
+    {
+      "name": "350r",
+      "short_name": "350r",
+      "manufacturer": "Origin",
+      "role": "Racer",
+      "total_scu": 4,
+      "cargo_grid": {
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 2,
+            "rows": 2,
+            "layers": 1,
+            "scu_in_bay": 4
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/350r"
+    },
+    {
+      "name": "400i",
+      "short_name": "400i",
+      "manufacturer": "Origin",
+      "role": "Luxury explorer",
+      "total_scu": 42,
+      "cargo_grid": {
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 3,
+            "rows": 7,
+            "layers": 2,
+            "scu_in_bay": 42
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/400i"
+    },
+    {
+      "name": "600i Explorer",
+      "short_name": "600i Explorer",
+      "manufacturer": "Origin",
+      "role": "Luxury explorer",
+      "total_scu": 44,
+      "cargo_grid": {
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 1,
+            "rows": 4,
+            "layers": 2,
+            "scu_in_bay": 8
+          },
+          {
+            "id": "g0_1",
+            "columns": 1,
+            "rows": 4,
+            "layers": 2,
+            "scu_in_bay": 8
+          },
+          {
+            "id": "g0_2",
+            "columns": 1,
+            "rows": 1,
+            "layers": 2,
+            "scu_in_bay": 2
+          },
+          {
+            "id": "g0_3",
+            "columns": 1,
+            "rows": 1,
+            "layers": 2,
+            "scu_in_bay": 2
+          },
+          {
+            "id": "g1_0",
+            "columns": 1,
+            "rows": 2,
+            "layers": 3,
+            "scu_in_bay": 6
+          },
+          {
+            "id": "g1_1",
+            "columns": 4,
+            "rows": 1,
+            "layers": 3,
+            "scu_in_bay": 12
+          },
+          {
+            "id": "g1_2",
+            "columns": 1,
+            "rows": 2,
+            "layers": 3,
+            "scu_in_bay": 6
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/600i_Explorer"
+    },
+    {
+      "name": "600i Touring",
+      "short_name": "600i Touring",
+      "manufacturer": "Origin",
+      "role": "Luxury tourer",
+      "total_scu": 20,
+      "cargo_grid": {
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 1,
+            "rows": 4,
+            "layers": 2,
+            "scu_in_bay": 8
+          },
+          {
+            "id": "g0_1",
+            "columns": 1,
+            "rows": 4,
+            "layers": 2,
+            "scu_in_bay": 8
+          },
+          {
+            "id": "g0_2",
+            "columns": 1,
+            "rows": 1,
+            "layers": 2,
+            "scu_in_bay": 2
+          },
+          {
+            "id": "g0_3",
+            "columns": 1,
+            "rows": 1,
+            "layers": 2,
+            "scu_in_bay": 2
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/600i_Touring"
+    },
+    {
+      "name": "890 Jump",
+      "short_name": "890 Jump",
+      "manufacturer": "Origin",
+      "role": "Luxury yacht (capital)",
+      "total_scu": 388,
+      "cargo_grid": {
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 6,
+            "rows": 12,
+            "layers": 4,
+            "scu_in_bay": 288
+          },
+          {
+            "id": "g1_0",
+            "columns": 3,
+            "rows": 5,
+            "layers": 2,
+            "scu_in_bay": 30
+          },
+          {
+            "id": "g1_1",
+            "columns": 3,
+            "rows": 5,
+            "layers": 2,
+            "scu_in_bay": 30
+          },
+          {
+            "id": "g2_0",
+            "columns": 1,
+            "rows": 5,
+            "layers": 2,
+            "scu_in_bay": 10
+          },
+          {
+            "id": "g2_1",
+            "columns": 1,
+            "rows": 5,
+            "layers": 2,
+            "scu_in_bay": 10
+          },
+          {
+            "id": "g3_0",
+            "columns": 1,
+            "rows": 5,
+            "layers": 2,
+            "scu_in_bay": 10
+          },
+          {
+            "id": "g3_1",
+            "columns": 1,
+            "rows": 5,
+            "layers": 2,
+            "scu_in_bay": 10
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/890_Jump"
+    },
+    {
+      "name": "Apollo Medivac",
+      "short_name": "Apollo Medivac",
+      "manufacturer": "RSI",
+      "role": "Medical",
+      "total_scu": 32,
+      "cargo_grid": {
+        "description": "Aft bay below medical deck",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 2,
+            "rows": 4,
+            "layers": 2,
+            "max_unit_scu": 2,
+            "scu_in_bay": 16
+          },
+          {
+            "id": "g0_1",
+            "columns": 2,
+            "rows": 4,
+            "layers": 2,
+            "max_unit_scu": 2,
+            "scu_in_bay": 16
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Apollo_Medivac"
+    },
+    {
+      "name": "Apollo Triage",
+      "short_name": "Apollo Triage",
+      "manufacturer": "RSI",
+      "role": "Medical",
+      "total_scu": 32,
+      "cargo_grid": {
+        "description": "Aft bay below medical deck",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 2,
+            "rows": 4,
+            "layers": 2,
+            "max_unit_scu": 2,
+            "scu_in_bay": 16
+          },
+          {
+            "id": "g0_1",
+            "columns": 2,
+            "rows": 4,
+            "layers": 2,
+            "max_unit_scu": 2,
+            "scu_in_bay": 16
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Apollo_Triage"
+    },
+    {
+      "name": "Arrastra [Concept]",
+      "short_name": "Arrastra",
+      "manufacturer": "RSI",
+      "role": "Mining capital (concept)",
+      "total_scu": 576,
+      "cargo_grid": {
+        "description": "Mining capital cargo decks (concept)",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 8,
+            "rows": 18,
+            "layers": 4,
+            "scu_in_bay": 576
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Arrastra"
+    },
+    {
+      "name": "Aurora (Mk II) [Cargo]",
+      "short_name": "Aurora CL (Mk II)",
+      "manufacturer": "RSI",
+      "role": "Starter (cargo modded)",
+      "total_scu": 8,
+      "cargo_grid": {
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 1,
+            "rows": 3,
+            "layers": 1,
+            "scu_in_bay": 3
+          },
+          {
+            "id": "g0_1",
+            "columns": 1,
+            "rows": 3,
+            "layers": 1,
+            "scu_in_bay": 3
+          },
+          {
+            "id": "g1_0",
+            "columns": 1,
+            "rows": 1,
+            "layers": 1,
+            "scu_in_bay": 1
+          },
+          {
+            "id": "g1_1",
+            "columns": 1,
+            "rows": 1,
+            "layers": 1,
+            "scu_in_bay": 1
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Aurora_(Mk_II)"
+    },
+    {
+      "name": "Aurora CL (Mk I)",
+      "short_name": "Aurora CL",
+      "manufacturer": "RSI",
+      "role": "Starter cargo",
+      "total_scu": 6,
+      "cargo_grid": {
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 1,
+            "rows": 6,
+            "layers": 1,
+            "scu_in_bay": 6
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Aurora_CL_(Mk_I)"
+    },
+    {
+      "name": "Constellation Andromeda",
+      "short_name": "Connie Andromeda",
+      "manufacturer": "RSI",
+      "role": "Multirole",
+      "total_scu": 96,
+      "cargo_grid": {
+        "description": "Single main hold",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 4,
+            "rows": 8,
+            "layers": 3,
+            "scu_in_bay": 96
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Constellation_Andromeda"
+    },
+    {
+      "name": "Constellation Aquila",
+      "short_name": "Connie Aquila",
+      "manufacturer": "RSI",
+      "role": "Explorer",
+      "total_scu": 96,
+      "cargo_grid": {
+        "description": "Single main hold",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 4,
+            "rows": 8,
+            "layers": 3,
+            "scu_in_bay": 96
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Constellation_Aquila"
+    },
+    {
+      "name": "Constellation Phoenix",
+      "short_name": "Connie Phoenix",
+      "manufacturer": "RSI",
+      "role": "Luxury",
+      "total_scu": 80,
+      "cargo_grid": {
+        "description": "Single main hold (smaller, luxury)",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 5,
+            "rows": 8,
+            "layers": 2,
+            "scu_in_bay": 80
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Constellation_Phoenix"
+    },
+    {
+      "name": "Constellation Taurus",
+      "short_name": "Connie Taurus",
+      "manufacturer": "RSI",
+      "role": "Cargo multirole",
+      "total_scu": 174,
+      "cargo_grid": {
+        "description": "Single main hold (4 wide x 14 long x 3 high) plus small side stowage",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 4,
+            "rows": 14,
+            "layers": 3,
+            "scu_in_bay": 168
+          },
+          {
+            "id": "g1_0",
+            "columns": 2,
+            "rows": 3,
+            "layers": 1,
+            "max_unit_scu": 2,
+            "scu_in_bay": 6
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Constellation_Taurus"
+    },
+    {
+      "name": "Galaxy [Base Concept]",
+      "short_name": "Galaxy",
+      "manufacturer": "RSI",
+      "role": "Modular base",
+      "total_scu": 64,
+      "cargo_grid": {
+        "description": "Base configuration small bay",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 2,
+            "rows": 8,
+            "layers": 2,
+            "scu_in_bay": 32
+          },
+          {
+            "id": "g0_1",
+            "columns": 2,
+            "rows": 8,
+            "layers": 2,
+            "scu_in_bay": 32
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Galaxy"
+    },
+    {
+      "name": "Galaxy [Cargo Concept]",
+      "short_name": "Galaxy Cargo",
+      "manufacturer": "RSI",
+      "role": "Modular cargo (concept)",
+      "total_scu": 576,
+      "cargo_grid": {
+        "description": "Modular cargo module: two long 4x16x4 main grids plus floor/aux 2x8x2 strips",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 2,
+            "rows": 8,
+            "layers": 2,
+            "scu_in_bay": 32
+          },
+          {
+            "id": "g0_1",
+            "columns": 2,
+            "rows": 8,
+            "layers": 2,
+            "scu_in_bay": 32
+          },
+          {
+            "id": "g1_0",
+            "columns": 4,
+            "rows": 16,
+            "layers": 4,
+            "scu_in_bay": 256
+          },
+          {
+            "id": "g1_1",
+            "columns": 4,
+            "rows": 16,
+            "layers": 4,
+            "scu_in_bay": 256
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Galaxy"
+    },
+    {
+      "name": "Hermes",
+      "short_name": "Hermes",
+      "manufacturer": "RSI",
+      "role": "Heavy fighter / cargo",
+      "total_scu": 288,
+      "cargo_grid": {
+        "description": "Twin compartments (concept); generous mid-bay",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 4,
+            "rows": 18,
+            "layers": 2,
+            "scu_in_bay": 144
+          },
+          {
+            "id": "g0_1",
+            "columns": 4,
+            "rows": 18,
+            "layers": 2,
+            "scu_in_bay": 144
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Hermes"
+    },
+    {
+      "name": "Perseus",
+      "short_name": "Perseus",
+      "manufacturer": "RSI",
+      "role": "Gunship",
+      "total_scu": 96,
+      "cargo_grid": {
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 8,
+            "rows": 6,
+            "layers": 2,
+            "scu_in_bay": 96
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Perseus"
+    },
+    {
+      "name": "Polaris",
+      "short_name": "Polaris",
+      "manufacturer": "RSI",
+      "role": "Corvette (capital)",
+      "total_scu": 576,
+      "cargo_grid": {
+        "description": "Two parallel cargo bays (port/starboard) flanking torpedo room",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 6,
+            "rows": 12,
+            "layers": 4,
+            "scu_in_bay": 288
+          },
+          {
+            "id": "g0_1",
+            "columns": 6,
+            "rows": 12,
+            "layers": 4,
+            "scu_in_bay": 288
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Polaris"
+    },
+    {
+      "name": "Salvation",
+      "short_name": "Salvation",
+      "manufacturer": "RSI",
+      "role": "Search & rescue (concept)",
+      "total_scu": 6,
+      "cargo_grid": {
+        "description": "Search & rescue cargo (concept)",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 2,
+            "rows": 3,
+            "layers": 1,
+            "max_unit_scu": 1,
+            "scu_in_bay": 6
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Salvation"
+    },
+    {
+      "name": "Zeus Mk II CL",
+      "short_name": "Zeus CL",
+      "manufacturer": "RSI",
+      "role": "Cargo medium",
+      "total_scu": 128,
+      "cargo_grid": {
+        "description": "Single main bay",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 5,
+            "rows": 8,
+            "layers": 3,
+            "scu_in_bay": 120
+          },
+          {
+            "id": "g0_1",
+            "columns": 1,
+            "rows": 2,
+            "layers": 2,
+            "scu_in_bay": 4
+          },
+          {
+            "id": "g0_2",
+            "columns": 1,
+            "rows": 2,
+            "layers": 2,
+            "scu_in_bay": 4
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Zeus_Mk_II_CL"
+    },
+    {
+      "name": "Zeus Mk II ES",
+      "short_name": "Zeus ES",
+      "manufacturer": "RSI",
+      "role": "Explorer",
+      "total_scu": 32,
+      "cargo_grid": {
+        "description": "Single main bay",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 4,
+            "rows": 4,
+            "layers": 2,
+            "scu_in_bay": 32
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Zeus_Mk_II_ES"
+    },
+    {
+      "name": "Zeus Mk II MR [Concept]",
+      "short_name": "Zeus MR",
+      "manufacturer": "RSI",
+      "role": "Multirole (concept)",
+      "total_scu": 16,
+      "cargo_grid": {
+        "description": "Single main bay (concept)",
+        "bays": [
+          {
+            "id": "g0_0",
+            "columns": 2,
+            "rows": 4,
+            "layers": 2,
+            "scu_in_bay": 16
+          }
+        ]
+      },
+      "source": "https://sc-cargo.space/",
+      "wiki": "https://starcitizen.tools/Zeus_Mk_II_MR"
+    }
+  ]
+}
