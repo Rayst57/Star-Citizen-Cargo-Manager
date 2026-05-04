@@ -21,20 +21,26 @@ specific footprint of contiguous cells, and the assignment engine is a true
 Star Citizen's SCU box sizes follow the 1.25 m base cube. Footprints **to be
 verified** from sources during the ship-data research pass:
 
-| SCU | Footprint (W × D × H units) | Notes |
-|-----|------------------------------|-------|
-| 1   | 1 × 1 × 1                    | base cube |
-| 2   | 2 × 1 × 1                    | rectangular |
-| 4   | 2 × 2 × 1                    | flat square |
-| 8   | 2 × 2 × 2                    | cube |
-| 16  | 4 × 2 × 2                    | extends along width |
-| 24  | 6 × 2 × 2                    | extends along width |
-| 32  | 8 × 2 × 2                    | extends along width |
+Footprints below are listed in **canonical orientation** (long axis along
+width). Pallets can be rotated 90° on the horizontal plane during loading,
+so the long axis may point along *either* the bay's width or its length.
 
-All confirmed. Key invariant: **no SCU box exceeds 2 deep or 2 tall.**
-Beyond 8 SCU, growth is purely along the width axis. This dramatically
-simplifies the bin-packing search space — height and depth are bounded
-constants, only width orientation needs branching.
+| SCU | Canonical (W × L × H) | Rotated (W × L × H) | Notes |
+|-----|------------------------|---------------------|-------|
+| 1   | 1 × 1 × 1              | —                   | base cube; rotation irrelevant |
+| 2   | 2 × 1 × 1              | 1 × 2 × 1           | |
+| 4   | 2 × 2 × 1              | —                   | square base; rotation irrelevant |
+| 8   | 2 × 2 × 2              | —                   | full cube; rotation irrelevant |
+| 16  | 4 × 2 × 2              | 2 × 4 × 2           | |
+| 24  | 6 × 2 × 2              | 2 × 6 × 2           | |
+| 32  | 8 × 2 × 2              | 2 × 8 × 2           | |
+
+Key invariants:
+- **Height never exceeds 2 units.** Vertical stacking is bounded.
+- **For each box, at least two of the three axes are ≤ 2 units.**
+  Beyond 8 SCU, growth is along a single horizontal axis (width *or*
+  length depending on rotation). The packer branches on rotation only —
+  height never needs a rotation choice.
 
 These values live in `data/scu_boxes.json` so the planner reads them at
 startup rather than hardcoding.

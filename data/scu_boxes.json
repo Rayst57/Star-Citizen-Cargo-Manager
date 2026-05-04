@@ -1,17 +1,26 @@
 {
   "unit_size_meters": 1.25,
+  "axes": {
+    "width":  "horizontal, across the bay",
+    "length": "horizontal, along the bay (front-to-back)",
+    "height": "vertical, stacking"
+  },
+  "rotation": {
+    "allowed_planes": ["horizontal"],
+    "note": "Pallets may rotate 90 degrees on the horizontal plane, swapping width and length. Height is never rotated."
+  },
   "boxes": [
-    { "scu": 1,  "width": 1, "depth": 1, "height": 1 },
-    { "scu": 2,  "width": 2, "depth": 1, "height": 1 },
-    { "scu": 4,  "width": 2, "depth": 2, "height": 1 },
-    { "scu": 8,  "width": 2, "depth": 2, "height": 2 },
-    { "scu": 16, "width": 4, "depth": 2, "height": 2 },
-    { "scu": 24, "width": 6, "depth": 2, "height": 2 },
-    { "scu": 32, "width": 8, "depth": 2, "height": 2 }
+    { "scu": 1,  "width": 1, "length": 1, "height": 1, "rotatable": false },
+    { "scu": 2,  "width": 2, "length": 1, "height": 1, "rotatable": true  },
+    { "scu": 4,  "width": 2, "length": 2, "height": 1, "rotatable": false },
+    { "scu": 8,  "width": 2, "length": 2, "height": 2, "rotatable": false },
+    { "scu": 16, "width": 4, "length": 2, "height": 2, "rotatable": true  },
+    { "scu": 24, "width": 6, "length": 2, "height": 2, "rotatable": true  },
+    { "scu": 32, "width": 8, "length": 2, "height": 2, "rotatable": true  }
   ],
   "invariants": {
-    "max_depth_units": 2,
     "max_height_units": 2,
-    "growth_axis_above_8scu": "width"
+    "shorter_horizontal_axis_max_units": 2,
+    "growth_axis_above_8scu": "longer horizontal axis (width or length depending on rotation)"
   }
 }
