@@ -3,6 +3,10 @@
 All commands start with the wake phrase **"Hey Giant"**. The app listens
 continuously but only acts on speech that begins with the wake phrase.
 
+A **push-to-talk bind** (configured in Settings → Voice Input) can also be
+used to skip the wake phrase for a single utterance. PTT supports keyboard,
+mouse, gamepad, and HOTAS/joystick inputs. See `settings.md`.
+
 After the wake phrase fires, the app captures the rest of the utterance and
 routes it to the LLM. The LLM picks a tool from the list below and executes
 it. Natural-language phrasing is fine — examples are just one way to say each
