@@ -27,13 +27,17 @@ verified** from sources during the ship-data research pass:
 | 2   | 2 × 1 × 1                    | rectangular |
 | 4   | 2 × 2 × 1                    | flat square |
 | 8   | 2 × 2 × 2                    | cube |
-| 16  | *(to confirm)*               | likely 2 × 2 × 4 or 4 × 2 × 2 |
-| 24  | *(to confirm)*               | |
-| 32  | *(to confirm)*               | |
+| 16  | 4 × 2 × 2                    | extends along width |
+| 24  | 6 × 2 × 2                    | extends along width |
+| 32  | 8 × 2 × 2                    | extends along width |
 
-1 / 2 / 4 / 8 SCU dimensions are user-confirmed. 16 / 24 / 32 to be
-verified during the ship-data research pass and stored in
-`data/scu_boxes.json`.
+All confirmed. Key invariant: **no SCU box exceeds 2 deep or 2 tall.**
+Beyond 8 SCU, growth is purely along the width axis. This dramatically
+simplifies the bin-packing search space — height and depth are bounded
+constants, only width orientation needs branching.
+
+These values live in `data/scu_boxes.json` so the planner reads them at
+startup rather than hardcoding.
 
 ## Ship grid representation
 

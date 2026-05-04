@@ -1,0 +1,17 @@
+{
+  "unit_size_meters": 1.25,
+  "boxes": [
+    { "scu": 1,  "width": 1, "depth": 1, "height": 1 },
+    { "scu": 2,  "width": 2, "depth": 1, "height": 1 },
+    { "scu": 4,  "width": 2, "depth": 2, "height": 1 },
+    { "scu": 8,  "width": 2, "depth": 2, "height": 2 },
+    { "scu": 16, "width": 4, "depth": 2, "height": 2 },
+    { "scu": 24, "width": 6, "depth": 2, "height": 2 },
+    { "scu": 32, "width": 8, "depth": 2, "height": 2 }
+  ],
+  "invariants": {
+    "max_depth_units": 2,
+    "max_height_units": 2,
+    "growth_axis_above_8scu": "width"
+  }
+}
