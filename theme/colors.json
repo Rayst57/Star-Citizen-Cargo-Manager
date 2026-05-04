@@ -3,7 +3,8 @@
     "primary_blue":   "#00498f",
     "accent_yellow":  "#ffbe20",
     "deep_navy":      "#212e67",
-    "muted_gold":     "#deb447"
+    "muted_gold":     "#deb447",
+    "white":          "#ffffff"
   },
   "roles": {
     "background":        "#212e67",
