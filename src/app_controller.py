@@ -457,17 +457,31 @@ class AppController(QObject):
     def recompute(self) -> None:
         """Spawn a RecomputeThread to run the planner off the UI thread."""
         self._require_workday()
-        if self._recompute_thread and self._recompute_thread.isRunning():
-            return
+        # Robust check: a deleted-but-still-referenced QThread can return
+        # garbage from isRunning(), so guard with hasattr+try.
+        prev = self._recompute_thread
+        if prev is not None:
+            try:
+                still_running = prev.isRunning()
+            except RuntimeError:
+                still_running = False     # underlying C++ object gone
+            if still_running:
+                return
         self.recompute_started.emit()
         # Commit pending state before spawning a thread that opens its own conn
         self.conn.commit()
         thread = RecomputeThread(self.db_path, self.workday_id)
         thread.finished_with_result.connect(self._on_recompute_done)
         thread.failed.connect(self._on_recompute_failed)
+        thread.finished.connect(self._clear_recompute_thread)
         thread.finished.connect(thread.deleteLater)
         self._recompute_thread = thread
         thread.start()
+
+    def _clear_recompute_thread(self) -> None:
+        """Drop the reference once the thread finishes so the next
+        recompute() call is unblocked."""
+        self._recompute_thread = None
 
     def _on_recompute_done(self, result: RecomputeResult) -> None:
         self._last_result = result

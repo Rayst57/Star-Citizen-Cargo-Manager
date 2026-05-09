@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea,
     QVBoxLayout, QWidget,
@@ -20,8 +20,8 @@ class ContractsPanel(QWidget):
     def __init__(self, controller, parent=None):
         super().__init__(parent)
         self.controller = controller
-        self.setMinimumWidth(280)
-        self.setMaximumWidth(360)
+        self.setMinimumWidth(300)
+        self.setMaximumWidth(420)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(6, 6, 6, 6)
@@ -38,7 +38,7 @@ class ContractsPanel(QWidget):
         header.addWidget(add_btn)
         root.addLayout(header)
 
-        # Scroll area with the cards
+        # Scroll area with the cards (vertical-only — never horizontal)
         self.list_widget = QWidget()
         self.list_layout = QVBoxLayout(self.list_widget)
         self.list_layout.setContentsMargins(0, 0, 0, 0)
@@ -47,6 +47,8 @@ class ContractsPanel(QWidget):
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         scroll.setWidget(self.list_widget)
         root.addWidget(scroll, 1)
 

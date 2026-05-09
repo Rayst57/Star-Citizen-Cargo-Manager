@@ -47,8 +47,10 @@ class StopCard(QFrame):
         header.addWidget(ac)
         header.addStretch(1)
 
-        view_btn = QPushButton("View Load →")
+        view_btn = QPushButton("↗")
         view_btn.setProperty("flat", True)
+        view_btn.setToolTip("View load — full bay snapshot at this stop")
+        view_btn.setFixedWidth(28)
         view_btn.clicked.connect(lambda: self.view_load_requested.emit(stop_number))
         header.addWidget(view_btn)
 

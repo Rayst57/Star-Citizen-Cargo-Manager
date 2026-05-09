@@ -68,11 +68,34 @@ class _TopDownView(QWidget):
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawRect(rect)
 
+        # Build occupancy grid in zone-local cells. occupied[x][y] = True
+        # if any pallet's footprint covers that floor cell.
+        occupied = [[False] * zl for _ in range(zw)]
+        for pl in self.pallets:
+            lx = pl.cell_x - self.zone_meta["cube_offset_x"]
+            ly = pl.cell_y - self.zone_meta["cube_offset_y"]
+            for dx in range(pl.cell_w):
+                for dy in range(pl.cell_l):
+                    if 0 <= lx + dx < zw and 0 <= ly + dy < zl:
+                        occupied[lx + dx][ly + dy] = True
+
+        # Draw dashed 1×1 outlines for unoccupied floor cells so the
+        # pilot can see how much space is still available.
+        dash_pen = QPen(QColor("#5a6aae"), 1, Qt.PenStyle.DashLine)
+        p.setPen(dash_pen)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        for x in range(zw):
+            for y in range(zl):
+                if occupied[x][y]:
+                    continue
+                screen_y = y0 + (zl - 1 - y) * cell
+                p.drawRect(x0 + x * cell + 1, screen_y + 1,
+                           cell - 2, cell - 2)
+
         # Pallets — only floor footprint (z=0 layer). For stacked pallets,
         # only the bottom one is drawn here; the side view shows the stack.
         # Zone Y=0 is the ramp end; we flip Y on screen so the ramp ends
         # up at the BOTTOM of the view (matches the "ramp / door" label).
-        zl = self.zone_meta["length_units"]
         already = set()
         for pl in self.pallets:
             local_x = pl.cell_x - self.zone_meta["cube_offset_x"]
@@ -173,16 +196,42 @@ class _SideView(QWidget):
         # Per-Y stack columns: track which Z heights are filled.
         #   stacks[y] = list of (pallet, h)
         stacks: dict[int, list] = {}
-        # Sort pallets by cell_x then cargo_line_id for stable stacking
         for pl in sorted(self.pallets, key=lambda x: (x.cell_x, x.cargo_line_id)):
             local_y = pl.cell_y - self.zone_meta["cube_offset_y"]
             if local_y < 0:
                 continue
             stacks.setdefault(local_y, []).append((pl, pl.cell_h))
 
-        # Mapping from world Y → screen X. Forward-left convention: high Y
-        # is forward = small screen-X; low Y is ramp = large screen-X.
-        # The pallet's near edge (lower Y) lands at the right of its rect.
+        # Build (Y, Z) occupancy in zone-local cells so we can dash the
+        # empty ones. Each pallet covers cell_l Y-cells × cell_h Z-cells.
+        occ = [[False] * zh_units for _ in range(zl)]
+        z_used_by_y: dict[int, int] = {}
+        for local_y in sorted(stacks):
+            current_z = 0
+            for pl, h in stacks[local_y]:
+                for dy in range(pl.cell_l):
+                    yidx = local_y + dy
+                    if 0 <= yidx < zl:
+                        for dz in range(h):
+                            zidx = current_z + dz
+                            if 0 <= zidx < zh_units:
+                                occ[yidx][zidx] = True
+                current_z += h
+            z_used_by_y[local_y] = current_z
+
+        # Dashed outlines for unoccupied 1×1 cells
+        dash_pen = QPen(QColor("#5a6aae"), 1, Qt.PenStyle.DashLine)
+        p.setPen(dash_pen)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        for y in range(zl):
+            for z in range(zh_units):
+                if occ[y][z]:
+                    continue
+                screen_x = x0 + (zl - 1 - y) * cell
+                screen_y = y0 + (zh_units - 1 - z) * cell
+                p.drawRect(screen_x + 1, screen_y + 1, cell - 2, cell - 2)
+
+        # Pallets — forward on LEFT, ramp on RIGHT.
         for local_y, items in stacks.items():
             current_z = 0
             for pl, h in items:

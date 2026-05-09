@@ -63,6 +63,10 @@ class MainWindow(QMainWindow):
         sb.addPermanentWidget(self.status, 1)
         self.setStatusBar(sb)
 
+        # Track the currently-open LoadViewModal so we never stack
+        # multiple instances when the user clicks "View Load" repeatedly.
+        self._load_view_modal: LoadViewModal | None = None
+
         # Wire signals
         self._wire_signals()
 
@@ -152,8 +156,17 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "Remove failed", str(e))
 
     def _open_load_view(self, stop_number: int) -> None:
+        # Singleton: close any prior LoadViewModal before opening a new one
+        if self._load_view_modal is not None:
+            try:
+                self._load_view_modal.close()
+            except RuntimeError:
+                pass
+            self._load_view_modal = None
         dlg = LoadViewModal(self.controller, stop_number, parent=self)
-        dlg.show()       # non-modal so user can pop multiple
+        dlg.destroyed.connect(lambda *_: setattr(self, "_load_view_modal", None))
+        self._load_view_modal = dlg
+        dlg.show()
 
     def _open_settings(self) -> None:
         dlg = SettingsDialog(self.controller, parent=self)
