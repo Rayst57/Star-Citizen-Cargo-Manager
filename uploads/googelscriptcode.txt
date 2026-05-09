@@ -1,0 +1,1936 @@
+Below is the script this all started from
+
+/**
+ * Star Citizen Cargo Planner - Google Sheets Backend + API
+ *
+ * Version: Topology-Aware Cargo Zones / Corrected C2 Layout
+ *
+ * Replace your entire Code.gs with this file.
+ *
+ * Knowledge-file note:
+ * This file should also be saved into the GPT knowledge files as:
+ * manifest google script.txt
+ *
+ * What this provides:
+ * - Google Sheet tab setup/repair
+ * - Active contract import from GPT/API
+ * - Contract validation
+ * - Palletization using valid SCU sizes only
+ * - Sheet-driven ship cargo topology
+ * - Corrected C2 Hercules cargo model:
+ *   - Forward zones: F1, F2, F3
+ *   - Rear zones: R1, R2, R3, R4
+ *   - No default R5 zone
+ * - Zone dimensions in Width x Length x Height
+ * - Left/right adjacency from aft looking forward
+ * - Load order and unload priority metadata
+ * - Bulk zone support as user-managed overflow
+ * - Blank generated route when there are zero contracts
+ * - Phantom/no-op route stop cleanup
+ * - Route output, cargo zones, and crew checklist generation
+ * - PDF export from the Crew Checklist tab
+ * - Web App API endpoints through doGet/doPost
+ *
+ * Install:
+ * 1. Open your Google Sheet.
+ * 2. Extensions > Apps Script.
+ * 3. Delete the old Code.gs contents.
+ * 4. Paste this entire file.
+ * 5. Save.
+ * 6. Run setupCargoPlanner() once from Apps Script.
+ * 7. Test with importSampleContracts() and recalculateRoute().
+ * 8. Deploy > Manage deployments > Edit > New version > Deploy.
+ */
+
+const CONFIG = {
+  sheets: {
+    activeContracts: 'Active Contracts',
+    stations: 'Stations',
+    commodities: 'Commodities',
+    shipLayouts: 'Ship Layouts',
+    cargoZones: 'Cargo Zones',
+    routeOutput: 'Route Output',
+    crewChecklist: 'Crew Checklist',
+    settings: 'Settings',
+    importBuffer: 'Import Buffer',
+    validationLog: 'Validation Log'
+  },
+
+  // Keep this key private. Any client calling the Web App API must include it.
+  apiKey: 'c2-super-secret-984723',
+
+  // Valid Star Citizen cargo container sizes used by this planner.
+  validPalletSizes: [32, 24, 16, 8, 4, 2, 1],
+
+  defaultShip: 'C2 Hercules',
+
+  shipLayoutHeaders: [
+    'Ship',
+    'Zone',
+    'Zone Type',
+    'Width',
+    'Length',
+    'Height',
+    'Left Zone',
+    'Right Zone',
+    'Load Order',
+    'Unload Priority',
+    'SCU Capacity',
+    'Max 8-SCU Positions',
+    'Notes'
+  ]
+};
+
+/************************************************************
+ * MENU / SETUP
+ ************************************************************/
+
+function onOpen() {
+  try {
+    SpreadsheetApp.getUi()
+      .createMenu('Cargo Planner')
+      .addItem('Setup / Repair Sheets', 'setupCargoPlanner')
+      .addSeparator()
+      .addItem('Clear Active Contracts', 'clearActiveContracts')
+      .addItem('Validate Active Contracts', 'validateActiveContracts')
+      .addItem('Recalculate Route', 'recalculateRoute')
+      .addSeparator()
+      .addItem('Export Crew PDF', 'exportCrewPdf')
+      .addToUi();
+  } catch (e) {
+    Logger.log('UI not available. This is normal during API/manual headless execution.');
+  }
+}
+
+function setupCargoPlanner() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  createOrResetHeader_(ss, CONFIG.sheets.activeContracts, [
+    'Contract ID',
+    'Line ID',
+    'Pickup Station',
+    'Delivery Station',
+    'Commodity',
+    'SCU',
+    'Max Pallet Size',
+    'Status',
+    'Notes',
+    'Parsed Confidence',
+    'Created At',
+    'Updated At'
+  ]);
+
+  createOrResetHeader_(ss, CONFIG.sheets.stations, [
+    'Station Name',
+    'System',
+    'Planet / Lagrange',
+    'Station Type',
+    'Aliases',
+    'Route Group',
+    'Sort Order',
+    'Active'
+  ]);
+
+  createOrResetHeader_(ss, CONFIG.sheets.commodities, [
+    'Commodity',
+    'Category',
+    'Legality',
+    'Aliases',
+    'Active'
+  ]);
+
+  createOrResetHeader_(ss, CONFIG.sheets.shipLayouts, CONFIG.shipLayoutHeaders);
+
+  createOrResetHeader_(ss, CONFIG.sheets.cargoZones, [
+    'Route Stop #',
+    'Station',
+    'Action',
+    'Zone',
+    'Zone Type',
+    'Dimensions WxLxH',
+    'Left Zone',
+    'Right Zone',
+    'Contract ID',
+    'Commodity',
+    'SCU',
+    'Pallet Breakdown',
+    'Destination',
+    'Zone Running Total',
+    'Zone Capacity',
+    'Validation',
+    'Notes'
+  ]);
+
+  createOrResetHeader_(ss, CONFIG.sheets.routeOutput, [
+    'Stop #',
+    'Station',
+    'Arrive Action',
+    'Unload Summary',
+    'Load Summary',
+    'Current Cargo Loadout',
+    'Next Stop',
+    'Notes'
+  ]);
+
+  createOrResetHeader_(ss, CONFIG.sheets.crewChecklist, [
+    'Done',
+    'Stop #',
+    'Station',
+    'Task Type',
+    'Zone',
+    'Task',
+    'Contract ID',
+    'Notes'
+  ]);
+
+  createOrResetHeader_(ss, CONFIG.sheets.settings, [
+    'Setting',
+    'Value',
+    'Notes'
+  ]);
+
+  createOrResetHeader_(ss, CONFIG.sheets.importBuffer, [
+    'Raw Input',
+    'Parsed JSON',
+    'Imported At',
+    'Imported By',
+    'Notes'
+  ]);
+
+  createOrResetHeader_(ss, CONFIG.sheets.validationLog, [
+    'Timestamp',
+    'Severity',
+    'Sheet',
+    'Row',
+    'Field',
+    'Message',
+    'Suggested Fix'
+  ]);
+
+  seedStations_();
+  seedCommodities_();
+  seedSettings_();
+  repairSettings_();
+  repairShipLayouts_();
+
+  clearGeneratedOutputs_();
+  applyFormattingAndValidation_();
+
+  safeAlert_('Cargo Planner setup/repair complete.');
+}
+
+function clearActiveContracts() {
+  const sheet = getSheet_(CONFIG.sheets.activeContracts);
+  clearDataBelowHeader_(sheet);
+  clearGeneratedOutputs_();
+}
+
+/************************************************************
+ * API ENDPOINTS
+ ************************************************************/
+
+function doGet(e) {
+  return jsonResponse({
+    ok: true,
+    status: 'API is live',
+    message: 'Use POST for actions.',
+    supportedActions: [
+      'replaceContracts',
+      'getActiveContracts',
+      'validateContracts',
+      'calculateRoute',
+      'getRoute',
+      'exportPdf'
+    ]
+  });
+}
+
+function doPost(e) {
+  try {
+    const data = parseRequestBody_(e);
+
+    if (data.key !== CONFIG.apiKey) {
+      return jsonResponse({
+        ok: false,
+        error: 'Unauthorized'
+      });
+    }
+
+    const action = data.action;
+
+    if (action === 'replaceContracts') {
+      importContractsFromJson(data.contracts || []);
+      return jsonResponse({
+        ok: true,
+        status: 'contracts_updated',
+        activeContracts: getActiveContracts_(),
+        route: getRouteOutput_(),
+        cargoZones: getCargoZones_(),
+        checklist: getCrewChecklist_(),
+        validationLog: getValidationLog_()
+      });
+    }
+
+    if (action === 'getActiveContracts') {
+      return jsonResponse({
+        ok: true,
+        contracts: getActiveContracts_(),
+        validationLog: getValidationLog_()
+      });
+    }
+
+    if (action === 'validateContracts') {
+      validateActiveContracts({ silent: true });
+      return jsonResponse({
+        ok: true,
+        validationLog: getValidationLog_()
+      });
+    }
+
+    if (action === 'calculateRoute') {
+      recalculateRoute({ silent: true });
+      return jsonResponse({
+        ok: true,
+        status: 'route_calculated',
+        route: getRouteOutput_(),
+        cargoZones: getCargoZones_(),
+        checklist: getCrewChecklist_(),
+        validationLog: getValidationLog_()
+      });
+    }
+
+    if (action === 'getRoute') {
+      return jsonResponse({
+        ok: true,
+        route: getRouteOutput_(),
+        cargoZones: getCargoZones_(),
+        checklist: getCrewChecklist_(),
+        validationLog: getValidationLog_()
+      });
+    }
+
+    if (action === 'exportPdf') {
+      const result = exportCrewPdf({ silent: true });
+      return jsonResponse({
+        ok: true,
+        pdf: result
+      });
+    }
+
+    return jsonResponse({
+      ok: false,
+      error: 'Unknown action: ' + action
+    });
+
+  } catch (err) {
+    return jsonResponse({
+      ok: false,
+      error: err.toString(),
+      stack: err.stack || '',
+      raw: e && e.postData ? e.postData.contents : 'no postData'
+    });
+  }
+}
+
+function parseRequestBody_(e) {
+  if (e && e.postData && e.postData.contents) {
+    return JSON.parse(e.postData.contents);
+  }
+
+  if (e && e.parameter && e.parameter.payload) {
+    return JSON.parse(e.parameter.payload);
+  }
+
+  throw new Error('No request body received.');
+}
+
+function jsonResponse(obj) {
+  return ContentService
+    .createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+/************************************************************
+ * CONTRACT IMPORT / VALIDATION
+ ************************************************************/
+
+function importContractsFromJson(contractList) {
+  if (!Array.isArray(contractList)) {
+    throw new Error('importContractsFromJson expects an array of contract objects.');
+  }
+
+  // Hard reset active contracts and all generated route state.
+  clearActiveContracts();
+
+  const sheet = getSheet_(CONFIG.sheets.activeContracts);
+  const now = new Date();
+  const rows = [];
+
+  contractList.forEach((contract, contractIndex) => {
+    const contractId = contract.contractId || contract.id || contractIndex + 1;
+    const pickupStation = canonicalStationName_(contract.pickupStation || contract.origin || '');
+    const maxPalletSize = Number(contract.maxPalletSize || contract.max_pallet_size || '');
+    const cargoItems = contract.cargo || contract.items || [];
+
+    cargoItems.forEach((item, itemIndex) => {
+      rows.push([
+        contractId,
+        String(contractId) + '.' + String(itemIndex + 1),
+        pickupStation,
+        canonicalStationName_(item.deliveryStation || item.destination || ''),
+        canonicalCommodityName_(item.commodity || ''),
+        Number(item.scu || item.SCU || 0),
+        maxPalletSize,
+        'Pending',
+        contract.notes || item.notes || '',
+        contract.confidence || item.confidence || '',
+        now,
+        now
+      ]);
+    });
+  });
+
+  if (rows.length > 0) {
+    sheet.getRange(2, 1, rows.length, rows[0].length).setValues(rows);
+  }
+
+  validateActiveContracts({ silent: true });
+}
+
+function importSampleContracts() {
+  importContractsFromJson([
+    {
+      contractId: 1,
+      pickupStation: 'Yellow Core',
+      maxPalletSize: 8,
+      confidence: 1,
+      cargo: [
+        { deliveryStation: 'Baijini Point', commodity: 'Tungsten', scu: 25 },
+        { deliveryStation: 'Baijini Point', commodity: 'Aluminum', scu: 20 },
+        { deliveryStation: 'Seraphim Station', commodity: 'Tungsten', scu: 23 },
+        { deliveryStation: 'Seraphim Station', commodity: 'Aluminum', scu: 21 }
+      ]
+    }
+  ]);
+}
+
+function validateActiveContracts(options) {
+  options = options || {};
+  const sheet = getSheet_(CONFIG.sheets.activeContracts);
+  const logSheet = getSheet_(CONFIG.sheets.validationLog);
+  clearDataBelowHeader_(logSheet);
+
+  const rows = getDataRows_(sheet);
+  const stationSet = getLookupSet_(CONFIG.sheets.stations, 1);
+  const commoditySet = getLookupSet_(CONFIG.sheets.commodities, 1);
+  const logs = [];
+  const now = new Date();
+
+  rows.forEach((row, idx) => {
+    const sheetRow = idx + 2;
+    const pickup = String(row[2] || '').trim();
+    const delivery = String(row[3] || '').trim();
+    const commodity = String(row[4] || '').trim();
+    const scu = Number(row[5]);
+    const maxPallet = Number(row[6]);
+
+    if (!stationSet.has(normalize_(pickup))) {
+      logs.push([now, 'ERROR', CONFIG.sheets.activeContracts, sheetRow, 'Pickup Station', 'Unknown pickup station: ' + pickup, 'Check station spelling or add alias.']);
+    }
+
+    if (!stationSet.has(normalize_(delivery))) {
+      logs.push([now, 'ERROR', CONFIG.sheets.activeContracts, sheetRow, 'Delivery Station', 'Unknown delivery station: ' + delivery, 'Check station spelling or add alias.']);
+    }
+
+    if (!commoditySet.has(normalize_(commodity))) {
+      logs.push([now, 'WARN', CONFIG.sheets.activeContracts, sheetRow, 'Commodity', 'Unknown commodity: ' + commodity, 'Check spelling or add commodity.']);
+    }
+
+    if (!Number.isFinite(scu) || scu <= 0) {
+      logs.push([now, 'ERROR', CONFIG.sheets.activeContracts, sheetRow, 'SCU', 'Invalid SCU amount: ' + row[5], 'Use a positive number.']);
+    }
+
+    if (!CONFIG.validPalletSizes.includes(maxPallet)) {
+      logs.push([now, 'ERROR', CONFIG.sheets.activeContracts, sheetRow, 'Max Pallet Size', 'Invalid max pallet size: ' + row[6], 'Use one of: ' + CONFIG.validPalletSizes.join(', ')]);
+    }
+
+    if (Number.isFinite(scu) && scu > 0 && CONFIG.validPalletSizes.includes(maxPallet)) {
+      const pallets = palletize_(scu, maxPallet);
+      const sum = pallets.reduce((a, b) => a + b, 0);
+
+      if (sum !== scu) {
+        logs.push([now, 'ERROR', CONFIG.sheets.activeContracts, sheetRow, 'SCU', 'Palletization failed for ' + scu, 'Check pallet logic.']);
+      }
+    }
+  });
+
+  validateShipLayout_(logs, now);
+
+  if (logs.length > 0) {
+    logSheet.getRange(2, 1, logs.length, logs[0].length).setValues(logs);
+  }
+
+  SpreadsheetApp.flush();
+
+  if (!options.silent) {
+    safeAlert_(logs.length === 0 ? 'Validation complete. No issues found.' : 'Validation complete. Check Validation Log.');
+  }
+}
+
+function validateShipLayout_(logs, now) {
+  const ship = getCurrentShipName_();
+
+  try {
+    const layout = getShipLayout_(ship);
+    const zoneSet = new Set(layout.zones.map(z => normalize_(z.zone)));
+
+    if (layout.zones.length === 0) {
+      logs.push([now, 'ERROR', CONFIG.sheets.shipLayouts, '', 'Ship', 'No zones found for ship: ' + ship, 'Run setupCargoPlanner() or add ship zones.']);
+      return;
+    }
+
+    layout.zones.forEach(zone => {
+      if (!zone.zoneType) {
+        logs.push([now, 'WARN', CONFIG.sheets.shipLayouts, '', 'Zone Type', 'Missing zone type for ' + zone.zone, 'Use STRUCTURED or BULK.']);
+      }
+
+      if (!isBulkZone_(zone)) {
+        if (!Number.isFinite(zone.width) || !Number.isFinite(zone.length) || !Number.isFinite(zone.height)) {
+          logs.push([now, 'WARN', CONFIG.sheets.shipLayouts, '', 'Dimensions', 'Structured zone ' + zone.zone + ' is missing W/L/H dimensions.', 'Enter Width, Length, and Height.']);
+        }
+
+        if (!Number.isFinite(Number(zone.capacity)) || Number(zone.capacity) <= 0) {
+          logs.push([now, 'WARN', CONFIG.sheets.shipLayouts, '', 'SCU Capacity', 'Structured zone ' + zone.zone + ' has no usable SCU capacity.', 'Set SCU Capacity or dimensions.']);
+        }
+      }
+
+      if (zone.leftZone && !zoneSet.has(normalize_(zone.leftZone))) {
+        logs.push([now, 'WARN', CONFIG.sheets.shipLayouts, '', 'Left Zone', zone.zone + ' references missing left zone: ' + zone.leftZone, 'Fix adjacency or leave blank.']);
+      }
+
+      if (zone.rightZone && !zoneSet.has(normalize_(zone.rightZone))) {
+        logs.push([now, 'WARN', CONFIG.sheets.shipLayouts, '', 'Right Zone', zone.zone + ' references missing right zone: ' + zone.rightZone, 'Fix adjacency or leave blank.']);
+      }
+    });
+
+  } catch (err) {
+    logs.push([now, 'ERROR', CONFIG.sheets.shipLayouts, '', 'Ship Layout', err.toString(), 'Run setupCargoPlanner() or check Ship Layouts.']);
+  }
+}
+
+/************************************************************
+ * ROUTE / ZONE ENGINE
+ ************************************************************/
+
+function recalculateRoute(options) {
+  options = options || {};
+  const silent = options.silent === true;
+
+  validateActiveContracts({ silent: true });
+  clearGeneratedOutputs_();
+
+  const contracts = readActiveContracts_();
+
+  // Zero-contract state must stay blank.
+  if (contracts.length === 0) {
+    SpreadsheetApp.flush();
+
+    if (!silent) {
+      safeAlert_('No active contracts. Generated route cleared.');
+    }
+
+    return;
+  }
+
+  const origin = getSetting_('Origin Station') || 'Seraphim Station';
+  const routeStops = buildSimpleRoute_(contracts, origin);
+  const zonePlan = buildZonePlan_(contracts, routeStops, origin);
+
+  writeRouteOutput_(routeStops, contracts, zonePlan, origin);
+  writeCargoZones_(zonePlan);
+  writeCrewChecklist_(routeStops, zonePlan, origin);
+
+  if (!silent) {
+    safeAlert_('Route recalculated. Review Route Output, Cargo Zones, and Crew Checklist.');
+  }
+}
+
+function buildSimpleRoute_(contracts, origin) {
+  const stationOrder = getStationSortOrder_();
+  const route = [];
+
+  pushRouteStop_(route, origin);
+
+  const pickupStations = uniqueStations_(contracts.map(c => c.pickupStation))
+    .sort((a, b) => stationCompare_(a, b, stationOrder));
+
+  pickupStations.forEach(pickup => {
+    pushRouteStop_(route, pickup);
+
+    const deliveriesFromPickup = uniqueStations_(
+      contracts
+        .filter(c => normalize_(c.pickupStation) === normalize_(pickup))
+        .map(c => c.deliveryStation)
+    ).sort((a, b) => stationCompare_(a, b, stationOrder));
+
+    deliveriesFromPickup.forEach(delivery => {
+      pushRouteStop_(route, delivery);
+    });
+  });
+
+  const requireFinalReturn = getBooleanSetting_('Require Final Return', false);
+  const hasOriginDelivery = contracts.some(c => normalize_(c.deliveryStation) === normalize_(origin));
+
+  if ((requireFinalReturn || hasOriginDelivery) && normalize_(route[route.length - 1]) !== normalize_(origin)) {
+    pushRouteStop_(route, origin);
+  }
+
+  return route;
+}
+
+function buildZonePlan_(contracts, routeStops, origin) {
+  const rows = [];
+  const ship = getCurrentShipName_();
+  const layout = getShipLayout_(ship);
+  const zoneTotals = new Map();
+  const zoneDestinations = new Map();
+  const assignments = new Map();
+
+  const enriched = contracts.map(c => {
+    const pickupIndex = findStopIndex_(routeStops, c.pickupStation, 0);
+    const deliveryIndex = findStopIndex_(routeStops, c.deliveryStation, pickupIndex + 1);
+
+    return {
+      contract: c,
+      pickupIndex: pickupIndex,
+      deliveryIndex: deliveryIndex
+    };
+  });
+
+  const assignmentOrder = enriched.slice().sort(zoneAssignmentSort_);
+
+  assignmentOrder.forEach(item => {
+    const zoneObj = chooseZone_(
+      item.contract,
+      item.deliveryIndex,
+      item.pickupIndex,
+      zoneTotals,
+      zoneDestinations,
+      layout
+    );
+
+    const runningTotal = addZoneTotal_(zoneTotals, zoneObj.zone, item.contract.scu);
+    addZoneDestination_(zoneDestinations, zoneObj.zone, item.contract.deliveryStation);
+
+    const validation = validateZoneLoad_(zoneObj, runningTotal);
+
+    assignments.set(contractKey_(item.contract), {
+      zoneObj: zoneObj,
+      runningTotal: runningTotal,
+      capacity: getCapacityValue_(zoneObj),
+      validation: validation
+    });
+  });
+
+  enriched.forEach(item => {
+    const c = item.contract;
+    const assignment = assignments.get(contractKey_(c));
+    const zoneObj = assignment.zoneObj;
+    const pallets = palletize_(c.scu, c.maxPalletSize);
+    const loadValidation = item.pickupIndex >= 0 ? assignment.validation : 'NO PICKUP STOP';
+
+    rows.push({
+      routeStop: item.pickupIndex >= 0 ? item.pickupIndex + 1 : '',
+      station: c.pickupStation,
+      action: 'LOAD',
+      zone: zoneObj.zone,
+      zoneType: zoneObj.zoneType,
+      dimensions: formatDimensions_(zoneObj),
+      leftZone: zoneObj.leftZone,
+      rightZone: zoneObj.rightZone,
+      contractId: c.contractId,
+      lineId: c.lineId,
+      commodity: c.commodity,
+      scu: c.scu,
+      pallets: pallets.join(' + '),
+      destination: c.deliveryStation,
+      runningTotal: assignment.runningTotal,
+      capacity: assignment.capacity,
+      validation: loadValidation,
+      notes: zoneNotes_(zoneObj)
+    });
+
+    if (item.deliveryIndex >= 0) {
+      rows.push({
+        routeStop: item.deliveryIndex + 1,
+        station: c.deliveryStation,
+        action: 'UNLOAD',
+        zone: zoneObj.zone,
+        zoneType: zoneObj.zoneType,
+        dimensions: formatDimensions_(zoneObj),
+        leftZone: zoneObj.leftZone,
+        rightZone: zoneObj.rightZone,
+        contractId: c.contractId,
+        lineId: c.lineId,
+        commodity: c.commodity,
+        scu: c.scu,
+        pallets: pallets.join(' + '),
+        destination: c.deliveryStation,
+        runningTotal: '',
+        capacity: assignment.capacity,
+        validation: 'UNLOAD',
+        notes: zoneNotes_(zoneObj)
+      });
+    } else {
+      rows.push({
+        routeStop: '',
+        station: c.deliveryStation,
+        action: 'UNLOAD',
+        zone: zoneObj.zone,
+        zoneType: zoneObj.zoneType,
+        dimensions: formatDimensions_(zoneObj),
+        leftZone: zoneObj.leftZone,
+        rightZone: zoneObj.rightZone,
+        contractId: c.contractId,
+        lineId: c.lineId,
+        commodity: c.commodity,
+        scu: c.scu,
+        pallets: pallets.join(' + '),
+        destination: c.deliveryStation,
+        runningTotal: '',
+        capacity: assignment.capacity,
+        validation: 'NO DELIVERY STOP AFTER PICKUP',
+        notes: zoneNotes_(zoneObj)
+      });
+    }
+  });
+
+  rows.sort((a, b) => {
+    const ar = Number(a.routeStop || 9999);
+    const br = Number(b.routeStop || 9999);
+
+    return ar - br ||
+      actionSort_(a.action) - actionSort_(b.action) ||
+      getZoneSortValue_(a.zone, layout) - getZoneSortValue_(b.zone, layout) ||
+      String(a.zone).localeCompare(String(b.zone));
+  });
+
+  return rows;
+}
+
+function zoneAssignmentSort_(a, b) {
+  const ap = a.pickupIndex >= 0 ? a.pickupIndex : 9999;
+  const bp = b.pickupIndex >= 0 ? b.pickupIndex : 9999;
+  const ad = a.deliveryIndex >= 0 ? a.deliveryIndex : -1;
+  const bd = b.deliveryIndex >= 0 ? b.deliveryIndex : -1;
+
+  // Later delivery gets assigned first. This supports last-offload zone ordering.
+  return ap - bp ||
+    bd - ad ||
+    String(a.contract.contractId).localeCompare(String(b.contract.contractId)) ||
+    String(a.contract.lineId).localeCompare(String(b.contract.lineId));
+}
+
+function chooseZone_(contract, deliveryIndex, pickupIndex, zoneTotals, zoneDestinations, layout) {
+  const structuredZones = layout.zones
+    .filter(z => !isBulkZone_(z))
+    .sort(zoneLoadOrderSort_);
+
+  const bulkZones = layout.zones
+    .filter(z => isBulkZone_(z))
+    .sort(zoneLoadOrderSort_);
+
+  const destination = normalize_(contract.deliveryStation);
+  const scu = Number(contract.scu);
+
+  let zone = chooseZoneFromSet_(structuredZones, zoneTotals, zoneDestinations, destination, scu, 'SAME_DESTINATION_FITS');
+  if (zone) return zone;
+
+  zone = chooseZoneFromSet_(structuredZones, zoneTotals, zoneDestinations, destination, scu, 'EMPTY_FITS');
+  if (zone) return zone;
+
+  zone = chooseZoneFromSet_(structuredZones, zoneTotals, zoneDestinations, destination, scu, 'ANY_FITS');
+  if (zone) return zone;
+
+  zone = chooseZoneFromSet_(bulkZones, zoneTotals, zoneDestinations, destination, scu, 'SAME_DESTINATION_FITS');
+  if (zone) return zone;
+
+  zone = chooseZoneFromSet_(bulkZones, zoneTotals, zoneDestinations, destination, scu, 'EMPTY_FITS');
+  if (zone) return zone;
+
+  zone = chooseZoneFromSet_(bulkZones, zoneTotals, zoneDestinations, destination, scu, 'ANY_FITS');
+  if (zone) return zone;
+
+  zone = leastOverloadedZone_(structuredZones, zoneTotals, scu);
+  if (zone) return zone;
+
+  zone = leastOverloadedZone_(bulkZones, zoneTotals, scu);
+  if (zone) return zone;
+
+  if (layout.zones.length > 0) return layout.zones[0];
+
+  throw new Error('No cargo zones available for ship: ' + layout.ship);
+}
+
+function chooseZoneFromSet_(zones, zoneTotals, zoneDestinations, destination, scu, mode) {
+  for (const zone of zones) {
+    const current = zoneTotals.get(zone.zone) || 0;
+    const destSet = zoneDestinations.get(zone.zone);
+    const isEmpty = !destSet || destSet.size === 0;
+    const sameDestination = destSet && destSet.has(destination);
+    const fits = zoneFits_(zone, current, scu);
+
+    if (mode === 'SAME_DESTINATION_FITS' && sameDestination && fits) return zone;
+    if (mode === 'EMPTY_FITS' && isEmpty && fits) return zone;
+    if (mode === 'ANY_FITS' && fits) return zone;
+  }
+
+  return null;
+}
+
+function leastOverloadedZone_(zones, zoneTotals, scu) {
+  if (!zones || zones.length === 0) return null;
+
+  let bestZone = zones[0];
+  let bestOverage = Number.POSITIVE_INFINITY;
+
+  zones.forEach(zone => {
+    const current = zoneTotals.get(zone.zone) || 0;
+    const capacity = getCapacityValue_(zone);
+    let overage = 0;
+
+    if (Number.isFinite(Number(capacity)) && Number(capacity) > 0) {
+      overage = current + scu - Number(capacity);
+    }
+
+    if (overage < bestOverage) {
+      bestOverage = overage;
+      bestZone = zone;
+    }
+  });
+
+  return bestZone;
+}
+
+function zoneFits_(zone, current, scu) {
+  if (isBulkZone_(zone)) return true;
+
+  const capacity = getCapacityValue_(zone);
+
+  if (!Number.isFinite(Number(capacity)) || Number(capacity) <= 0) return true;
+
+  return current + scu <= Number(capacity);
+}
+
+function validateZoneLoad_(zone, runningTotal) {
+  const capacity = getCapacityValue_(zone);
+  const hasCapacity = Number.isFinite(Number(capacity)) && Number(capacity) > 0;
+
+  if (isBulkZone_(zone)) {
+    if (hasCapacity && runningTotal > Number(capacity)) {
+      return 'BULK OVER NOMINAL CAPACITY - MANUAL FIT VERIFY';
+    }
+
+    return 'BULK - MANUAL FIT VERIFY';
+  }
+
+  if (!hasCapacity) {
+    return 'NO CAPACITY SET';
+  }
+
+  return runningTotal <= Number(capacity) ? 'VALID' : 'OVER CAPACITY';
+}
+
+function findStopIndex_(routeStops, station, startIndex) {
+  const target = normalize_(station);
+
+  for (let i = Math.max(0, startIndex || 0); i < routeStops.length; i++) {
+    if (normalize_(routeStops[i]) === target) return i;
+  }
+
+  return -1;
+}
+
+function addZoneTotal_(map, zone, amount) {
+  const next = (map.get(zone) || 0) + Number(amount || 0);
+  map.set(zone, next);
+  return next;
+}
+
+function addZoneDestination_(map, zone, destination) {
+  if (!map.has(zone)) map.set(zone, new Set());
+  map.get(zone).add(normalize_(destination));
+}
+
+function palletize_(scu, maxPalletSize) {
+  let remaining = Number(scu);
+  const maxAllowed = Number(maxPalletSize);
+  const allowed = CONFIG.validPalletSizes.filter(size => size <= maxAllowed);
+  const pallets = [];
+
+  if (!Number.isFinite(remaining) || remaining <= 0) {
+    throw new Error('Invalid SCU amount for palletization: ' + scu);
+  }
+
+  if (!CONFIG.validPalletSizes.includes(maxAllowed)) {
+    throw new Error('Invalid max pallet size: ' + maxPalletSize);
+  }
+
+  while (remaining > 0) {
+    const next = allowed.find(size => size <= remaining);
+
+    if (!next) {
+      throw new Error('Unable to palletize ' + scu + ' with max pallet ' + maxPalletSize);
+    }
+
+    pallets.push(next);
+    remaining -= next;
+  }
+
+  return pallets;
+}
+
+/************************************************************
+ * WRITE OUTPUTS
+ ************************************************************/
+
+function readActiveContracts_() {
+  return getDataRows_(getSheet_(CONFIG.sheets.activeContracts)).map(row => ({
+    contractId: row[0],
+    lineId: row[1],
+    pickupStation: row[2],
+    deliveryStation: row[3],
+    commodity: row[4],
+    scu: Number(row[5]),
+    maxPalletSize: Number(row[6]),
+    status: row[7],
+    notes: row[8]
+  })).filter(c => c.pickupStation && c.deliveryStation && c.scu > 0);
+}
+
+function writeRouteOutput_(routeStops, contracts, zonePlan, origin) {
+  const sheet = getSheet_(CONFIG.sheets.routeOutput);
+  const displayIndexes = getDisplayStopIndexes_(routeStops, zonePlan, origin);
+  const layout = getShipLayout_(getCurrentShipName_());
+  const loadoutSnapshots = buildLoadoutSnapshots_(routeStops, zonePlan, layout);
+  const outputRows = [];
+
+  displayIndexes.forEach((routeIdx, displayIdx) => {
+    const station = routeStops[routeIdx];
+    const stopZoneRows = zonePlan.filter(z => Number(z.routeStop) === routeIdx + 1);
+    const unloadRows = stopZoneRows.filter(z => z.action === 'UNLOAD');
+    const loadRows = stopZoneRows.filter(z => z.action === 'LOAD');
+
+    const nextRouteIdx = displayIndexes[displayIdx + 1];
+    const nextStop = typeof nextRouteIdx === 'number' ? routeStops[nextRouteIdx] : '';
+
+    outputRows.push([
+      routeIdx + 1,
+      station,
+      determineStopAction_(routeStops, routeIdx, unloadRows, loadRows, origin),
+      formatZoneSummary_(unloadRows, 'UNLOAD', layout),
+      formatZoneSummary_(loadRows, 'LOAD', layout),
+      loadoutSnapshots.get(routeIdx + 1) || 'Empty',
+      nextStop,
+      ''
+    ]);
+  });
+
+  if (outputRows.length > 0) {
+    sheet.getRange(2, 1, outputRows.length, outputRows[0].length).setValues(outputRows);
+    sheet.getRange(2, 1, outputRows.length, outputRows[0].length).setWrap(true);
+  }
+}
+
+function writeCargoZones_(zonePlan) {
+  const sheet = getSheet_(CONFIG.sheets.cargoZones);
+  const rows = zonePlan.map(z => [
+    z.routeStop,
+    z.station,
+    z.action,
+    z.zone,
+    z.zoneType,
+    z.dimensions,
+    z.leftZone,
+    z.rightZone,
+    z.contractId,
+    z.commodity,
+    z.scu,
+    z.pallets,
+    z.destination,
+    z.runningTotal,
+    z.capacity,
+    z.validation,
+    z.notes
+  ]);
+
+  if (rows.length > 0) {
+    sheet.getRange(2, 1, rows.length, rows[0].length).setValues(rows);
+    sheet.getRange(2, 1, rows.length, rows[0].length).setWrap(true);
+  }
+}
+
+function writeCrewChecklist_(routeStops, zonePlan, origin) {
+  const sheet = getSheet_(CONFIG.sheets.crewChecklist);
+  const rows = [];
+  const displayIndexes = getDisplayStopIndexes_(routeStops, zonePlan, origin);
+
+  displayIndexes.forEach(routeIdx => {
+    const station = routeStops[routeIdx];
+    const stopZoneRows = zonePlan.filter(z => Number(z.routeStop) === routeIdx + 1);
+    const stopAction = routeIdx === 0 ? 'DEPART' : 'ARRIVAL';
+    const arrivalTask = routeIdx === 0 ? 'Depart ' + station : 'Arrive at ' + station;
+
+    rows.push([false, routeIdx + 1, station, stopAction, '', arrivalTask, '', '']);
+
+    stopZoneRows.forEach(z => {
+      const taskText = z.action + ' ' + z.zone + ': ' + z.scu + ' SCU ' + z.commodity +
+        (z.action === 'LOAD' ? ' → ' + z.destination : '') +
+        ' | pallets ' + z.pallets;
+
+      rows.push([
+        false,
+        z.routeStop,
+        z.station,
+        z.action,
+        z.zone,
+        taskText,
+        z.contractId,
+        [z.validation, z.notes].filter(Boolean).join(' | ')
+      ]);
+    });
+  });
+
+  if (rows.length > 0) {
+    sheet.getRange(2, 1, rows.length, rows[0].length).setValues(rows);
+    sheet.getRange(2, 1, rows.length, 1).insertCheckboxes();
+    sheet.getRange(2, 1, rows.length, rows[0].length).setWrap(true);
+  }
+}
+
+function getDisplayStopIndexes_(routeStops, zonePlan, origin) {
+  const indexes = [];
+
+  routeStops.forEach((station, idx) => {
+    if (isUsefulRouteStop_(routeStops, idx, zonePlan, origin)) {
+      indexes.push(idx);
+    }
+  });
+
+  return indexes;
+}
+
+function isUsefulRouteStop_(routeStops, idx, zonePlan, origin) {
+  const hasCargoAction = zonePlan.some(z => Number(z.routeStop) === idx + 1);
+
+  if (idx === 0) return true;
+  if (hasCargoAction) return true;
+
+  const isFinalRouteStop = idx === routeStops.length - 1;
+  const isOrigin = normalize_(routeStops[idx]) === normalize_(origin);
+  const requireFinalReturn = getBooleanSetting_('Require Final Return', false);
+
+  return isFinalRouteStop && isOrigin && requireFinalReturn;
+}
+
+function determineStopAction_(routeStops, idx, unloadRows, loadRows, origin) {
+  const station = routeStops[idx];
+  const isFinalRouteStop = idx === routeStops.length - 1;
+  const isOrigin = normalize_(station) === normalize_(origin);
+
+  if (idx === 0 && unloadRows.length === 0 && loadRows.length === 0) return 'Depart';
+  if (unloadRows.length > 0 && isFinalRouteStop && isOrigin) return 'Final unload';
+  if (unloadRows.length > 0 && loadRows.length > 0) return 'Arrive';
+  if (unloadRows.length > 0) return 'Unload';
+  if (loadRows.length > 0) return 'Load';
+
+  return 'Arrive';
+}
+
+function formatZoneSummary_(zoneRows, action, layout) {
+  if (!zoneRows || zoneRows.length === 0) return '';
+
+  const grouped = new Map();
+
+  zoneRows.forEach(z => {
+    const key = [
+      z.zone,
+      z.destination,
+      z.commodity
+    ].join('|');
+
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        zone: z.zone,
+        destination: z.destination,
+        commodity: z.commodity,
+        scu: 0,
+        contracts: []
+      });
+    }
+
+    const group = grouped.get(key);
+    group.scu += Number(z.scu || 0);
+    group.contracts.push(z.contractId);
+  });
+
+  return Array.from(grouped.values())
+    .sort((a, b) => {
+      return getZoneSortValue_(a.zone, layout) - getZoneSortValue_(b.zone, layout) ||
+        String(a.destination).localeCompare(String(b.destination)) ||
+        String(a.commodity).localeCompare(String(b.commodity));
+    })
+    .map(g => {
+      const base = g.zone + ' → ' + g.scu + ' SCU ' + g.commodity;
+      const destination = action === 'LOAD' ? ' → ' + g.destination : '';
+      const contracts = ' | C' + uniqueValues_(g.contracts).join(', C');
+
+      return base + destination + contracts;
+    })
+    .join('\n');
+}
+
+function buildLoadoutSnapshots_(routeStops, zonePlan, layout) {
+  const cargo = new Map();
+  const snapshots = new Map();
+
+  routeStops.forEach((station, idx) => {
+    const routeStopNumber = idx + 1;
+    const stopRows = zonePlan.filter(z => Number(z.routeStop) === routeStopNumber);
+
+    stopRows
+      .filter(z => z.action === 'UNLOAD')
+      .sort((a, b) => getZoneSortValue_(a.zone, layout) - getZoneSortValue_(b.zone, layout))
+      .forEach(z => removeCargoItem_(cargo, z));
+
+    stopRows
+      .filter(z => z.action === 'LOAD')
+      .sort((a, b) => getZoneSortValue_(a.zone, layout) - getZoneSortValue_(b.zone, layout))
+      .forEach(z => addCargoItem_(cargo, z));
+
+    snapshots.set(routeStopNumber, formatCargoLoadout_(cargo, layout));
+  });
+
+  return snapshots;
+}
+
+function addCargoItem_(cargoMap, row) {
+  cargoMap.set(cargoItemKey_(row), {
+    zone: row.zone,
+    contractId: row.contractId,
+    lineId: row.lineId,
+    commodity: row.commodity,
+    scu: Number(row.scu || 0),
+    destination: row.destination
+  });
+}
+
+function removeCargoItem_(cargoMap, row) {
+  const key = cargoItemKey_(row);
+
+  if (cargoMap.has(key)) {
+    cargoMap.delete(key);
+    return;
+  }
+
+  // Fallback removal for duplicate or legacy rows.
+  for (const [candidateKey, item] of cargoMap.entries()) {
+    if (
+      normalize_(item.zone) === normalize_(row.zone) &&
+      String(item.contractId) === String(row.contractId) &&
+      normalize_(item.commodity) === normalize_(row.commodity) &&
+      normalize_(item.destination) === normalize_(row.destination) &&
+      Number(item.scu) === Number(row.scu)
+    ) {
+      cargoMap.delete(candidateKey);
+      return;
+    }
+  }
+}
+
+function cargoItemKey_(row) {
+  return [
+    row.lineId || '',
+    row.contractId || '',
+    row.zone || '',
+    row.commodity || '',
+    row.destination || '',
+    row.scu || ''
+  ].join('|');
+}
+
+function formatCargoLoadout_(cargoMap, layout) {
+  if (!cargoMap || cargoMap.size === 0) return 'Empty';
+
+  const grouped = new Map();
+
+  Array.from(cargoMap.values()).forEach(item => {
+    const key = [
+      item.zone,
+      item.destination,
+      item.commodity
+    ].join('|');
+
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        zone: item.zone,
+        destination: item.destination,
+        commodity: item.commodity,
+        scu: 0
+      });
+    }
+
+    grouped.get(key).scu += Number(item.scu || 0);
+  });
+
+  return Array.from(grouped.values())
+    .sort((a, b) => {
+      return getZoneSortValue_(a.zone, layout) - getZoneSortValue_(b.zone, layout) ||
+        String(a.destination).localeCompare(String(b.destination)) ||
+        String(a.commodity).localeCompare(String(b.commodity));
+    })
+    .map(g => g.zone + ': ' + g.scu + ' SCU ' + g.commodity + ' → ' + g.destination)
+    .join('\n');
+}
+
+/************************************************************
+ * SHIP LAYOUT / TOPOLOGY
+ ************************************************************/
+
+function getCurrentShipName_() {
+  return canonicalShipName_(getSetting_('Ship') || CONFIG.defaultShip);
+}
+
+function canonicalShipName_(shipName) {
+  const normalized = normalize_(shipName);
+
+  if (
+    normalized === 'c2' ||
+    normalized === 'c2 hercules' ||
+    normalized === 'crusader c2' ||
+    normalized === 'crusader c2 hercules' ||
+    normalized === 'hercules c2'
+  ) {
+    return 'C2 Hercules';
+  }
+
+  return shipName || CONFIG.defaultShip;
+}
+
+function getShipLayout_(shipName) {
+  const sheet = getSheet_(CONFIG.sheets.shipLayouts);
+  const canonicalShip = canonicalShipName_(shipName);
+
+  let rows = getDataRows_(sheet)
+    .map(coerceShipLayoutRow_)
+    .filter(row => row[0] && row[1]);
+
+  let shipRows = rows.filter(row => normalize_(row[0]) === normalize_(canonicalShip));
+
+  if (shipRows.length === 0 && normalize_(canonicalShip) === normalize_(CONFIG.defaultShip)) {
+    repairShipLayouts_();
+
+    rows = getDataRows_(sheet)
+      .map(coerceShipLayoutRow_)
+      .filter(row => row[0] && row[1]);
+
+    shipRows = rows.filter(row => normalize_(row[0]) === normalize_(canonicalShip));
+  }
+
+  if (shipRows.length === 0) {
+    throw new Error('No ship layout rows found for ship: ' + canonicalShip);
+  }
+
+  const zones = shipRows
+    .map(rowToZoneObject_)
+    .filter(z => z.zone)
+    .sort(zoneLoadOrderSort_);
+
+  const zoneMap = new Map();
+  zones.forEach(zone => zoneMap.set(normalize_(zone.zone), zone));
+
+  return {
+    ship: canonicalShip,
+    zones: zones,
+    zoneMap: zoneMap
+  };
+}
+
+function rowToZoneObject_(row) {
+  const width = parseNumberOrBlank_(row[3]);
+  const length = parseNumberOrBlank_(row[4]);
+  const height = parseNumberOrBlank_(row[5]);
+  let capacity = parseNumberOrBlank_(row[10]);
+
+  if (!Number.isFinite(Number(capacity)) && Number.isFinite(Number(width)) && Number.isFinite(Number(length)) && Number.isFinite(Number(height))) {
+    capacity = Number(width) * Number(length) * Number(height);
+  }
+
+  return {
+    ship: row[0],
+    zone: row[1],
+    zoneType: normalizeZoneType_(row[2]),
+    width: width,
+    length: length,
+    height: height,
+    leftZone: String(row[6] || '').trim(),
+    rightZone: String(row[7] || '').trim(),
+    loadOrder: parseNumberOrDefault_(row[8], 9999),
+    unloadPriority: parseNumberOrDefault_(row[9], 9999),
+    capacity: capacity,
+    max8Positions: parseNumberOrBlank_(row[11]),
+    notes: String(row[12] || '').trim()
+  };
+}
+
+function repairShipLayouts_() {
+  const sheet = getSheet_(CONFIG.sheets.shipLayouts);
+
+  const existingRows = getDataRows_(sheet)
+    .map(coerceShipLayoutRow_)
+    .filter(row => row[0] && row[1]);
+
+  const defaultRows = defaultC2LayoutRows_();
+  const outputRows = defaultRows.slice();
+  const usedKeys = new Set(outputRows.map(row => shipZoneKey_(row[0], row[1])));
+
+  existingRows.forEach(row => {
+    const ship = String(row[0] || '');
+    const zone = String(row[1] || '');
+
+    // Remove deprecated accidental C2 R5 row.
+    if (normalize_(ship) === normalize_('C2 Hercules') && normalize_(zone) === normalize_('R5')) {
+      return;
+    }
+
+    const key = shipZoneKey_(ship, zone);
+
+    if (usedKeys.has(key)) return;
+
+    outputRows.push(row);
+    usedKeys.add(key);
+  });
+
+  clearDataBelowHeader_(sheet);
+
+  if (outputRows.length > 0) {
+    sheet.getRange(2, 1, outputRows.length, CONFIG.shipLayoutHeaders.length).setValues(outputRows);
+  }
+}
+
+function coerceShipLayoutRow_(row) {
+  const ship = row[0];
+  const zone = row[1];
+  const thirdColumn = String(row[2] || '').trim();
+  const zoneType = normalizeZoneType_(thirdColumn);
+
+  // New topology schema:
+  // Ship | Zone | Zone Type | Width | Length | Height | Left | Right | Load | Unload | Capacity | Max8 | Notes
+  if (zoneType === 'STRUCTURED' || zoneType === 'BULK') {
+    return [
+      ship,
+      zone,
+      zoneType,
+      row[3],
+      row[4],
+      row[5],
+      row[6],
+      row[7],
+      row[8],
+      row[9],
+      row[10],
+      row[11],
+      row[12]
+    ];
+  }
+
+  // Legacy schema:
+  // Ship | Zone | Section | Row Capacity SCU | Max 8-SCU Positions | Unload Priority | Notes
+  const legacySection = thirdColumn;
+  const legacyCapacity = row[3];
+  const legacyMax8 = row[4];
+  const legacyUnloadPriority = row[5];
+  const legacyNotes = row[6];
+
+  const inferredType = normalize_(zone).indexOf('bulk') === 0 || normalize_(legacySection).indexOf('bulk') >= 0
+    ? 'BULK'
+    : 'STRUCTURED';
+
+  return [
+    ship,
+    zone,
+    inferredType,
+    '',
+    '',
+    '',
+    '',
+    '',
+    legacyUnloadPriority || 9999,
+    legacyUnloadPriority || 9999,
+    legacyCapacity,
+    legacyMax8,
+    legacyNotes
+  ];
+}
+
+function defaultC2LayoutRows_() {
+  return [
+    ['C2 Hercules', 'F1', 'STRUCTURED', 2, 9, 4, '', 'F2', 1, 1, 72, 9, 'Forward structured zone. Viewed from aft looking forward; left edge.'],
+    ['C2 Hercules', 'F2', 'STRUCTURED', 2, 9, 4, 'F1', 'F3', 2, 2, 72, 9, 'Forward structured zone. F1 left, F3 right.'],
+    ['C2 Hercules', 'F3', 'STRUCTURED', 2, 9, 4, 'F2', '', 3, 3, 72, 9, 'Forward structured zone. Viewed from aft looking forward; right edge.'],
+
+    ['C2 Hercules', 'R1', 'STRUCTURED', 2, 15, 4, '', 'R2', 4, 4, 120, 15, 'Rear structured zone. Viewed from aft looking forward; left edge.'],
+    ['C2 Hercules', 'R2', 'STRUCTURED', 2, 15, 4, 'R1', 'R3', 5, 5, 120, 15, 'Rear structured zone. R1 left, R3 right.'],
+    ['C2 Hercules', 'R3', 'STRUCTURED', 2, 15, 4, 'R2', 'R4', 6, 6, 120, 15, 'Rear structured zone. R2 left, R4 right.'],
+    ['C2 Hercules', 'R4', 'STRUCTURED', 2, 15, 4, 'R3', '', 7, 7, 120, 15, 'Rear structured zone. Viewed from aft looking forward; right edge.']
+  ];
+}
+
+function isBulkZone_(zone) {
+  return normalizeZoneType_(zone.zoneType) === 'BULK';
+}
+
+function normalizeZoneType_(value) {
+  const normalized = normalize_(value);
+
+  if (normalized === 'bulk') return 'BULK';
+  if (normalized === 'structured') return 'STRUCTURED';
+  if (normalized === 'structure') return 'STRUCTURED';
+
+  return String(value || '').trim().toUpperCase() || 'STRUCTURED';
+}
+
+function getCapacityValue_(zone) {
+  const capacity = Number(zone.capacity);
+
+  if (Number.isFinite(capacity) && capacity > 0) return capacity;
+
+  if (Number.isFinite(Number(zone.width)) && Number.isFinite(Number(zone.length)) && Number.isFinite(Number(zone.height))) {
+    return Number(zone.width) * Number(zone.length) * Number(zone.height);
+  }
+
+  return '';
+}
+
+function formatDimensions_(zone) {
+  if (Number.isFinite(Number(zone.width)) && Number.isFinite(Number(zone.length)) && Number.isFinite(Number(zone.height))) {
+    return zone.width + 'x' + zone.length + 'x' + zone.height;
+  }
+
+  return '';
+}
+
+function zoneNotes_(zone) {
+  const notes = [];
+
+  if (isBulkZone_(zone)) {
+    notes.push('Bulk zone usage assumes manual fit verification by pilot.');
+  }
+
+  if (zone.notes) notes.push(zone.notes);
+
+  return notes.join(' ');
+}
+
+function zoneLoadOrderSort_(a, b) {
+  return Number(a.loadOrder || 9999) - Number(b.loadOrder || 9999) ||
+    String(a.zone).localeCompare(String(b.zone));
+}
+
+function getZoneSortValue_(zoneId, layout) {
+  if (!layout || !layout.zoneMap) return 9999;
+
+  const found = layout.zoneMap.get(normalize_(zoneId));
+
+  return found ? Number(found.loadOrder || 9999) : 9999;
+}
+
+function shipZoneKey_(ship, zone) {
+  return normalize_(ship) + '|' + normalize_(zone);
+}
+
+/************************************************************
+ * PDF EXPORT
+ ************************************************************/
+
+function exportCrewPdf(options) {
+  options = options || {};
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const exportSheet = getSheet_(CONFIG.sheets.crewChecklist);
+  const spreadsheetId = ss.getId();
+  const sheetId = exportSheet.getSheetId();
+
+  const url = 'https://docs.google.com/spreadsheets/d/' + spreadsheetId + '/export?' +
+    'format=pdf' +
+    '&gid=' + sheetId +
+    '&size=letter' +
+    '&portrait=true' +
+    '&fitw=true' +
+    '&sheetnames=false' +
+    '&printtitle=false' +
+    '&pagenumbers=true' +
+    '&gridlines=true' +
+    '&fzr=true';
+
+  const token = ScriptApp.getOAuthToken();
+
+  const response = UrlFetchApp.fetch(url, {
+    headers: {
+      Authorization: 'Bearer ' + token
+    }
+  });
+
+  const blob = response.getBlob().setName('Star_Citizen_Crew_Checklist_' + formatDateForFile_(new Date()) + '.pdf');
+  const file = DriveApp.createFile(blob);
+
+  const result = {
+    name: file.getName(),
+    url: file.getUrl(),
+    id: file.getId()
+  };
+
+  if (!options.silent) {
+    safeAlert_('PDF created in Google Drive:\n' + file.getUrl());
+  }
+
+  return result;
+}
+
+/************************************************************
+ * SEED DATA
+ ************************************************************/
+
+function seedStations_() {
+  const sheet = getSheet_(CONFIG.sheets.stations);
+
+  if (sheet.getLastRow() > 1) return;
+
+  const rows = [
+    ['Seraphim Station', 'Stanton', 'Crusader', 'Orbital Station', 'Seraphim', 'Crusader', 10, true],
+    ['Ambitious Dream', 'Stanton', 'CRU-L1', 'Lagrange Station', 'CRU-L1 Ambitious Dream Station, Ambitious', 'Crusader Lagrange', 20, true],
+    ['Beautiful Glen', 'Stanton', 'CRU-L5', 'Lagrange Station', 'CRU-L5 Beautiful Glen Station, Beautiful Glenn', 'Crusader Lagrange', 30, true],
+    ['Shallow Fields', 'Stanton', 'Crusader Lagrange', 'Lagrange Station', 'Shallow Field, Shallow Fields Station', 'Crusader Lagrange', 40, true],
+    ['Shallow Frontier', 'Stanton', 'Lagrange', 'Lagrange Station', 'Shallow Frontier Station', 'Lagrange', 50, true],
+    ['Yellow Core', 'Stanton', 'Lagrange', 'Lagrange Station', 'Yellow Core Station', 'Lagrange', 60, true],
+    ['Everus Harbor', 'Stanton', 'Hurston', 'Orbital Station', 'Everest Harbor, Evers Harbor, Evers, Everus', 'Hurston', 70, true],
+    ['Baijini Point', 'Stanton', 'ArcCorp', 'Orbital Station', 'Bajini, Bageeni, Begini, Magini, Vijini, Baijini', 'ArcCorp', 80, true],
+    ['Wide Forest', 'Stanton', 'ARC-L1', 'Lagrange Station', 'ARC-L1 Wide Forest Station, Wild Forest', 'ArcCorp Lagrange', 90, true],
+    ['Lively Pathway', 'Stanton', 'ARC-L2', 'Lagrange Station', 'ARC-L2 Lively Pathway Station', 'ArcCorp Lagrange', 100, true],
+    ['Port Tressler', 'Stanton', 'microTech', 'Orbital Station', 'Tressler, Point Tressler', 'microTech', 110, true],
+    ['Long Forest', 'Stanton', 'MIC-L2', 'Lagrange Station', 'MIC-L2 Long Forest Station, Long Force', 'microTech Lagrange', 120, true]
+  ];
+
+  sheet.getRange(2, 1, rows.length, rows[0].length).setValues(rows);
+}
+
+function seedCommodities_() {
+  const sheet = getSheet_(CONFIG.sheets.commodities);
+
+  if (sheet.getLastRow() > 1) return;
+
+  const rows = [
+    ['Processed Food', 'Consumer', 'Legal', 'Food', true],
+    ['Pressurized Ice', 'Industrial', 'Legal', 'Ice', true],
+    ['Titanium Ore', 'Ore', 'Legal', 'Titanium', true],
+    ['Titanium', 'Metal', 'Legal', 'Titanium Ore', true],
+    ['Aluminum', 'Metal', 'Legal', 'Aluminium, Alum', true],
+    ['Tungsten', 'Metal', 'Legal', 'Tung', true],
+    ['Corundum', 'Mineral', 'Legal', 'Curandum, Corandum', true],
+    ['Quartz', 'Mineral', 'Legal', '', true],
+    ['Scrap', 'Industrial', 'Legal', '', true],
+    ['Waste', 'Industrial', 'Legal', '', true],
+    ['Cargo', 'Generic', 'Legal', 'Generic Cargo', true]
+  ];
+
+  sheet.getRange(2, 1, rows.length, rows[0].length).setValues(rows);
+}
+
+function seedSettings_() {
+  const sheet = getSheet_(CONFIG.sheets.settings);
+
+  if (sheet.getLastRow() > 1) return;
+
+  const rows = [
+    ['Origin Station', 'Seraphim Station', 'Default route start station'],
+    ['Ship', CONFIG.defaultShip, 'Default ship layout'],
+    ['Require Final Return', 'FALSE', 'TRUE adds final return to origin even if no cargo unload occurs there'],
+    ['Valid Pallet Sizes', CONFIG.validPalletSizes.join(','), 'Allowed SCU pallet sizes']
+  ];
+
+  sheet.getRange(2, 1, rows.length, rows[0].length).setValues(rows);
+}
+
+function repairSettings_() {
+  repairSetting_('Origin Station', getSetting_('Origin Station') || 'Seraphim Station', 'Default route start station');
+  repairSetting_('Ship', getSetting_('Ship') || CONFIG.defaultShip, 'Default ship layout');
+  repairSetting_('Require Final Return', getSetting_('Require Final Return') || 'FALSE', 'TRUE adds final return to origin even if no cargo unload occurs there');
+  repairSetting_('Valid Pallet Sizes', CONFIG.validPalletSizes.join(','), 'Allowed SCU pallet sizes');
+}
+
+function repairSetting_(settingName, value, notes) {
+  const sheet = getSheet_(CONFIG.sheets.settings);
+  const rows = getDataRows_(sheet);
+  const normalized = normalize_(settingName);
+
+  for (let i = 0; i < rows.length; i++) {
+    if (normalize_(rows[i][0]) === normalized) {
+      sheet.getRange(i + 2, 2, 1, 2).setValues([[value, notes]]);
+      return;
+    }
+  }
+
+  sheet.appendRow([settingName, value, notes]);
+}
+
+/************************************************************
+ * FORMATTING / UTILITIES
+ ************************************************************/
+
+function applyFormattingAndValidation_() {
+  Object.values(CONFIG.sheets).forEach(name => {
+    const sheet = getSheet_(name);
+
+    sheet.setFrozenRows(1);
+    sheet.getRange(1, 1, 1, sheet.getLastColumn()).setFontWeight('bold');
+    sheet.autoResizeColumns(1, sheet.getLastColumn());
+  });
+
+  const active = getSheet_(CONFIG.sheets.activeContracts);
+
+  const maxPalletRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(CONFIG.validPalletSizes.map(String), true)
+    .setAllowInvalid(false)
+    .build();
+
+  active.getRange('G2:G1000').setDataValidation(maxPalletRule);
+
+  const statusRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(['Pending', 'Verified', 'Loaded', 'Delivered', 'Skipped', 'Error'], true)
+    .setAllowInvalid(false)
+    .build();
+
+  active.getRange('H2:H1000').setDataValidation(statusRule);
+
+  const shipLayouts = getSheet_(CONFIG.sheets.shipLayouts);
+
+  const zoneTypeRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(['STRUCTURED', 'BULK'], true)
+    .setAllowInvalid(false)
+    .build();
+
+  shipLayouts.getRange('C2:C1000').setDataValidation(zoneTypeRule);
+}
+
+function createOrResetHeader_(ss, name, headers) {
+  let sheet = ss.getSheetByName(name);
+
+  if (!sheet) sheet = ss.insertSheet(name);
+
+  if (sheet.getMaxColumns() < headers.length) {
+    sheet.insertColumnsAfter(sheet.getMaxColumns(), headers.length - sheet.getMaxColumns());
+  }
+
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+
+  if (sheet.getLastColumn() > headers.length) {
+    sheet.getRange(1, headers.length + 1, 1, sheet.getLastColumn() - headers.length).clearContent();
+  }
+}
+
+function getSheet_(name) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
+
+  if (!sheet) {
+    throw new Error('Missing sheet: ' + name + '. Run setupCargoPlanner().');
+  }
+
+  return sheet;
+}
+
+function clearDataBelowHeader_(sheet) {
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+
+  if (lastRow > 1) {
+    sheet.getRange(2, 1, lastRow - 1, lastCol).clearContent();
+  }
+}
+
+function clearGeneratedOutputs_() {
+  [
+    CONFIG.sheets.cargoZones,
+    CONFIG.sheets.routeOutput,
+    CONFIG.sheets.crewChecklist
+  ].forEach(name => {
+    clearDataBelowHeader_(getSheet_(name));
+  });
+}
+
+function getDataRows_(sheet) {
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+
+  if (lastRow <= 1) return [];
+
+  return sheet.getRange(2, 1, lastRow - 1, lastCol).getValues()
+    .filter(row => row.some(cell => cell !== '' && cell !== null));
+}
+
+function getLookupSet_(sheetName, primaryColumnIndex) {
+  const rows = getDataRows_(getSheet_(sheetName));
+  const aliasColumnIndex = getAliasColumnIndex_(sheetName);
+  const set = new Set();
+
+  rows.forEach(row => {
+    const primary = row[primaryColumnIndex - 1];
+
+    if (primary) set.add(normalize_(primary));
+
+    if (aliasColumnIndex > 0) {
+      const aliases = row[aliasColumnIndex - 1];
+
+      if (aliases) {
+        String(aliases).split(',').forEach(alias => set.add(normalize_(alias)));
+      }
+    }
+  });
+
+  return set;
+}
+
+function getLookupMap_(sheetName, primaryColumnIndex) {
+  const rows = getDataRows_(getSheet_(sheetName));
+  const aliasColumnIndex = getAliasColumnIndex_(sheetName);
+  const map = new Map();
+
+  rows.forEach(row => {
+    const primary = row[primaryColumnIndex - 1];
+
+    if (primary) map.set(normalize_(primary), primary);
+
+    if (aliasColumnIndex > 0) {
+      const aliases = row[aliasColumnIndex - 1];
+
+      if (aliases) {
+        String(aliases).split(',').forEach(alias => map.set(normalize_(alias), primary));
+      }
+    }
+  });
+
+  return map;
+}
+
+function getAliasColumnIndex_(sheetName) {
+  if (sheetName === CONFIG.sheets.stations) return 5;
+  if (sheetName === CONFIG.sheets.commodities) return 4;
+
+  return 0;
+}
+
+function getStationSortOrder_() {
+  const rows = getDataRows_(getSheet_(CONFIG.sheets.stations));
+  const map = new Map();
+
+  rows.forEach(row => {
+    const name = row[0];
+    const aliases = row[4];
+    const order = Number(row[6]) || 9999;
+
+    if (name) map.set(normalize_(name), order);
+
+    if (aliases) {
+      String(aliases).split(',').forEach(alias => map.set(normalize_(alias), order));
+    }
+  });
+
+  return map;
+}
+
+function canonicalStationName_(value) {
+  const map = getLookupMap_(CONFIG.sheets.stations, 1);
+
+  return map.get(normalize_(value)) || value;
+}
+
+function canonicalCommodityName_(value) {
+  const map = getLookupMap_(CONFIG.sheets.commodities, 1);
+
+  return map.get(normalize_(value)) || value;
+}
+
+function getSetting_(settingName) {
+  const rows = getDataRows_(getSheet_(CONFIG.sheets.settings));
+  const found = rows.find(row => normalize_(row[0]) === normalize_(settingName));
+
+  return found ? found[1] : '';
+}
+
+function getBooleanSetting_(settingName, defaultValue) {
+  const value = getSetting_(settingName);
+
+  if (value === '' || value === null || typeof value === 'undefined') {
+    return defaultValue;
+  }
+
+  const normalized = normalize_(value);
+
+  if (['true', 'yes', 'y', '1', 'required', 'require'].includes(normalized)) return true;
+  if (['false', 'no', 'n', '0', 'optional'].includes(normalized)) return false;
+
+  return defaultValue;
+}
+
+function normalize_(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function actionSort_(action) {
+  if (action === 'UNLOAD') return 1;
+  if (action === 'LOAD') return 2;
+
+  return 3;
+}
+
+function formatDateForFile_(date) {
+  return Utilities.formatDate(date, Session.getScriptTimeZone(), 'yyyyMMdd_HHmmss');
+}
+
+function safeAlert_(message) {
+  try {
+    SpreadsheetApp.getUi().alert(message);
+  } catch (e) {
+    Logger.log(message);
+  }
+}
+
+function parseNumberOrBlank_(value) {
+  const n = Number(value);
+
+  return Number.isFinite(n) ? n : '';
+}
+
+function parseNumberOrDefault_(value, defaultValue) {
+  const n = Number(value);
+
+  return Number.isFinite(n) ? n : defaultValue;
+}
+
+function uniqueStations_(stations) {
+  const seen = new Set();
+  const output = [];
+
+  stations.forEach(station => {
+    const key = normalize_(station);
+
+    if (!key || seen.has(key)) return;
+
+    seen.add(key);
+    output.push(station);
+  });
+
+  return output;
+}
+
+function uniqueValues_(values) {
+  const seen = new Set();
+  const output = [];
+
+  values.forEach(value => {
+    const key = String(value);
+
+    if (seen.has(key)) return;
+
+    seen.add(key);
+    output.push(value);
+  });
+
+  return output;
+}
+
+function stationCompare_(a, b, stationOrder) {
+  const ao = stationOrder.get(normalize_(a)) || 9999;
+  const bo = stationOrder.get(normalize_(b)) || 9999;
+
+  return ao - bo || String(a).localeCompare(String(b));
+}
+
+function pushRouteStop_(route, station) {
+  if (!station) return;
+
+  const last = route.length > 0 ? route[route.length - 1] : '';
+
+  if (normalize_(last) === normalize_(station)) return;
+
+  route.push(station);
+}
+
+function contractKey_(contract) {
+  return [
+    contract.lineId,
+    contract.contractId,
+    contract.pickupStation,
+    contract.deliveryStation,
+    contract.commodity,
+    contract.scu
+  ].join('|');
+}
+
+/************************************************************
+ * API READBACK HELPERS
+ ************************************************************/
+
+function getActiveContracts_() {
+  return readActiveContracts_().map(c => ({
+    contractId: c.contractId,
+    lineId: c.lineId,
+    pickupStation: c.pickupStation,
+    deliveryStation: c.deliveryStation,
+    commodity: c.commodity,
+    scu: c.scu,
+    maxPalletSize: c.maxPalletSize,
+    status: c.status,
+    notes: c.notes
+  }));
+}
+
+function getRouteOutput_() {
+  return sheetToObjects_(CONFIG.sheets.routeOutput);
+}
+
+function getCargoZones_() {
+  return sheetToObjects_(CONFIG.sheets.cargoZones);
+}
+
+function getCrewChecklist_() {
+  return sheetToObjects_(CONFIG.sheets.crewChecklist);
+}
+
+function getValidationLog_() {
+  return sheetToObjects_(CONFIG.sheets.validationLog);
+}
+
+function sheetToObjects_(sheetName) {
+  const sheet = getSheet_(sheetName);
+  const values = sheet.getDataRange().getValues();
+
+  if (values.length < 2) return [];
+
+  const headers = values[0];
+
+  return values.slice(1)
+    .filter(row => row.some(cell => cell !== '' && cell !== null))
+    .map(row => {
+      const obj = {};
+
+      headers.forEach((header, i) => {
+        if (header) obj[header] = row[i];
+      });
+
+      return obj;
+    });
+}
