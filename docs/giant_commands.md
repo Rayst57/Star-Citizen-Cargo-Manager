@@ -14,18 +14,6 @@ command.
 
 ---
 
-## Trip / Session
-
-| Intent | Example phrasing | Tool call |
-|---|---|---|
-| Start a shared trip | "Hey Giant, start a trip" | `start_trip` |
-| Join a shared trip | "Hey Giant, join trip Golf Romeo X-ray seven kilo nine" | `join_trip` |
-| Read out invite code | "Hey Giant, what's my code?" | `get_invite_code` |
-| List crew | "Hey Giant, who's on the crew?" | `list_crew` |
-| Promote crew member | "Hey Giant, give Pyro edit rights" *(host only)* | `promote_member` |
-| End the trip | "Hey Giant, end the trip" *(host only)* | `end_trip` |
-| Leave the trip | "Hey Giant, drop off the crew" | `leave_trip` |
-
 ## Contract Management
 
 | Intent | Example phrasing | Tool call |

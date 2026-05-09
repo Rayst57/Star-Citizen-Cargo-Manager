@@ -1,8 +1,8 @@
 # Manual Entry
 
 Voice is one of two input paths. Manual entry through the UI is fully
-supported and produces the **same data structures** as voice — they're
-interchangeable, and a single trip can mix both.
+supported and produces the **same data structures** as voice — they are
+interchangeable within a single local session.
 
 ---
 
@@ -66,19 +66,17 @@ overwrite a manual edit unless the user says "re-plan everything".
 Every voice command has a UI equivalent. Every UI action emits the
 same internal event the voice handler would emit, so:
 
-- The chat transcript shows manual edits too (e.g.
-  *"User added contract: Seraphim → Ambitious Dream, 5 SCU Processed Food"*)
-- Crew watching a host's manual edits see the same chat events stream
-  in
-- Voice and manual can be used interchangeably mid-session
+- The "Giant" Loadmaster chat transcript shows manual edits too (e.g.
+  *"Contract added: Seraphim → Ambitious Dream, 5 SCU Processed Food"*)
+- Voice and manual can be used interchangeably at any point
 
 ---
 
-## Solo-mode behavior
+## Local persistence
 
-In solo mode (no trip), all manual entries persist locally to a
-recent-sessions list. Reopening the app shows the last unfinished trip
-with a "Resume" prompt.
+All entries are saved automatically to a local SQLite database. Closing
+and reopening the app shows the last unfinished plan with a "Resume"
+prompt.
 
 ---
 
