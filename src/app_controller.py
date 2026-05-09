@@ -562,8 +562,10 @@ class AppController(QObject):
             for size in sizes:
                 box = boxes.get(size, {"width": 1, "length": 1, "height": 1})
                 w, l, h = box["width"], box["length"], box["height"]
-                # Auto-rotate horizontally if the pallet is too wide for
-                # the zone (scu_boxes.json marks 2/16/24/32 as rotatable).
+                # The 16/24/32 SCU pallets are stored in scu_boxes.json
+                # with their natural orientation (long axis = length axis,
+                # along the bay's length). The rotatable flag exists for
+                # future ships whose bays have a different aspect ratio.
                 if w > zw and box.get("rotatable") and l <= zw:
                     w, l = l, w
                 placed = _place_in_grid(grid, w, l, h, zw, zl, zh)
