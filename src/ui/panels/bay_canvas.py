@@ -68,10 +68,10 @@ class BayCanvasViewport(QWidget):
     # ── geometry ────────────────────────────────────────────────────────
 
     def _compute_layout(self) -> None:
-        margin = 24
+        margin = 16
         gap = 30
-        label_height = 26
-        ramp_height = 18
+        label_height = 30
+        ramp_height = 22
 
         avail_w = max(0, self.width() - 2 * margin - gap)
         avail_h = max(0, self.height() - label_height - ramp_height - 2 * margin)
@@ -87,7 +87,7 @@ class BayCanvasViewport(QWidget):
         x_origin = (self.width() - used_w) // 2
 
         used_h = max_l_cells * self._cell_px + label_height + ramp_height
-        y_origin = (self.height() - used_h) // 2 + label_height
+        y_origin = max(label_height, (self.height() - used_h) // 2 + label_height)
 
         self._fwd_origin = QPoint(x_origin, y_origin)
         self._rear_origin = QPoint(
@@ -209,17 +209,18 @@ class BayCanvasViewport(QWidget):
 
     def _draw_zone_labels(self, p: QPainter) -> None:
         cp = self._cell_px
-        font = QFont("Segoe UI", max(7, cp - 4))
+        font_pt = max(8, min(cp - 6, 12))
+        font = QFont("Segoe UI", font_pt)
         font.setBold(True)
         p.setFont(font)
         p.setPen(QPen(QColor("#deb447")))
         for label, x_off in (("F1", 0), ("F2", 2), ("F3", 4)):
             o = self._fwd_origin
-            rect = QRect(o.x() + x_off * cp, o.y() - 22, 2 * cp, 18)
+            rect = QRect(o.x() + x_off * cp, o.y() - 28, 2 * cp, 24)
             p.drawText(rect, Qt.AlignmentFlag.AlignCenter, label)
         for label, x_off in (("R1", 0), ("R2", 2), ("R3", 4), ("R4", 6)):
             o = self._rear_origin
-            rect = QRect(o.x() + x_off * cp, o.y() - 22, 2 * cp, 18)
+            rect = QRect(o.x() + x_off * cp, o.y() - 28, 2 * cp, 24)
             p.drawText(rect, Qt.AlignmentFlag.AlignCenter, label)
 
     def _draw_pallets(self, p: QPainter) -> None:
@@ -340,10 +341,10 @@ class ZoneStripsViewport(QWidget):
     # ── geometry (shares logic with BayCanvasViewport) ─────────────────
 
     def _compute_layout(self) -> None:
-        margin = 24
+        margin = 16
         gap = 30
-        label_height = 26
-        ramp_height = 18
+        label_height = 30          # vertical space reserved above the bay
+        ramp_height = 22
         avail_w = max(0, self.width() - 2 * margin - gap)
         avail_h = max(0, self.height() - label_height - ramp_height - 2 * margin)
         total_w_cells = FORWARD_W + REAR_W
@@ -354,7 +355,8 @@ class ZoneStripsViewport(QWidget):
         used_w = total_w_cells * self._cell_px + gap
         x_origin = (self.width() - used_w) // 2
         used_h = max_l_cells * self._cell_px + label_height + ramp_height
-        y_origin = (self.height() - used_h) // 2 + label_height
+        # Clamp y_origin so labels never get clipped at the top edge
+        y_origin = max(label_height, (self.height() - used_h) // 2 + label_height)
         self._fwd_origin = QPoint(x_origin, y_origin)
         self._rear_origin = QPoint(
             x_origin + FORWARD_W * self._cell_px + gap, y_origin,
@@ -428,17 +430,23 @@ class ZoneStripsViewport(QWidget):
 
     def _draw_zone_labels(self, p: QPainter) -> None:
         cp = self._cell_px
-        font = QFont("Segoe UI", max(7, cp - 4))
+        # Cap the font so the label rect (24 px tall) always contains it
+        # — the label rect height is fixed; cell size shouldn't drive it
+        # past what fits.
+        font_pt = max(8, min(cp - 6, 12))
+        font = QFont("Segoe UI", font_pt)
         font.setBold(True)
         p.setFont(font)
         p.setPen(QPen(QColor("#deb447")))
+        # Label sits in the 30-px gap above the bay outline. We push it
+        # up by 28 so it has 4 px of clearance before the outline.
         for label, x_off in (("F1", 0), ("F2", 2), ("F3", 4)):
             o = self._fwd_origin
-            rect = QRect(o.x() + x_off * cp, o.y() - 22, 2 * cp, 18)
+            rect = QRect(o.x() + x_off * cp, o.y() - 28, 2 * cp, 24)
             p.drawText(rect, Qt.AlignmentFlag.AlignCenter, label)
         for label, x_off in (("R1", 0), ("R2", 2), ("R3", 4), ("R4", 6)):
             o = self._rear_origin
-            rect = QRect(o.x() + x_off * cp, o.y() - 22, 2 * cp, 18)
+            rect = QRect(o.x() + x_off * cp, o.y() - 28, 2 * cp, 24)
             p.drawText(rect, Qt.AlignmentFlag.AlignCenter, label)
 
     def _draw_ramp_arrow(self, p: QPainter) -> None:

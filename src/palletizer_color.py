@@ -13,22 +13,23 @@ from __future__ import annotations
 import sqlite3
 
 
-# Curated palette — anchored on theme/colors.json brand colors then
-# extended with high-contrast adjacent hues so 8+ destinations stay
-# distinguishable.
+# Curated palette — high-contrast against the deep navy background
+# (#212e67). Colors are ordered roughly by visual prominence; #00498f
+# (the theme primary blue) is intentionally NOT in the palette because
+# it blends into the background and reads as "no destination assigned".
 PALETTE: list[str] = [
     "#ffbe20",  # accent yellow (anchor)
-    "#00498f",  # primary blue (anchor)
-    "#deb447",  # muted gold
     "#7bbf3f",  # green
     "#e74c3c",  # red
+    "#3498db",  # bright sky blue
     "#9b59b6",  # purple
     "#1abc9c",  # teal
     "#f39c12",  # orange
-    "#3498db",  # sky blue
     "#e91e63",  # pink
+    "#deb447",  # muted gold
     "#16a085",  # dark teal
     "#d35400",  # burnt orange
+    "#2ecc71",  # bright green
 ]
 
 

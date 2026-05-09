@@ -34,6 +34,7 @@ class ContractCard(QFrame):
             f"#{contract['contract_number']}  {contract['pickup_name']} → {dest_summary}"
         )
         title.setProperty("heading", False)
+        title.setWordWrap(True)
         info.addWidget(title)
 
         commodity_lines = []
@@ -44,6 +45,7 @@ class ContractCard(QFrame):
         muted = QLabel("\n".join(commodity_lines) +
                        f"\nmax {contract['max_pallet_size']} SCU pallet")
         muted.setProperty("muted", True)
+        muted.setWordWrap(True)
         info.addWidget(muted)
 
         layout.addLayout(info, 1)
