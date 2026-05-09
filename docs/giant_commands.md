@@ -14,6 +14,18 @@ command.
 
 ---
 
+## Workday
+
+| Intent | Example phrasing | Tool call |
+|---|---|---|
+| Start a new workday | "Hey Giant, start a new workday" | `start_workday` |
+| Resume the workday | "Hey Giant, resume" | `resume_workday` |
+| End the workday | "Hey Giant, end the day" | `end_workday` |
+| Set origin | "Hey Giant, origin Seraphim" | `set_origin` |
+| Set final destination | "Hey Giant, final stop Port Tressler" | `set_final_destination` |
+| Toggle round robin | "Hey Giant, round robin on" | `set_round_robin` |
+| Recompute the route | "Hey Giant, recompute" | `recompute_plan` |
+
 ## Contract Management
 
 | Intent | Example phrasing | Tool call |
