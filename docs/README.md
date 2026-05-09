@@ -16,6 +16,7 @@ Manager. Read in this order if you're new:
 | 8 | [giant_commands.md](giant_commands.md) | Voice command list for the "Giant" Loadmaster. |
 | 8b | [llm_tools.md](llm_tools.md) | OpenAI tool schemas, system prompt template, context snapshot format, and dispatch flow. |
 | 9 | [settings.md](settings.md) | All user-configurable options — STT engine, PTT binds, mic, plugins, appearance. |
+| 10 | [app_init_voice.md](app_init_voice.md) | App launch sequence, voice subsystem (Porcupine, PTT, STT/LLM/TTS), thread lifecycle, error handling. |
 
 ## Reference data files
 
