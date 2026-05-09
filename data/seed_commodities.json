@@ -1,0 +1,19 @@
+{
+  "_meta": {
+    "purpose": "Initial commodity seed. Carried over from the original spreadsheet.",
+    "note": "Aliases are matched case-insensitively by the parser when interpreting voice/manual input."
+  },
+  "commodities": [
+    { "name": "Processed Food",   "category": "Consumer",   "legality": "Legal", "aliases": ["Food"] },
+    { "name": "Pressurized Ice",  "category": "Industrial", "legality": "Legal", "aliases": ["Ice"] },
+    { "name": "Titanium Ore",     "category": "Ore",        "legality": "Legal", "aliases": ["Titanium"] },
+    { "name": "Titanium",         "category": "Metal",      "legality": "Legal", "aliases": ["Titanium Ore"] },
+    { "name": "Aluminum",         "category": "Metal",      "legality": "Legal", "aliases": ["Aluminium", "Alum"] },
+    { "name": "Tungsten",         "category": "Metal",      "legality": "Legal", "aliases": ["Tung"] },
+    { "name": "Corundum",         "category": "Mineral",    "legality": "Legal", "aliases": ["Curandum"] },
+    { "name": "Quartz",           "category": "Mineral",    "legality": "Legal", "aliases": [] },
+    { "name": "Scrap",            "category": "Industrial", "legality": "Legal", "aliases": [] },
+    { "name": "Waste",            "category": "Industrial", "legality": "Legal", "aliases": [] },
+    { "name": "Cargo",            "category": "Generic",    "legality": "Legal", "aliases": ["Generic Cargo"] }
+  ]
+}

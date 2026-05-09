@@ -1,0 +1,26 @@
+{
+  "unit_size_meters": 1.25,
+  "axes": {
+    "width":  "horizontal, across the bay",
+    "length": "horizontal, along the bay (front-to-back)",
+    "height": "vertical, stacking"
+  },
+  "rotation": {
+    "allowed_planes": ["horizontal"],
+    "note": "Pallets may rotate 90 degrees on the horizontal plane, swapping width and length. Height is never rotated."
+  },
+  "boxes": [
+    { "scu": 1,  "width": 1, "length": 1, "height": 1, "rotatable": false },
+    { "scu": 2,  "width": 2, "length": 1, "height": 1, "rotatable": true  },
+    { "scu": 4,  "width": 2, "length": 2, "height": 1, "rotatable": false },
+    { "scu": 8,  "width": 2, "length": 2, "height": 2, "rotatable": false },
+    { "scu": 16, "width": 2, "length": 4, "height": 2, "rotatable": true  },
+    { "scu": 24, "width": 2, "length": 6, "height": 2, "rotatable": true  },
+    { "scu": 32, "width": 2, "length": 8, "height": 2, "rotatable": true  }
+  ],
+  "invariants": {
+    "max_height_units": 2,
+    "default_width_units": 2,
+    "natural_orientation": "Pallets above 1 SCU sit 2 cubes wide across the bay; the long axis runs along the bay length. Rotation is allowed for 2/16/24/32 SCU pallets but is not needed in the C2 bay (2-cube-wide zones)."
+  }
+}

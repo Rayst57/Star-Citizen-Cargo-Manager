@@ -1,0 +1,26 @@
+# ── Core planner (stdlib only) ──────────────────────────────────
+# sqlite3, json, dataclasses, collections — all stdlib
+
+# ── UI ──────────────────────────────────────────────────────────
+PySide6>=6.7
+
+# ── Voice subsystem ─────────────────────────────────────────────
+pvporcupine>=3.0          # wake word detection (local)
+sounddevice>=0.4          # mic capture (PortAudio binding)
+pynput>=1.7               # global keyboard / mouse hotkeys
+inputs>=0.5               # XInput gamepad support
+pygame>=2.5               # DirectInput HOTAS / joystick
+SpeechRecognition>=3.10   # Windows SAPI fallback (optional)
+noisereduce>=3.0          # RNNoise-style suppression (optional)
+
+# ── AI / API ────────────────────────────────────────────────────
+openai>=1.30              # STT (Whisper), LLM, TTS
+keyring>=24               # API key storage in Windows Credential Manager
+httpx>=0.27               # for cancellable async HTTP
+
+# ── Packaging ───────────────────────────────────────────────────
+# pyinstaller is dev-only; not installed at runtime
+
+# ── Dev / test ──────────────────────────────────────────────────
+pytest>=8.2
+pyinstaller>=6.5

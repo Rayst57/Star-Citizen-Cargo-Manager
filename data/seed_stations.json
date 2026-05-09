@@ -1,0 +1,43 @@
+{
+  "_meta": {
+    "purpose": "Initial seed data for the stations / systems / gateways tables. Loaded by the app on first launch when the DB is empty.",
+    "scope": "Stanton system as the proof-of-concept focus. Pyro is included as a placeholder for the cross-system gateway test path; populate with real Pyro stations later.",
+    "distance_units": "km (placeholder)",
+    "as_of": "Patch 4.x — May 2026"
+  },
+  "systems": [
+    { "name": "Stanton", "is_active": 1 },
+    { "name": "Pyro",    "is_active": 1, "notes": "Placeholder; expand station list later" }
+  ],
+  "stations": [
+    { "system": "Stanton", "name": "Seraphim Station",     "parent_body": "Crusader",  "station_type": "orbital",  "is_gateway": 0, "sort_order": 10,  "aliases": ["Seraphim"] },
+    { "system": "Stanton", "name": "Ambitious Dream",      "parent_body": "CRU-L1",    "station_type": "lagrange", "is_gateway": 0, "sort_order": 20,  "aliases": ["CRU-L1 Ambitious Dream Station", "Ambitious"] },
+    { "system": "Stanton", "name": "Beautiful Glen",       "parent_body": "CRU-L5",    "station_type": "lagrange", "is_gateway": 0, "sort_order": 30,  "aliases": ["CRU-L5 Beautiful Glen Station"] },
+    { "system": "Stanton", "name": "Shallow Fields",       "parent_body": "CRU-L4",    "station_type": "lagrange", "is_gateway": 0, "sort_order": 40,  "aliases": ["Shallow Field", "Shallow Fields Station"] },
+    { "system": "Stanton", "name": "Shallow Frontier",     "parent_body": "HUR-L1",    "station_type": "lagrange", "is_gateway": 0, "sort_order": 50,  "aliases": ["Shallow Frontier Station"] },
+    { "system": "Stanton", "name": "Yellow Core",          "parent_body": "HUR-L4",    "station_type": "lagrange", "is_gateway": 0, "sort_order": 60,  "aliases": ["Yellow Core Station"] },
+    { "system": "Stanton", "name": "Everus Harbor",        "parent_body": "Hurston",   "station_type": "orbital",  "is_gateway": 0, "sort_order": 70,  "aliases": ["Everest Harbor", "Evers Harbor", "Evers", "Everus"] },
+    { "system": "Stanton", "name": "Baijini Point",        "parent_body": "ArcCorp",   "station_type": "orbital",  "is_gateway": 0, "sort_order": 80,  "aliases": ["Bajini", "Bageeni", "Begini", "Magini", "Vijini", "Baijini"] },
+    { "system": "Stanton", "name": "Wide Forest",          "parent_body": "ARC-L1",    "station_type": "lagrange", "is_gateway": 0, "sort_order": 90,  "aliases": ["ARC-L1 Wide Forest Station", "Wild Forest"] },
+    { "system": "Stanton", "name": "Lively Pathway",       "parent_body": "ARC-L2",    "station_type": "lagrange", "is_gateway": 0, "sort_order": 100, "aliases": ["ARC-L2 Lively Pathway Station"] },
+    { "system": "Stanton", "name": "Port Tressler",        "parent_body": "microTech", "station_type": "orbital",  "is_gateway": 0, "sort_order": 110, "aliases": ["Tressler", "Point Tressler"] },
+    { "system": "Stanton", "name": "Long Forest",          "parent_body": "MIC-L2",    "station_type": "lagrange", "is_gateway": 0, "sort_order": 120, "aliases": ["MIC-L2 Long Forest Station", "Long Force"] },
+    { "system": "Stanton", "name": "Pyro Jump Point",      "parent_body": null,        "station_type": "gateway",  "is_gateway": 1, "sort_order": 900, "aliases": ["Stanton-Pyro Gate (Stanton side)", "Stanton Gateway"] },
+    { "system": "Pyro",    "name": "Stanton Jump Point",   "parent_body": null,        "station_type": "gateway",  "is_gateway": 1, "sort_order": 100, "aliases": ["Pyro-Stanton Gate (Pyro side)", "Pyro Gateway"] }
+  ],
+  "station_distances": [],
+  "jump_gates": [
+    {
+      "from_gateway": { "system": "Stanton", "name": "Pyro Jump Point" },
+      "to_gateway":   { "system": "Pyro",    "name": "Stanton Jump Point" },
+      "distance_km": null,
+      "notes": "Bidirectional gateway link; populate distance later"
+    },
+    {
+      "from_gateway": { "system": "Pyro",    "name": "Stanton Jump Point" },
+      "to_gateway":   { "system": "Stanton", "name": "Pyro Jump Point" },
+      "distance_km": null,
+      "notes": "Reverse direction"
+    }
+  ]
+}
