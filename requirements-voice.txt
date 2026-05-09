@@ -1,0 +1,17 @@
+# ── Optional voice subsystem extras ─────────────────────────────
+# Install AFTER the core requirements:
+#     pip install -r requirements.txt
+#     pip install -r requirements-voice.txt
+#
+# Pygame (HOTAS / joystick PTT) does not always have prebuilt
+# wheels for the very latest Python release. If pygame fails to
+# install, either drop to a current Python (3.12 / 3.13) or omit
+# pygame and lose only HOTAS/DirectInput PTT support.
+
+pvporcupine>=3.0          # wake word detection (local)
+sounddevice>=0.4          # mic capture (PortAudio binding)
+pynput>=1.7               # global keyboard / mouse hotkeys
+inputs>=0.5               # XInput gamepad support
+pygame>=2.5               # DirectInput HOTAS / joystick
+SpeechRecognition>=3.10   # Windows SAPI fallback (optional)
+noisereduce>=3.0          # RNNoise-style suppression (optional)
