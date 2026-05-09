@@ -16,6 +16,7 @@ from ..app_controller import AppController, ToolError
 from .dialogs.add_contract import AddContractDialog
 from .dialogs.load_view import LoadViewModal
 from .dialogs.settings_dialog import SettingsDialog
+from .dialogs.zone_detail import ZoneDetailDialog
 from .panels.bay_canvas import BayCanvas
 from .panels.contracts_panel import ContractsPanel
 from .panels.route_panel import RoutePanel
@@ -82,7 +83,7 @@ class MainWindow(QMainWindow):
 
         # Bay canvas
         self.bay_canvas.pallet_dropped.connect(self._on_pallet_moved)
-        self.bay_canvas.zone_destination_changed.connect(self._on_zone_dest_changed)
+        self.bay_canvas.zone_detail_requested.connect(self._open_zone_detail)
 
         # Recompute banner
         self.banner.recompute_clicked.connect(self.controller.recompute)
@@ -162,8 +163,9 @@ class MainWindow(QMainWindow):
         self.controller.move_cargo(cargo_line_id, target_zone)
         self.bay_canvas.refresh()
 
-    def _on_zone_dest_changed(self, zone_label: str, station_id) -> None:
-        self.controller.set_zone_destination(zone_label, station_id)
+    def _open_zone_detail(self, zone_label: str) -> None:
+        dlg = ZoneDetailDialog(self.controller, zone_label, parent=self)
+        dlg.exec()
 
     def _on_recompute_done(self, _result) -> None:
         self.bay_canvas.refresh()

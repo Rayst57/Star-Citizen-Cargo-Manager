@@ -26,7 +26,44 @@ from .settings import AppSettings, get_api_key
 from .undo import UndoStack
 
 
-# ── PalletRect for BayCanvas ─────────────────────────────────────────────
+# ── Zone strip / pallet rect data for BayCanvas ──────────────────────────
+
+@dataclass
+class ZoneStripDestination:
+    station_id: int
+    station_name: str
+    color: str
+    scu_amount: int
+
+
+@dataclass
+class ZoneStrip:
+    zone_label: str
+    bay: str
+    cube_offset_x: int
+    cube_offset_y: int
+    width_units: int
+    length_units: int
+    height_units: int
+    scu_capacity: int
+    used_scu: int
+    destinations: list[ZoneStripDestination]
+    is_conflicted: bool
+
+    @property
+    def is_empty(self) -> bool:
+        return self.used_scu == 0
+
+    @property
+    def is_mixed(self) -> bool:
+        return len(self.destinations) > 1
+
+    @property
+    def primary_color(self) -> str:
+        if not self.destinations:
+            return "#3a4894"
+        return self.destinations[0].color
+
 
 @dataclass
 class PalletRect:
@@ -495,7 +532,14 @@ class AppController(QObject):
 
         rects: list[PalletRect] = []
 
-        for entry in entries:
+        # Sort within each zone so conflict cargo is placed first (low Y =
+        # ramp side) for fast deconfliction at unload (handbook §10).
+        sorted_entries = sorted(
+            entries,
+            key=lambda e: (e.zone_label, 0 if e.is_conflicted else 1, e.cargo_line_id),
+        )
+
+        for entry in sorted_entries:
             zone = zone_meta.get(entry.zone_label)
             if not zone:
                 continue
@@ -506,11 +550,22 @@ class AppController(QObject):
                 entry.zone_label, [[0] * zl for _ in range(zw)]
             )
             sizes = _parse_breakdown(entry.pallet_breakdown) or [entry.scu_amount]
+            # For conflict cargo: place SMALL pallets first so they land at
+            # low Y (ramp side). Small pallets are typically the ambiguous
+            # ones (e.g. 1×2 + 1×1 in the Everus/Baijini Tungsten case);
+            # the pilot can test-send them at the ramp before bringing up
+            # the unique-size stacks.
+            if entry.is_conflicted:
+                sizes = sorted(sizes)        # ascending = smallest first
             color = color_map.get(entry.delivery_station_name, "#888888")
 
             for size in sizes:
                 box = boxes.get(size, {"width": 1, "length": 1, "height": 1})
                 w, l, h = box["width"], box["length"], box["height"]
+                # Auto-rotate horizontally if the pallet is too wide for
+                # the zone (scu_boxes.json marks 2/16/24/32 as rotatable).
+                if w > zw and box.get("rotatable") and l <= zw:
+                    w, l = l, w
                 placed = _place_in_grid(grid, w, l, h, zw, zl, zh)
                 if placed is None:
                     # Zone visually full — anchor at corner, label as overflow
@@ -536,6 +591,97 @@ class AppController(QObject):
                 ))
 
         return rects
+
+    def get_zone_strips(self, stop_number: int | None = None) -> list[ZoneStrip]:
+        """Per-zone summary used by the main BayCanvas zone-strip view.
+
+        Aggregates the cargo at *stop_number* (defaults to the busiest stop
+        when the user hasn't started the route) into one strip per zone.
+        """
+        if not self._last_result or not self.workday_id:
+            return []
+
+        if stop_number is None:
+            stop_number = self._busiest_stop_number()
+
+        entries = self._last_result.snapshots.get(stop_number, [])
+
+        # Load all zones for the active ship
+        zone_rows = self.conn.execute(
+            """
+            SELECT z.zone_label, z.bay_label, z.cube_offset_x, z.cube_offset_y,
+                   z.width_units, z.length_units, z.height_units, z.scu_capacity
+            FROM ship_zones z
+            JOIN workdays w ON w.ship_id = z.ship_id
+            WHERE w.id = ?
+            ORDER BY z.unload_priority
+            """,
+            (self.workday_id,),
+        ).fetchall()
+
+        # Color lookup
+        color_map = {
+            r["name"]: r["color_hex"]
+            for r in self.conn.execute(
+                "SELECT name, color_hex FROM stations WHERE color_hex IS NOT NULL"
+            ).fetchall()
+        }
+
+        # Aggregate entries per (zone, destination)
+        agg: dict[str, dict[int, ZoneStripDestination]] = {}
+        conflicted: set[str] = set()
+        for e in entries:
+            dests = agg.setdefault(e.zone_label, {})
+            sid = self._station_id_by_name(e.delivery_station_name)
+            existing = dests.get(sid)
+            if existing:
+                existing.scu_amount += e.scu_amount
+            else:
+                dests[sid] = ZoneStripDestination(
+                    station_id=sid,
+                    station_name=e.delivery_station_name,
+                    color=color_map.get(e.delivery_station_name, "#888888"),
+                    scu_amount=e.scu_amount,
+                )
+            if e.is_conflicted:
+                conflicted.add(e.zone_label)
+
+        strips: list[ZoneStrip] = []
+        for r in zone_rows:
+            label = r["zone_label"]
+            dests_dict = agg.get(label, {})
+            dests_sorted = sorted(
+                dests_dict.values(),
+                key=lambda d: -d.scu_amount,
+            )
+            strips.append(ZoneStrip(
+                zone_label=label,
+                bay=r["bay_label"],
+                cube_offset_x=r["cube_offset_x"],
+                cube_offset_y=r["cube_offset_y"],
+                width_units=r["width_units"],
+                length_units=r["length_units"],
+                height_units=r["height_units"],
+                scu_capacity=r["scu_capacity"],
+                used_scu=sum(d.scu_amount for d in dests_sorted),
+                destinations=dests_sorted,
+                is_conflicted=label in conflicted,
+            ))
+        return strips
+
+    def _station_id_by_name(self, name: str) -> int:
+        row = self.conn.execute(
+            "SELECT id FROM stations WHERE name = ?", (name,)
+        ).fetchone()
+        return row["id"] if row else 0
+
+    def _busiest_stop_number(self) -> int:
+        if not self._last_result or not self._last_result.snapshots:
+            return 0
+        return max(
+            self._last_result.snapshots.keys(),
+            key=lambda k: sum(e.scu_amount for e in self._last_result.snapshots[k]),
+        )
 
     def get_snapshot_entries(self, stop_number: int):
         if not self._last_result:
