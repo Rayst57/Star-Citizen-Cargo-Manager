@@ -14,6 +14,7 @@ Manager. Read in this order if you're new:
 | 6b | [ui_spec.md](ui_spec.md) | PySide6 implementation spec — full widget tree, AppController API, threading model, module layout. |
 | 7 | [manual_entry.md](manual_entry.md) | Forms for adding/editing contracts and stops without voice. |
 | 8 | [giant_commands.md](giant_commands.md) | Voice command list for the "Giant" Loadmaster. |
+| 8b | [llm_tools.md](llm_tools.md) | OpenAI tool schemas, system prompt template, context snapshot format, and dispatch flow. |
 | 9 | [settings.md](settings.md) | All user-configurable options — STT engine, PTT binds, mic, plugins, appearance. |
 
 ## Reference data files
