@@ -11,6 +11,7 @@ Manager. Read in this order if you're new:
 | 4 | [database.md](database.md) | SQLite schema overview — reference data, workday state, distance model, recompute flow. |
 | 5 | [workday.md](workday.md) | Workday lifecycle — start screen, resume vs new, round robin, recompute. |
 | 6 | [ui_interactions.md](ui_interactions.md) | Main window layout, top-down ship view, zone dropdowns, drag-and-drop, View Load modal. |
+| 6b | [ui_spec.md](ui_spec.md) | PySide6 implementation spec — full widget tree, AppController API, threading model, module layout. |
 | 7 | [manual_entry.md](manual_entry.md) | Forms for adding/editing contracts and stops without voice. |
 | 8 | [giant_commands.md](giant_commands.md) | Voice command list for the "Giant" Loadmaster. |
 | 9 | [settings.md](settings.md) | All user-configurable options — STT engine, PTT binds, mic, plugins, appearance. |
