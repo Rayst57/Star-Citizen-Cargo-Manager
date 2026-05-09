@@ -760,6 +760,65 @@ class AppController(QObject):
         # zone_assignment.  For v1 we just mark the plan dirty.
         self._set_dirty()
 
+    def move_zone_destination(self, source_zone: str, target_zone: str) -> None:
+        """Move/swap an entire zone's cargo to another zone.
+
+        If the target zone is empty, the cargo simply relocates. If both
+        zones are occupied, their contents are swapped. The moved rows
+        are flagged is_manual_override=1 so the next recompute respects
+        them; plan_dirty is set so the user can recompute when ready.
+        """
+        self._require_workday()
+        if source_zone == target_zone:
+            return
+
+        placeholder = "__SWAP__"
+        # Stage source cargo on a placeholder label
+        self.conn.execute(
+            """
+            UPDATE zone_assignments
+            SET primary_zone_label = ?, is_manual_override = 1
+            WHERE workday_id = ? AND primary_zone_label = ?
+            """,
+            (placeholder, self.workday_id, source_zone),
+        )
+        # Move target cargo into the source slot
+        self.conn.execute(
+            """
+            UPDATE zone_assignments
+            SET primary_zone_label = ?, is_manual_override = 1
+            WHERE workday_id = ? AND primary_zone_label = ?
+            """,
+            (source_zone, self.workday_id, target_zone),
+        )
+        # Move staged source cargo into the target slot
+        self.conn.execute(
+            """
+            UPDATE zone_assignments
+            SET primary_zone_label = ?
+            WHERE workday_id = ? AND primary_zone_label = ?
+            """,
+            (target_zone, self.workday_id, placeholder),
+        )
+        self.conn.commit()
+
+        # Update the in-memory snapshots so the bay canvas reflects the
+        # swap immediately without waiting for a recompute.
+        if self._last_result:
+            for entries in self._last_result.snapshots.values():
+                for e in entries:
+                    if e.zone_label == source_zone:
+                        e.zone_label = placeholder
+                    elif e.zone_label == target_zone:
+                        e.zone_label = source_zone
+                for e in entries:
+                    if e.zone_label == placeholder:
+                        e.zone_label = target_zone
+
+        self._set_dirty()
+        self.contracts_changed.emit()
+        self.route_changed.emit()
+
     def move_cargo(self, cargo_line_id: int, target_zone: str) -> None:
         self._require_workday()
         # Update or insert a manual override row

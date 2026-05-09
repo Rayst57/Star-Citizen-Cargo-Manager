@@ -17,7 +17,7 @@ from __future__ import annotations
 from PySide6.QtCore import QPoint, QRect, Qt
 from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import (
-    QDialog, QHBoxLayout, QLabel, QPushButton, QSizePolicy,
+    QComboBox, QDialog, QHBoxLayout, QLabel, QPushButton, QSizePolicy,
     QVBoxLayout, QWidget,
 )
 
@@ -343,6 +343,41 @@ class ZoneDetailDialog(QDialog):
             note.setStyleSheet("color: #ffbe20; font-weight: bold;")
             note.setWordWrap(True)
             root.addWidget(note)
+
+        # ── Move cargo to a different zone ────────────────────────
+        # Only show when this zone has cargo to move
+        if strip and not strip.is_empty:
+            self._add_move_controls(root, stop_number)
+
+    def _add_move_controls(self, root: QVBoxLayout, stop_number: int | None) -> None:
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Move cargo to:"))
+        self._move_combo = QComboBox()
+        self._move_combo.addItem("(stay in this zone)", userData=None)
+
+        all_strips = self.controller.get_zone_strips(stop_number=stop_number)
+        for s in all_strips:
+            if s.zone_label == self.zone_label:
+                continue
+            if s.is_empty:
+                text = f"{s.zone_label}  (empty)"
+            else:
+                names = " + ".join(d.station_name for d in s.destinations)
+                text = f"{s.zone_label}  ({names} — will swap)"
+            self._move_combo.addItem(text, userData=s.zone_label)
+        row.addWidget(self._move_combo, 1)
+
+        apply_btn = QPushButton("Apply move")
+        apply_btn.clicked.connect(self._apply_move)
+        row.addWidget(apply_btn)
+        root.addLayout(row)
+
+    def _apply_move(self) -> None:
+        target = self._move_combo.currentData()
+        if not target:
+            return
+        self.controller.move_zone_destination(self.zone_label, target)
+        self.accept()       # close the dialog so the user sees the updated bay
 
     def _fetch(self, stop_number: int | None):
         # Default to whichever stop has the most cargo onboard so the
