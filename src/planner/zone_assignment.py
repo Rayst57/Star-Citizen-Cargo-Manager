@@ -181,7 +181,7 @@ def build_zone_plan(
         """
         SELECT cl.id, cl.contract_id, cl.scu_amount, cl.commodity_id,
                cl.delivery_station_id,
-               ct.max_pallet_size
+               ct.max_pallet_size, ct.pickup_station_id
         FROM cargo_lines cl
         JOIN contracts ct ON ct.id = cl.contract_id
         WHERE ct.workday_id = ?
@@ -209,6 +209,7 @@ def build_zone_plan(
             "max_pallet_size": r["max_pallet_size"],
             "is_conflicted": r["id"] in conflicted_ids,
             "group_id": cl_to_group.get(r["id"]),
+            "pickup_station_id": r["pickup_station_id"],
         })
 
     # Sort destinations by TOTAL SCU descending. Big destinations claim
@@ -325,61 +326,19 @@ def build_zone_plan(
             )
             continue
 
-        # Fall back: try any zone with enough headroom — might mix destinations
-        # but stays single-zone for THIS destination.
-        target_zone = _claim_zone_with_capacity(
-            zones, total_dest_scu, excluded_zones=excluded_zones,
-            allow_mixed=True,
-        )
-        if target_zone is not None:
-            mix_note: str | None = None
-            if target_zone.occupants:
-                # Why we're mixing: at this destination's turn, no fresh
-                # zone had enough headroom; the existing occupants block a
-                # clean home but this zone still fits the whole load.
-                others = sorted(target_zone.occupants)
-                conflict_partners = _conflict_partners_in_zone(
-                    target_zone.zone_label, did, cargo,
-                    conflict_group_zones, conflict_group_stations,
-                )
-                reason = _mix_reason(
-                    excluded_zones, target_zone, conflict_partners,
-                )
-                mix_note = (
-                    f"MIXED — sharing {target_zone.zone_label} with "
-                    f"destination(s) {others} ({reason})"
-                )
-                _log.info(
-                    "  dest %d %s: %d SCU → MIXED into %s with %s — %s",
-                    did, dest_name, total_dest_scu,
-                    target_zone.zone_label, others, reason,
-                )
-                _log_warn(
-                    workday_id,
-                    f"Destination {did} ({total_dest_scu} SCU) shares zone "
-                    f"{target_zone.zone_label} with destination(s) {others} "
-                    f"— {reason}.",
-                    None, conn,
-                )
-            else:
-                _log.info(
-                    "  dest %d %s: %d SCU → claimed %s "
-                    "(still fresh, no fresh-with-headroom path)",
-                    did, dest_name, total_dest_scu, target_zone.zone_label,
-                )
-            _place_cargo_in_zone(
-                workday_id, target_zone, did, cargo, conn,
-                conflict_group_zones, conflict_group_stations,
-                notes=mix_note,
-            )
-            continue
-
+        # No single FRESH zone fits the whole load. Go straight to the
+        # overflow path, which uses pickup-group FFD: each (destination,
+        # pickup-station) bundle stays in one zone if possible, and
+        # mixing only fires when same-dest + fresh capacity combined
+        # cannot fit the cargo. Crucially we DON'T try a
+        # "claim_any_zone_with_capacity(allow_mixed=True)" pre-step,
+        # because that would mix a destination into another dest's zone
+        # even when same-dest + fresh splitting could avoid the mix.
         _log.info(
-            "  dest %d %s: %d SCU → no single zone fits, falling to overflow "
-            "(excluded=%s)",
+            "  dest %d %s: %d SCU → no fresh single zone fits, falling "
+            "to overflow (excluded=%s)",
             did, dest_name, total_dest_scu, sorted(excluded_zones),
         )
-        # Last resort: split across multiple zones.
         _place_cargo_with_overflow(
             workday_id, zones, did, cargo, conn,
             excluded_zones, conflict_group_zones, conflict_group_stations,
@@ -604,12 +563,35 @@ def _place_cargo_with_overflow(
                 sorted(z.occupants), why,
             )
 
-    # Cargo lines FFD-sorted by total SCU descending. Tie-break on the
-    # cargo_line_id so the order is deterministic across recomputes.
-    remaining_cls = sorted(
-        cargo,
-        key=lambda c: (-c["scu_amount"], c["cargo_line_id"]),
+    # Group cargo lines by (destination, pickup_station). Each group
+    # is everything this destination is loading AT ONE PICKUP STOP — so
+    # if we place a whole group in one zone, that stop's load reads as
+    # a single zone in the detailed plan instead of being sprayed.
+    pickup_groups: dict[int, list[dict]] = {}
+    for c in cargo:
+        pickup_groups.setdefault(c["pickup_station_id"], []).append(c)
+
+    # FFD on the groups by their total SCU. Tie-break on the deterministic
+    # smallest cargo_line_id so a recompute yields the same packing.
+    def _group_total_scu(g: list[dict]) -> int:
+        return sum(c["scu_amount"] for c in g)
+
+    def _group_min_clid(g: list[dict]) -> int:
+        return min(c["cargo_line_id"] for c in g)
+
+    remaining_groups = sorted(
+        pickup_groups.values(),
+        key=lambda g: (-_group_total_scu(g), _group_min_clid(g)),
     )
+
+    def _place_whole_group(group: list[dict], target: ZoneState) -> None:
+        for cl in group:
+            pallets_cl = palletize(cl["scu_amount"], cl["max_pallet_size"])
+            placement.setdefault(
+                (cl["cargo_line_id"], target.zone_label), []
+            ).extend(pallets_cl)
+            target.remaining_scu -= cl["scu_amount"]
+            target.occupants.add(delivery_station_id)
 
     def _split_cargo_line_into(
         cl: dict,
@@ -647,90 +629,146 @@ def _place_cargo_with_overflow(
                 return line_pool
         return []
 
-    for cl in remaining_cls:
-        scu = cl["scu_amount"]
-        pallets = palletize(scu, cl["max_pallet_size"])
+    def _split_group_across_zones(
+        group: list[dict],
+        candidate_zones: list[ZoneState],
+    ) -> list[dict]:
+        """Split a pickup-stop group across multiple zones. Tries to keep
+        each cargo line whole — places cargo lines one at a time in
+        rank-best zone with capacity. Returns the cargo lines we
+        couldn't place at all (pallet-level split fallback runs after).
+        """
+        leftover_cls: list[dict] = []
+        # FFD within the group too, so the biggest piece consumes the
+        # biggest available free chunk first.
+        group_sorted = sorted(group, key=lambda c: -c["scu_amount"])
+        for cl in group_sorted:
+            scu = cl["scu_amount"]
+            pallets_cl = palletize(scu, cl["max_pallet_size"])
+            fits_whole = sorted(
+                [z for z in candidate_zones if z.remaining_scu >= scu],
+                key=_rank,
+            )
+            if fits_whole:
+                target = fits_whole[0]
+                _record_zone_pick(target)
+                placement.setdefault(
+                    (cl["cargo_line_id"], target.zone_label), []
+                ).extend(pallets_cl)
+                target.remaining_scu -= scu
+                target.occupants.add(delivery_station_id)
+                continue
+            # Try pallet-level split across same candidates.
+            unplaced_pallets = _split_cargo_line_into(
+                cl, pallets_cl, candidate_zones,
+            )
+            if unplaced_pallets:
+                leftover_cls.append(
+                    {**cl, "_unplaced_pallets": unplaced_pallets}
+                )
+        return leftover_cls
 
-        # Step 1: place the whole cargo line in a same-dest zone if
-        # possible (top-off). This is the cheapest outcome — no split,
-        # no new zone.
-        same_dest_whole = sorted(
-            [z for z in zones
-             if delivery_station_id in z.occupants
-             and z.zone_label not in excluded_zones
-             and z.remaining_scu >= scu],
-            key=lambda z: z.remaining_scu,   # smallest fitting first
-        )
-        if same_dest_whole:
-            target = same_dest_whole[0]
-            _record_zone_pick(target)
-            placement.setdefault(
-                (cl["cargo_line_id"], target.zone_label), []
-            ).extend(pallets)
-            target.remaining_scu -= scu
-            target.occupants.add(delivery_station_id)
-            continue
+    for group in remaining_groups:
+        group_scu = _group_total_scu(group)
 
-        # Step 2: no same-dest zone fits the whole load, but the
-        # destination's already-opened zones combined have enough free
-        # space. Split this cargo line across them rather than opening
-        # a fresh zone — that keeps the destination's overall footprint
-        # tight (e.g. 2 zones instead of 3) at the cost of splitting
-        # one (usually small) cargo line.
-        same_dest_zones = [
+        same_dest_zones = lambda: [
             z for z in zones
             if delivery_station_id in z.occupants
             and z.zone_label not in excluded_zones
             and z.remaining_scu > 0
         ]
-        if sum(z.remaining_scu for z in same_dest_zones) >= scu:
-            _log.info(
-                "    overflow dest %d → cargo line %d (%d SCU) split "
-                "across same-dest zones %s to avoid opening a new zone",
-                delivery_station_id, cl["cargo_line_id"], scu,
-                [z.zone_label for z in same_dest_zones],
-            )
-            leftover = _split_cargo_line_into(cl, pallets, same_dest_zones)
-            if not leftover:
-                continue
-            # Defensive: same-dest total said it fits, so leftover should
-            # be empty. If something went wrong, fall through.
-            pallets = leftover
+        fresh_zones = lambda: [
+            z for z in zones
+            if not z.occupants
+            and z.zone_label not in excluded_zones
+            and z.remaining_scu > 0
+        ]
+        mixed_zones = lambda: [
+            z for z in zones
+            if z.occupants
+            and delivery_station_id not in z.occupants
+            and z.zone_label not in excluded_zones
+            and z.remaining_scu > 0
+        ]
 
-        # Step 3: open a new zone for this cargo line — fresh first,
-        # then mixed. Whole-fit only.
-        new_zone_whole = sorted(
-            [z for z in zones
-             if delivery_station_id not in z.occupants
-             and z.zone_label not in excluded_zones
-             and z.remaining_scu >= scu],
-            key=_rank,
+        # Step 1: place the WHOLE pickup group in a same-dest zone if
+        # one fits. Smallest fitting first = top off existing zone.
+        sd_whole = sorted(
+            [z for z in same_dest_zones() if z.remaining_scu >= group_scu],
+            key=lambda z: z.remaining_scu,
         )
-        if new_zone_whole:
-            target = new_zone_whole[0]
+        if sd_whole:
+            target = sd_whole[0]
             _record_zone_pick(target)
-            placement.setdefault(
-                (cl["cargo_line_id"], target.zone_label), []
-            ).extend(pallets)
-            target.remaining_scu -= scu
-            target.occupants.add(delivery_station_id)
+            _place_whole_group(group, target)
             continue
 
-        # Step 4: nothing fits whole anywhere. Pallet-level split across
-        # whatever zones are eligible, rank-ordered.
-        _log.info(
-            "    overflow dest %d → cargo line %d (%d SCU) doesn't "
-            "fit any single zone; splitting at pallet level across "
-            "all eligible zones",
-            delivery_station_id, cl["cargo_line_id"], scu,
+        # Step 2: split this pickup group across SAME-DEST zones only,
+        # if their combined free space fits. Keeps the destination's
+        # footprint tight before we open a new zone (the user's "one
+        # destination per zone" preference — fill leftovers before
+        # spawning another zone for this dest).
+        sd_list = same_dest_zones()
+        sd_total = sum(z.remaining_scu for z in sd_list)
+        if sd_total >= group_scu:
+            _log.info(
+                "    overflow dest %d → pickup group (%d SCU) split "
+                "across same-dest zones %s to keep destination tight",
+                delivery_station_id, group_scu,
+                [z.zone_label for z in sd_list],
+            )
+            _split_group_across_zones(group, sd_list)
+            continue
+
+        # Step 3: open a FRESH zone for the whole group. LARGEST fresh
+        # first — large destinations need contiguous R-bay capacity, and
+        # a small one processed earlier in the FFD order shouldn't burn
+        # a 72-SCU F-bay zone if a 120-SCU R-bay is available and the
+        # group is well over 72 SCU. For small groups the largest fresh
+        # still works (the "waste" lives in the same zone the dest
+        # will keep topping off, or stays empty if the dest has no
+        # more groups — fine, since other dests can't intrude as long
+        # as the no-mix path can still satisfy them).
+        fr_whole = sorted(
+            [z for z in fresh_zones() if z.remaining_scu >= group_scu],
+            key=lambda z: -z.remaining_scu,
         )
-        all_eligible = [
-            z for z in zones
-            if z.zone_label not in excluded_zones and z.remaining_scu > 0
-        ]
-        leftover = _split_cargo_line_into(cl, pallets, all_eligible)
-        if leftover:
-            unplaced.extend((cl["cargo_line_id"], s) for s in leftover)
+        if fr_whole:
+            target = fr_whole[0]
+            _record_zone_pick(target)
+            _place_whole_group(group, target)
+            continue
+
+        # Step 4: split across same-dest + fresh together (no mixing).
+        no_mix_zones = sd_list + fresh_zones()
+        no_mix_total = sum(z.remaining_scu for z in no_mix_zones)
+        if no_mix_total >= group_scu:
+            _log.info(
+                "    overflow dest %d → pickup group (%d SCU) split "
+                "across same-dest %s + fresh %s (no mixing required)",
+                delivery_station_id, group_scu,
+                [z.zone_label for z in sd_list],
+                [z.zone_label for z in fresh_zones()],
+            )
+            _split_group_across_zones(group, no_mix_zones)
+            continue
+
+        # Step 5 (last resort): MIXING is unavoidable. Same-dest and
+        # fresh are both exhausted. Spill the rest into other dests'
+        # zones in rank order (most-remaining first).
+        all_eligible = no_mix_zones + mixed_zones()
+        if not all_eligible:
+            for cl in group:
+                for s in palletize(cl["scu_amount"], cl["max_pallet_size"]):
+                    unplaced.append((cl["cargo_line_id"], s))
+            continue
+        _log.info(
+            "    overflow dest %d → pickup group (%d SCU) MIXING into "
+            "%s (last resort — same-dest+fresh combined cannot fit)",
+            delivery_station_id, group_scu,
+            [z.zone_label for z in mixed_zones()],
+        )
+        _split_group_across_zones(group, all_eligible)
 
     # 2. Persist one zone_assignments row per (cargo_line, zone) pair.
     cl_zones: dict[int, list[str]] = {}
