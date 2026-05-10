@@ -267,6 +267,7 @@ class _TopDownView(QWidget):
     """Top-down view of a single zone (width × length)."""
 
     pallet_hovered = Signal(object)   # PalletRect or None (no hover)
+    pallet_clicked = Signal(object)   # PalletRect — opens the move-pallet dialog
 
     def __init__(self, zone_meta: dict, pallets: list, parent=None):
         super().__init__(parent)
@@ -311,6 +312,16 @@ class _TopDownView(QWidget):
         if self._last_hover_cl_id is not None:
             self._last_hover_cl_id = None
             self.pallet_hovered.emit(None)
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        if event.button() != Qt.MouseButton.LeftButton:
+            super().mousePressEvent(event)
+            return
+        pos = event.position().toPoint()
+        for r, pl in reversed(self._hit_rects):
+            if r.contains(pos):
+                self.pallet_clicked.emit(pl)
+                return
 
     def paintEvent(self, _event) -> None:  # noqa: N802
         p = QPainter(self)
@@ -461,6 +472,7 @@ class _SideView(QWidget):
     """
 
     pallet_hovered = Signal(object)   # PalletRect or None
+    pallet_clicked = Signal(object)   # PalletRect — opens the move-pallet dialog
 
     def __init__(self, zone_meta: dict, pallets: list, parent=None):
         super().__init__(parent)
@@ -495,6 +507,16 @@ class _SideView(QWidget):
         if self._last_hover_cl_id is not None:
             self._last_hover_cl_id = None
             self.pallet_hovered.emit(None)
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        if event.button() != Qt.MouseButton.LeftButton:
+            super().mousePressEvent(event)
+            return
+        pos = event.position().toPoint()
+        for r, pl in reversed(self._hit_rects):
+            if r.contains(pos):
+                self.pallet_clicked.emit(pl)
+                return
 
     def paintEvent(self, _event) -> None:  # noqa: N802
         p = QPainter(self)
@@ -614,6 +636,91 @@ class _SideView(QWidget):
         p.end()
 
 
+class MovePalletDialog(QDialog):
+    """Pops up when the user clicks a pallet in Zone Detail.
+
+    The user picks a target zone for the clicked pallet's entire cargo
+    line (the planner tracks placements per cargo line, so the move
+    relocates the line as a whole — every pallet that shares the
+    cargo_line_id moves together). The move is committed via
+    controller.move_cargo() which marks the row is_manual_override=1
+    so it survives a recompute.
+    """
+
+    def __init__(self, controller, pallet, current_zone: str,
+                 *, stop_number: int | None = None, parent=None):
+        super().__init__(parent)
+        self.controller = controller
+        self.pallet = pallet
+        self.current_zone = current_zone
+        self.setWindowTitle("Move pallet")
+        self.setMinimumWidth(420)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(14, 12, 14, 12)
+        root.setSpacing(8)
+
+        # What we're moving.
+        title = QLabel(
+            f"<b>Move:</b> {pallet.pallet_size} SCU "
+            f"{pallet.commodity_name} → {pallet.delivery_station_name}<br>"
+            f"<span style='color:#7e96a8;'>Contract "
+            f"{pallet.contract_number}, currently in {current_zone}</span>"
+        )
+        title.setTextFormat(Qt.TextFormat.RichText)
+        title.setWordWrap(True)
+        root.addWidget(title)
+
+        # Note: this moves the WHOLE cargo line (zone_assignments
+        # tracks by cargo_line_id). Make the user aware.
+        scu_amount = self.controller.conn.execute(
+            "SELECT scu_amount FROM cargo_lines WHERE id = ?",
+            (pallet.cargo_line_id,),
+        ).fetchone()
+        full_scu = scu_amount["scu_amount"] if scu_amount else pallet.pallet_size
+        if full_scu != pallet.pallet_size:
+            note = QLabel(
+                f"<span style='color:#ffcc00;'>⚠ This will move the entire "
+                f"cargo line ({full_scu} SCU) — every pallet that shares "
+                f"this contract line moves together.</span>"
+            )
+            note.setTextFormat(Qt.TextFormat.RichText)
+            note.setWordWrap(True)
+            root.addWidget(note)
+
+        # Target zone picker.
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Move cargo to:"))
+        self.combo = QComboBox()
+        strips = self.controller.get_zone_strips(stop_number=stop_number)
+        for s in sorted(strips, key=lambda s: s.zone_label):
+            if s.zone_label == current_zone:
+                continue
+            if s.is_empty:
+                text = f"{s.zone_label}  (empty)"
+            else:
+                names = " + ".join(d.station_name for d in s.destinations)
+                free = s.scu_capacity - s.used_scu
+                text = f"{s.zone_label}  ({names}, {free} SCU free)"
+            self.combo.addItem(text, userData=s.zone_label)
+        row.addWidget(self.combo, 1)
+        root.addLayout(row)
+
+        # Confirm / Cancel buttons.
+        from PySide6.QtWidgets import QDialogButtonBox
+        bb = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok |
+            QDialogButtonBox.StandardButton.Cancel
+        )
+        bb.button(QDialogButtonBox.StandardButton.Ok).setText("Confirm move")
+        bb.accepted.connect(self.accept)
+        bb.rejected.connect(self.reject)
+        root.addWidget(bb)
+
+    def selected_zone(self) -> str | None:
+        return self.combo.currentData()
+
+
 class ZoneDetailDialog(QDialog):
     """Modal dialog showing one zone's loadout in top-down + side views."""
 
@@ -682,6 +789,10 @@ class ZoneDetailDialog(QDialog):
         # any pallet clears the highlight.
         self.top_view.pallet_hovered.connect(self._on_pallet_hovered)
         self.side_view.pallet_hovered.connect(self._on_pallet_hovered)
+        # Click → open the move-pallet popup.
+        self._stop_number_for_dialog = stop_number
+        self.top_view.pallet_clicked.connect(self._on_pallet_clicked)
+        self.side_view.pallet_clicked.connect(self._on_pallet_clicked)
         views.addWidget(self.top_view, 2)
         views.addWidget(self.side_view, 3)
         root.addLayout(views, 1)
@@ -818,6 +929,27 @@ class ZoneDetailDialog(QDialog):
             # Discard: leave the dialog open so the user can pick another
             # target without losing the rest of their context.
             return
+
+    def _on_pallet_clicked(self, pallet) -> None:
+        """Open the move-pallet popup for the clicked pallet's cargo line."""
+        dlg = MovePalletDialog(
+            self.controller,
+            pallet,
+            current_zone=self.zone_label,
+            stop_number=self._stop_number_for_dialog,
+            parent=self,
+        )
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        target = dlg.selected_zone()
+        if not target or target == self.zone_label:
+            return
+        self.controller.move_cargo(pallet.cargo_line_id, target)
+        # The cargo line is now in a different zone — close so the user
+        # sees the updated bay. (Re-rendering in-place would also need
+        # the pallet positions to recompute, which the controller's
+        # snapshot patch doesn't do.)
+        self.accept()
 
     def _on_pallet_hovered(self, pallet) -> None:
         """Update the pallet-info label and highlight the hover target

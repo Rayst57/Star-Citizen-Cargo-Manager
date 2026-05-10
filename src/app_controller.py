@@ -1033,31 +1033,58 @@ class AppController(QObject):
         self.route_changed.emit()
 
     def move_cargo(self, cargo_line_id: int, target_zone: str) -> None:
+        """Move a single cargo line's pallets to *target_zone* as a
+        manual override. The move is pin-survives-recompute: it sets
+        is_manual_override=1 and rebuilds the pallet_breakdown so the
+        moved row reflects the cargo line's full palletization
+        (covering split-across-zones cases by collapsing them into one).
+        """
         self._require_workday()
-        # Update or insert a manual override row
-        existing = self.conn.execute(
-            "SELECT id FROM zone_assignments WHERE cargo_line_id = ? AND workday_id = ?",
-            (cargo_line_id, self.workday_id),
+        cl = self.conn.execute(
+            """
+            SELECT cl.scu_amount, ct.max_pallet_size
+            FROM cargo_lines cl
+            JOIN contracts ct ON ct.id = cl.contract_id
+            WHERE cl.id = ?
+            """,
+            (cargo_line_id,),
         ).fetchone()
-        if existing:
-            self.conn.execute(
-                """
-                UPDATE zone_assignments
-                SET primary_zone_label = ?, is_manual_override = 1
-                WHERE id = ?
-                """,
-                (target_zone, existing["id"]),
-            )
-        else:
-            self.conn.execute(
-                """
-                INSERT INTO zone_assignments
-                  (workday_id, cargo_line_id, primary_zone_label, is_manual_override)
-                VALUES (?, ?, ?, 1)
-                """,
-                (self.workday_id, cargo_line_id, target_zone),
-            )
+        if not cl:
+            return
+
+        from .planner.palletizer import palletize, palletize_summary
+        pallets = palletize(cl["scu_amount"], cl["max_pallet_size"])
+        summary = palletize_summary(pallets)
+
+        # Wipe any previous rows for this cargo line (it might have
+        # been split across zones via overflow). Replace with a single
+        # row in the new zone.
+        self.conn.execute(
+            "DELETE FROM zone_assignments WHERE cargo_line_id = ? AND workday_id = ?",
+            (cargo_line_id, self.workday_id),
+        )
+        self.conn.execute(
+            """
+            INSERT INTO zone_assignments
+              (workday_id, cargo_line_id, primary_zone_label,
+               pallet_breakdown, is_manual_override, notes)
+            VALUES (?, ?, ?, ?, 1, 'Moved by user from Zone Detail')
+            """,
+            (self.workday_id, cargo_line_id, target_zone, summary),
+        )
+        self.conn.commit()
+
+        # Update in-memory snapshots so the bay canvas reflects the
+        # move immediately without waiting for a recompute.
+        if self._last_result:
+            for entries in self._last_result.snapshots.values():
+                for e in entries:
+                    if e.cargo_line_id == cargo_line_id:
+                        e.zone_label = target_zone
+
         self._set_dirty()
+        self.contracts_changed.emit()
+        self.route_changed.emit()
 
     # ── voice tool dispatch ──────────────────────────────────────────────
 
