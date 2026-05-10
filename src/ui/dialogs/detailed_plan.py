@@ -87,16 +87,45 @@ class DetailedPlanDialog(QDialog):
                 dest_to_zone[dest_name] = zone
         self._dest_to_zone = dest_to_zone
 
-        # Per-cargo-line conflict info: ambiguous sizes + partner destination names
-        cl_conflict_info: dict[int, tuple[set[int], list[str]]] = {}
+        # Per-cargo-line conflict info. Each partner entry carries the
+        # data the pilot needs to act on the conflict at delivery: which
+        # zone the partner's pallets reload to, the partner's contract
+        # number to fulfill, and how many pallets of each ambiguous size
+        # the partner is owed (i.e. what gets reloaded after this
+        # contract's portion is unloaded).
+        partner_pallet_info = controller.conn.execute(
+            """
+            SELECT cl.id AS cl_id, ct.contract_number, ct.max_pallet_size,
+                   cl.scu_amount
+            FROM cargo_lines cl
+            JOIN contracts ct ON ct.id = cl.contract_id
+            WHERE ct.workday_id = ?
+            """,
+            (controller.workday_id,),
+        ).fetchall()
+        cl_pallet_meta: dict[int, tuple[int, dict[int, int]]] = {}
+        for r in partner_pallet_info:
+            counts = Counter(palletize(r["scu_amount"], r["max_pallet_size"]))
+            cl_pallet_meta[r["cl_id"]] = (r["contract_number"], dict(counts))
+
+        cl_conflict_info: dict[int, tuple[set[int], list[dict]]] = {}
         for grp in result.conflict_groups:
             amb_sizes = set(grp.ambiguous_sizes)
             for d in grp.destinations:
-                partners = [
-                    od.delivery_station_name
-                    for od in grp.destinations
-                    if od.delivery_station_id != d.delivery_station_id
-                ]
+                partners: list[dict] = []
+                for od in grp.destinations:
+                    if od.delivery_station_id == d.delivery_station_id:
+                        continue
+                    for ocl_id in od.cargo_line_ids:
+                        contract_num, p_counts = cl_pallet_meta.get(
+                            ocl_id, (None, {})
+                        )
+                        partners.append({
+                            "name": od.delivery_station_name,
+                            "zone": cl_to_zone.get(ocl_id, "?"),
+                            "contract": contract_num,
+                            "pallets_by_size": p_counts,
+                        })
                 for cl_id in d.cargo_line_ids:
                     cl_conflict_info[cl_id] = (amb_sizes, partners)
         self._cl_conflict_info = cl_conflict_info
@@ -263,56 +292,86 @@ class DetailedPlanDialog(QDialog):
         lbl.setWordWrap(True)
         layout.addWidget(lbl)
 
-        # Per-ambiguous-size note. Spell out:
-        #   • how many pallets of this size are ambiguous
-        #   • which destination(s) they could belong to
-        #   • the partner zone where rejected pallets get reloaded
-        # so the message is fully actionable on its own.
+        # Per-ambiguous-size note in plain language.
+        #   load    → "1×4 SCU pallet — sizing conflict with X. Conflict
+        #              will be resolved at delivery."
+        #   deliver → "1×4 SCU pallet — known conflict. After unloading
+        #              this contract, M×4 SCU shall be reloaded into
+        #              zone Z to fulfill Contract N."
         for size in sorted(amb_sizes, reverse=True):
             n_here = counts[size]
             if n_here == 0:
                 continue
-            # Partner names + their zones, e.g. "Baijini Point (zone F2)"
-            partner_strs = []
-            for pname in partners:
-                pzone = self._dest_to_zone.get(pname)
-                if pzone and pzone != "?":
-                    partner_strs.append(f"{pname} (zone {pzone})")
-                else:
-                    partner_strs.append(pname)
-            partners_text = " or ".join(partner_strs) if partner_strs else "another destination"
-            partner_zones = sorted({
-                self._dest_to_zone.get(p) for p in partners
-                if self._dest_to_zone.get(p) and self._dest_to_zone.get(p) != "?"
-            })
-            reload_text = (
-                f"reload to zone {' or '.join(partner_zones)}"
-                if partner_zones
-                else "reload to the partner destination's zone"
+
+            # Distinct partner names for the load summary.
+            partner_names = sorted({p["name"] for p in partners})
+            partner_text = (
+                " / ".join(partner_names)
+                if partner_names else "another destination"
             )
 
-            if action == "deliver":
+            if action == "load":
                 msg = (
                     f"      ⚠ {n_here}×{size} SCU pallet"
-                    f"{'s' if n_here != 1 else ''} ambiguous with "
-                    f"{partners_text}.\n"
-                    f"        Test at the elevator LAST. If the station "
-                    f"rejects a pallet, {reload_text} — that one belongs "
-                    f"there, not here."
+                    f"{'s' if n_here != 1 else ''} — sizing conflict "
+                    f"with {partner_text}. Pick up as normal; the "
+                    f"conflict is resolved at delivery."
                 )
-            else:                     # load (at pickup)
-                msg = (
-                    f"      ⚠ {n_here}×{size} SCU pallet"
-                    f"{'s' if n_here != 1 else ''} share size + count "
-                    f"with {partners_text} on the elevator.\n"
-                    f"        Load this contract's pallets into your "
-                    f"assigned zone; rejected ones at delivery will be "
-                    f"reloaded to the partner zone."
+                note = QLabel(msg)
+                note.setWordWrap(True)
+                note.setStyleSheet("color: #ff8a3c;")
+                layout.addWidget(note)
+                continue
+
+            # ── deliver ─────────────────────────────────────────────
+            # For each partner that has pallets of this ambiguous size,
+            # write one line: how many of size SCU get reloaded, into
+            # which zone, for which contract.
+            header = QLabel(
+                f"      ⚠ {n_here}×{size} SCU pallet"
+                f"{'s' if n_here != 1 else ''} — known conflict with "
+                f"{partner_text}."
+            )
+            header.setWordWrap(True)
+            header.setStyleSheet("color: #ff8a3c;")
+            layout.addWidget(header)
+
+            wrote_any_partner = False
+            for p in partners:
+                p_count = p["pallets_by_size"].get(size, 0)
+                if p_count <= 0:
+                    continue
+                wrote_any_partner = True
+                zone_text = (
+                    f"zone {p['zone']}" if p["zone"] and p["zone"] != "?"
+                    else "the partner's assigned zone"
                 )
-            note = QLabel(msg)
-            note.setWordWrap(True)
-            note.setStyleSheet("color: #ff8a3c;")
-            layout.addWidget(note)
+                contract_text = (
+                    f"Contract {p['contract']}"
+                    if p["contract"] is not None
+                    else "the partner contract"
+                )
+                line = QLabel(
+                    f"        After this contract is unloaded, the "
+                    f"remaining {p_count}×{size} SCU shall be reloaded "
+                    f"into {zone_text} to fulfill {contract_text} "
+                    f"({p['name']})."
+                )
+                line.setWordWrap(True)
+                line.setStyleSheet("color: #ff8a3c;")
+                layout.addWidget(line)
+
+            if not wrote_any_partner:
+                # Shouldn't happen — if THIS dest has ambiguous pallets
+                # of this size, the partner had matching ones — but be
+                # safe rather than render a header with no follow-up.
+                fallback = QLabel(
+                    "        Resolve the ambiguous pallets at the "
+                    "elevator before continuing."
+                )
+                fallback.setWordWrap(True)
+                fallback.setStyleSheet("color: #ff8a3c;")
+                layout.addWidget(fallback)
 
     def _section_label(self, text: str) -> QLabel:
         lbl = QLabel(text)

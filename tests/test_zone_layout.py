@@ -241,6 +241,71 @@ def test_multiple_contracts_same_destination_consolidate(controller):
         f"{[s.zone_label for s in occupied]}"
 
 
+def test_conflict_exclusion_covers_all_partner_zones(controller):
+    """When a conflict partner overflows across multiple zones, the
+    sibling destination must avoid ALL of them, not just the first.
+
+    Setup: Yellow Core × Tungsten is the conflict source. Baijini takes
+    a 240 SCU load that overflows R3+R4 (both fresh, both 120). Then
+    Seraphim — Baijini's conflict partner — places. None of Seraphim's
+    cargo should land in R3 OR R4.
+    """
+    wid = controller.start_workday(_seraphim(controller), None, True)
+
+    # Two ambiguous Tungsten contracts (same source, same commodity, two
+    # destinations) → conflict group.
+    controller.add_contract({
+        "pickup_station": "Yellow Core",
+        "max_pallet_size": 8,
+        "deliveries": [
+            {"destination": "Baijini Point", "commodity": "Tungsten", "scu": 240},
+        ],
+    })
+    controller.add_contract({
+        "pickup_station": "Yellow Core",
+        "max_pallet_size": 8,
+        "deliveries": [
+            # Round-robin → Seraphim is also a destination. 100 SCU of
+            # Tungsten from the same source makes the two ambiguous.
+            {"destination": "Long Forest", "commodity": "Tungsten", "scu": 100},
+        ],
+    })
+    # Add a Seraphim-bound contract (Yellow Core × Tungsten so it
+    # joins the conflict group).
+    controller.add_contract({
+        "pickup_station": "Yellow Core",
+        "max_pallet_size": 8,
+        "deliveries": [
+            {"destination": "Long Forest", "commodity": "Tungsten", "scu": 32},
+        ],
+    })
+
+    result = run_recompute(wid, controller.conn)
+    controller._last_result = result
+    assign_destination_colors(wid, controller.conn)
+
+    # Find which zones Baijini occupies; Long Forest (the conflict
+    # partner here) must not share any of them.
+    rows = controller.conn.execute(
+        """
+        SELECT za.primary_zone_label, s.name AS dest
+        FROM zone_assignments za
+        JOIN cargo_lines cl ON cl.id = za.cargo_line_id
+        JOIN stations s ON s.id = cl.delivery_station_id
+        WHERE za.workday_id = ?
+        """,
+        (wid,),
+    ).fetchall()
+    baijini_zones = {r["primary_zone_label"] for r in rows if r["dest"] == "Baijini Point"}
+    long_forest_zones = {r["primary_zone_label"] for r in rows if r["dest"] == "Long Forest"}
+
+    overlap = baijini_zones & long_forest_zones
+    assert not overlap, (
+        f"Conflict partners share zone(s) {overlap}: "
+        f"Baijini={baijini_zones}, Long Forest={long_forest_zones}"
+    )
+
+
 def test_overflow_prefers_fresh_over_mixing(controller):
     """When a destination overflows its first zone, the spillover should
     land in a FRESH zone, not mix into a zone occupied by another dest.
