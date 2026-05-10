@@ -67,6 +67,9 @@ class PasteContractsDialog(QDialog):
         self._thread: _ParseThread | None = None
         self._parsed: list[dict] = []
         self._row_checkboxes: list[QCheckBox] = []
+        # PTT recorder is lazy-created on first mic press so the openai
+        # / sounddevice imports stay out of cold-start time.
+        self._ptt = None
 
         self.setWindowTitle("Paste & Parse Contracts")
         self.setMinimumSize(720, 580)
@@ -107,8 +110,17 @@ class PasteContractsDialog(QDialog):
         self.input.setMinimumHeight(140)
         root.addWidget(self.input, 1)
 
-        # Parse row
+        # Parse row — Mic toggle for dictation, Parse button, status.
         parse_row = QHBoxLayout()
+        self.mic_btn = QPushButton("🎤 PTT")
+        self.mic_btn.setCheckable(True)
+        self.mic_btn.setToolTip(
+            "Push-to-talk: click once to start dictating, click again to "
+            "stop. Each dictation event appends a new paragraph above. "
+            "Plays the Windows Speech On / Speech Off cue on toggle."
+        )
+        self.mic_btn.toggled.connect(self._on_mic_toggled)
+        parse_row.addWidget(self.mic_btn)
         self.parse_btn = QPushButton("Parse →")
         self.parse_btn.clicked.connect(self._on_parse_clicked)
         parse_row.addWidget(self.parse_btn)
@@ -221,6 +233,72 @@ class PasteContractsDialog(QDialog):
         self.apply_btn.setEnabled(False)
         self.status_label.setText(f"Parse failed: {msg}")
 
+    # ── dictation (PTT) ───────────────────────────────────────────────
+
+    def _on_mic_toggled(self, checked: bool) -> None:
+        if checked:
+            self._start_dictation()
+        else:
+            self._stop_dictation()
+
+    def _start_dictation(self) -> None:
+        if not self.controller.api_key:
+            self.status_label.setText(
+                "OpenAI API key not set. Open Settings → OpenAI to add one."
+            )
+            self.mic_btn.setChecked(False)
+            return
+        if self._ptt is None:
+            from ...voice.ptt_recorder import PTTRecorder
+            self._ptt = PTTRecorder(self.controller.api_key, parent=self)
+            self._ptt.transcript.connect(self._on_dictation_transcript)
+            self._ptt.error.connect(self._on_dictation_error)
+            self._ptt.state.connect(self._on_dictation_state)
+        from ...voice.sound_cues import play_speech_on
+        play_speech_on()
+        self._ptt.start_recording()
+
+    def _stop_dictation(self) -> None:
+        if self._ptt is None:
+            return
+        from ...voice.sound_cues import play_speech_off
+        play_speech_off()
+        self._ptt.stop_recording()
+
+    def _on_dictation_state(self, state: str) -> None:
+        if state == "recording":
+            self.mic_btn.setText("● Recording…")
+            self.status_label.setText("Recording. Click the mic again to stop.")
+        elif state == "transcribing":
+            self.mic_btn.setText("🎤 Transcribing…")
+            self.mic_btn.setEnabled(False)
+            self.status_label.setText("Transcribing your dictation…")
+        else:
+            self.mic_btn.setEnabled(True)
+            self.mic_btn.setText("🎤 PTT")
+
+    def _on_dictation_transcript(self, text: str) -> None:
+        text = text.strip()
+        if not text:
+            self.status_label.setText("Empty transcript — try again.")
+            self.mic_btn.setChecked(False)
+            return
+        # Each dictation event = a new paragraph below the existing text.
+        existing = self.input.toPlainText()
+        if existing and not existing.endswith("\n\n"):
+            existing = existing.rstrip() + "\n\n"
+        self.input.setPlainText(existing + text)
+        cursor = self.input.textCursor()
+        cursor.movePosition(cursor.MoveOperation.End)
+        self.input.setTextCursor(cursor)
+        self.status_label.setText("Dictation added. Click Parse when ready.")
+        self.mic_btn.setChecked(False)
+
+    def _on_dictation_error(self, msg: str) -> None:
+        self.status_label.setText(f"Dictation error: {msg}")
+        self.mic_btn.setChecked(False)
+        self.mic_btn.setEnabled(True)
+
     def _clear_preview(self) -> None:
         # Drop everything except the trailing stretch — properly delete
         # so old preview cards don't become ghost top-level windows.
@@ -237,11 +315,19 @@ class PasteContractsDialog(QDialog):
     def _build_preview_card(self, contract: dict) -> QFrame:
         card = QFrame()
         card.setObjectName("card")
+        # Yellow box around contracts that came back missing a piece —
+        # so the user knows they need attention before clicking Apply.
+        issues = self._contract_issues(contract)
+        if issues:
+            card.setStyleSheet(
+                "QFrame#card { background-color: #2a2208; "
+                "border: 2px solid #ffcc00; border-radius: 3px; }"
+            )
         layout = QHBoxLayout(card)
         layout.setContentsMargins(8, 6, 8, 6)
 
         cb = QCheckBox()
-        cb.setChecked(True)
+        cb.setChecked(not issues)   # don't pre-check incomplete rows
         cb.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         layout.addWidget(cb)
         self._row_checkboxes.append(cb)
@@ -262,9 +348,41 @@ class PasteContractsDialog(QDialog):
             line.setProperty("muted", True)
             line.setWordWrap(True)
             details.addWidget(line)
+        if issues:
+            warn = QLabel(
+                "<span style='color:#ffcc00;font-weight:bold;'>⚠ Needs "
+                "attention:</span> " + "; ".join(issues)
+            )
+            warn.setTextFormat(Qt.TextFormat.RichText)
+            warn.setWordWrap(True)
+            details.addWidget(warn)
         layout.addLayout(details, 1)
 
         return card
+
+    def _contract_issues(self, contract: dict) -> list[str]:
+        """Reasons this parsed contract isn't ready to apply.
+
+        Returns a list of short human-readable issues. Empty list = OK.
+        These are surface-level checks; the actual add_contract call
+        will still validate against the workday's stations/commodities.
+        """
+        issues: list[str] = []
+        if not contract.get("pickup_station"):
+            issues.append("missing pickup station")
+        deliveries = contract.get("deliveries") or []
+        if not deliveries:
+            issues.append("no deliveries parsed")
+            return issues
+        for i, d in enumerate(deliveries, 1):
+            if not d.get("destination"):
+                issues.append(f"delivery {i}: missing destination")
+            if not d.get("commodity"):
+                issues.append(f"delivery {i}: missing commodity")
+            scu = d.get("scu")
+            if not scu or (isinstance(scu, (int, float)) and scu <= 0):
+                issues.append(f"delivery {i}: missing or zero SCU")
+        return issues
 
     # ── apply ─────────────────────────────────────────────────────────
 
