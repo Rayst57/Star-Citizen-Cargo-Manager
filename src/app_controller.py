@@ -169,6 +169,7 @@ class AppController(QObject):
         self.workday_id: int | None = None
         self._last_result: RecomputeResult | None = None
         self._recomputing: bool = False
+        self._recompute_thread: RecomputeThread | None = None
         self._current_stop_index = 0   # 0 = before first stop completed
 
         self.api_key: str | None = get_api_key()
@@ -499,11 +500,16 @@ class AppController(QObject):
         thread.failed.connect(self._on_recompute_failed)
         thread.finished.connect(self._clear_recomputing_flag)
         thread.finished.connect(thread.deleteLater)
+        # CRITICAL: keep a Python reference to the QThread or Python's
+        # garbage collector will destroy it before run() completes,
+        # crashing Qt with __fastfail (0xc0000409 on Windows).
+        self._recompute_thread = thread
         thread.start()
         _log.info("RecomputeThread started")
 
     def _clear_recomputing_flag(self) -> None:
         self._recomputing = False
+        self._recompute_thread = None     # safe to drop the reference now
         _log.info("recompute flag cleared")
 
     def _on_recompute_done(self, result: RecomputeResult) -> None:
