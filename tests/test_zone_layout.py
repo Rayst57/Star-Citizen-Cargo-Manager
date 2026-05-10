@@ -337,3 +337,75 @@ def test_overflow_prefers_fresh_over_mixing(controller):
     # Capacity is plenty (696 total, 256 in use). No zone should be mixed.
     mixed = [s.zone_label for s in strips if s.is_mixed]
     assert not mixed, f"Overflow mixed when fresh zones were available: {mixed}"
+
+
+def test_manual_override_survives_recompute(controller):
+    """A user merge/move marks zone_assignments rows
+    is_manual_override=1. A subsequent recompute must not overwrite
+    those rows — otherwise the merge silently undoes itself.
+    """
+    wid = controller.start_workday(_seraphim(controller), None, False)
+    controller.add_contract({
+        "pickup_station": "Yellow Core",
+        "max_pallet_size": 8,
+        "deliveries": [
+            {"destination": "Everus Harbor", "commodity": "Tungsten", "scu": 32},
+        ],
+    })
+    controller.add_contract({
+        "pickup_station": "Yellow Core",
+        "max_pallet_size": 8,
+        "deliveries": [
+            {"destination": "Baijini Point", "commodity": "Aluminum", "scu": 16},
+        ],
+    })
+
+    result = run_recompute(wid, controller.conn)
+    controller._last_result = result
+    assign_destination_colors(wid, controller.conn)
+
+    # Identify Everus's auto-assigned zone, then merge it elsewhere.
+    rows = controller.conn.execute(
+        """
+        SELECT za.primary_zone_label AS zone, s.name AS dest
+        FROM zone_assignments za
+        JOIN cargo_lines cl ON cl.id = za.cargo_line_id
+        JOIN stations s ON s.id = cl.delivery_station_id
+        WHERE za.workday_id = ?
+        """, (wid,),
+    ).fetchall()
+    everus_zone = next(r["zone"] for r in rows if r["dest"] == "Everus Harbor")
+    baijini_zone = next(r["zone"] for r in rows if r["dest"] == "Baijini Point")
+    assert everus_zone != baijini_zone
+
+    # Merge Everus into Baijini's zone.
+    controller.merge_zone_into(everus_zone, baijini_zone)
+
+    # Recompute. The merge MUST survive.
+    result2 = run_recompute(wid, controller.conn)
+    controller._last_result = result2
+
+    rows_after = controller.conn.execute(
+        """
+        SELECT za.primary_zone_label AS zone, s.name AS dest,
+               za.is_manual_override AS manual
+        FROM zone_assignments za
+        JOIN cargo_lines cl ON cl.id = za.cargo_line_id
+        JOIN stations s ON s.id = cl.delivery_station_id
+        WHERE za.workday_id = ?
+        """, (wid,),
+    ).fetchall()
+    everus_zones_after = {r["zone"] for r in rows_after if r["dest"] == "Everus Harbor"}
+    assert everus_zones_after == {baijini_zone}, (
+        f"merge_zone_into({everus_zone} → {baijini_zone}) was undone by recompute; "
+        f"Everus is now in {everus_zones_after}"
+    )
+    # And no duplicate rows for the same cargo line.
+    cl_count = controller.conn.execute(
+        """
+        SELECT cargo_line_id, COUNT(*) AS n
+        FROM zone_assignments WHERE workday_id = ?
+        GROUP BY cargo_line_id HAVING n > 1
+        """, (wid,),
+    ).fetchall()
+    assert not cl_count, f"Duplicate zone_assignments rows: {cl_count}"
