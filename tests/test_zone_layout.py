@@ -206,3 +206,69 @@ def test_empty_zones_appear_in_strips(controller):
     assert len(strips) == 7
     empty_count = sum(1 for s in strips if s.is_empty)
     assert empty_count == 6
+
+
+# ── Multi-contract destination consolidation ────────────────────────────
+
+def test_multiple_contracts_same_destination_consolidate(controller):
+    """A destination receiving cargo from many contracts should pack
+    into the smallest number of zones, not spread one-zone-per-contract.
+
+    Three contracts → Seraphim with 64 + 56 + 32 = 152 SCU. Total fits in
+    two R-bay zones (120 + 32). No mixing required.
+    """
+    wid = controller.start_workday(_seraphim(controller), None, False)
+    for scu in (64, 56, 32):
+        controller.add_contract({
+            "pickup_station": "Yellow Core",
+            "max_pallet_size": 8,
+            "deliveries": [
+                {"destination": "Long Forest", "commodity": "Tungsten", "scu": scu},
+            ],
+        })
+    result = run_recompute(wid, controller.conn)
+    controller._last_result = result
+    assign_destination_colors(wid, controller.conn)
+
+    strips = controller.get_zone_strips()
+    occupied = [s for s in strips if not s.is_empty]
+    # All cargo is for Long Forest — no other dest, so no zone should mix.
+    assert all(not s.is_mixed for s in occupied), \
+        f"Unexpected mixed zones: {[s.zone_label for s in occupied if s.is_mixed]}"
+    # 152 SCU fits in 2 R-bay zones (120 + 32) — must not be ≥3.
+    assert len(occupied) <= 2, \
+        f"Cargo for one dest spread across {len(occupied)} zones: " \
+        f"{[s.zone_label for s in occupied]}"
+
+
+def test_overflow_prefers_fresh_over_mixing(controller):
+    """When a destination overflows its first zone, the spillover should
+    land in a FRESH zone, not mix into a zone occupied by another dest.
+    """
+    wid = controller.start_workday(_seraphim(controller), None, False)
+    # First contract: Everus Harbor takes a full R-bay zone.
+    controller.add_contract({
+        "pickup_station": "Yellow Core",
+        "max_pallet_size": 8,
+        "deliveries": [
+            {"destination": "Everus Harbor", "commodity": "Tungsten", "scu": 96},
+        ],
+    })
+    # Second contract: Baijini Point — bigger than any single zone, so it
+    # must overflow. The overflow should pick a fresh zone, NOT share the
+    # 24-SCU leftover of Everus's zone.
+    controller.add_contract({
+        "pickup_station": "Yellow Core",
+        "max_pallet_size": 8,
+        "deliveries": [
+            {"destination": "Baijini Point", "commodity": "Tungsten", "scu": 160},
+        ],
+    })
+    result = run_recompute(wid, controller.conn)
+    controller._last_result = result
+    assign_destination_colors(wid, controller.conn)
+
+    strips = controller.get_zone_strips()
+    # Capacity is plenty (696 total, 256 in use). No zone should be mixed.
+    mixed = [s.zone_label for s in strips if s.is_mixed]
+    assert not mixed, f"Overflow mixed when fresh zones were available: {mixed}"
