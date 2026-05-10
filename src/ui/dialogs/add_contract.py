@@ -174,7 +174,9 @@ class AddContractDialog(QDialog):
     def _remove_row(self, row: DeliveryRow) -> None:
         if self.rows_layout.count() <= 1:
             return  # always keep at least one
-        row.setParent(None)
+        self.rows_layout.removeWidget(row)
+        row.hide()
+        row.deleteLater()
 
     def _load_contract(self, contract: dict) -> None:
         # Pickup station

@@ -71,11 +71,19 @@ class ContractsPanel(QWidget):
 
     def refresh(self) -> None:
         """Rebuild the contract cards from the controller's current state."""
-        # Clear existing cards (keep the trailing stretch)
+        # Properly delete (don't just orphan) old cards. Calling
+        # setParent(None) on a QWidget that was previously parented
+        # turns it into a top-level window — if it was visible, it
+        # stays visible as a ghost popup. takeAt + deleteLater removes
+        # it from the layout and schedules destruction.
         for i in reversed(range(self.list_layout.count() - 1)):
-            item = self.list_layout.itemAt(i)
-            if item and item.widget():
-                item.widget().setParent(None)
+            item = self.list_layout.takeAt(i)
+            if item is None:
+                continue
+            w = item.widget()
+            if w is not None:
+                w.hide()
+                w.deleteLater()
 
         contracts = self.controller.list_contracts()
 

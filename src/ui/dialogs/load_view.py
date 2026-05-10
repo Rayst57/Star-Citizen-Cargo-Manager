@@ -94,11 +94,15 @@ class LoadViewModal(QDialog):
         self.viewport.set_pallet_rects(rects)
 
     def _rebuild_legend(self) -> None:
-        # Clear
+        # Clear — properly delete so old chips don't become orphan windows.
         while self.legend_layout.count():
             item = self.legend_layout.takeAt(0)
-            if item.widget():
-                item.widget().setParent(None)
+            if item is None:
+                continue
+            w = item.widget()
+            if w is not None:
+                w.hide()
+                w.deleteLater()
 
         # Pull station/color pairs that appear in this workday
         rows = self.controller.conn.execute(
