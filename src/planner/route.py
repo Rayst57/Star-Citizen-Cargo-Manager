@@ -269,6 +269,77 @@ def build_simple_route(
             )
         )
 
+    # ── Double-dip: detect cargo whose pickup happens AFTER its only
+    # delivery visit in the route, and add a return-visit stop so it
+    # actually gets delivered. Without this, cargo for an early-sort
+    # destination (e.g. Baijini, sort=80) picked up at a later-sort
+    # station (e.g. Long Forest, sort=120) just rides the rest of the
+    # route undelivered.
+    pickup_idx_by_cl: dict[int, int] = {}
+    delivery_idx_by_cl: dict[int, int] = {}
+    for idx, st in enumerate(stops):
+        for ref in st.loads:
+            pickup_idx_by_cl[ref.cargo_line_id] = idx
+        for ref in st.unloads:
+            delivery_idx_by_cl[ref.cargo_line_id] = idx
+
+    # cargo lines that need a second delivery visit, grouped by
+    # delivery_station_id → list[(latest_pickup_idx, CargoLineRef)]
+    stranded_by_dest: dict[int, list[tuple[int, CargoLineRef]]] = {}
+    for cl in cargo_lines:
+        cl_id = cl["id"]
+        d_idx = delivery_idx_by_cl.get(cl_id)
+        p_idx = pickup_idx_by_cl.get(cl_id)
+        if d_idx is None or p_idx is None:
+            continue
+        if p_idx > d_idx:
+            ref = CargoLineRef(
+                cargo_line_id=cl_id,
+                contract_id=cl["contract_id"],
+                contract_number=cl["contract_number"],
+                commodity_id=cl["commodity_id"],
+                commodity_name=cl["commodity_name"],
+                scu_amount=cl["scu_amount"],
+                max_pallet_size=cl["max_pallet_size"],
+            )
+            stranded_by_dest.setdefault(
+                cl["delivery_station_id"], []
+            ).append((p_idx, ref))
+            # Remove this cargo from the original (early) delivery stop
+            # — it can't possibly be there since pickup is later.
+            stops[d_idx].unloads = [
+                u for u in stops[d_idx].unloads if u.cargo_line_id != cl_id
+            ]
+
+    # Append return-visit stops in order of "latest pickup idx" so each
+    # double-dip happens AFTER its required pickups. Multiple cargo
+    # lines for the same destination collapse into one return visit
+    # gated by their latest pickup.
+    return_visit_plan: list[tuple[int, int, list[CargoLineRef]]] = []  # (after_idx, dest_sid, refs)
+    for dest_sid, refs_with_pickup in stranded_by_dest.items():
+        latest_pickup = max(p for p, _ in refs_with_pickup)
+        refs = [r for _, r in refs_with_pickup]
+        return_visit_plan.append((latest_pickup, dest_sid, refs))
+        _log.info(
+            "  double-dip: destination %d (%s) needs return visit "
+            "after stop %d for %d stranded cargo line(s)",
+            dest_sid, station_map[dest_sid]["name"],
+            latest_pickup + 1, len(refs),
+        )
+    # Sort by "after which stop" so we keep the natural progression.
+    return_visit_plan.sort(key=lambda t: t[0])
+    for _, dest_sid, refs in return_visit_plan:
+        info = station_map[dest_sid]
+        stops.append(RouteStop(
+            stop_number=0,    # renumbered after all appends
+            station_id=dest_sid,
+            station_name=info["name"],
+            action="Unload",
+            loads=[],
+            unloads=refs,
+            notes="Return visit (double-dip) for cargo picked up later in the route",
+        ))
+
     # ── Return-to-origin Final unload ────────────────────────────────────
     # Triggered when:
     #   (a) round_robin is on and origin isn't already the last stop, OR
@@ -293,5 +364,19 @@ def build_simple_route(
                 ),
             )
         )
+
+    # Renumber after any return-visit / final-unload appends so
+    # stop_number always equals position-in-list.
+    for i, st in enumerate(stops):
+        st.stop_number = i + 1
+
+    # If the original "early" delivery stop is now empty (its sole
+    # cargo got moved to a return visit), drop it from the route.
+    stops = [
+        st for st in stops
+        if st.loads or st.unloads or st.station_id == origin_id
+    ]
+    for i, st in enumerate(stops):
+        st.stop_number = i + 1
 
     return stops
