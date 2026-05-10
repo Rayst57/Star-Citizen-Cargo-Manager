@@ -7,9 +7,8 @@ when accepted; cancelled = exit app.
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QFrame, QHBoxLayout, QLabel,
+    QComboBox, QDialog, QFrame, QHBoxLayout, QLabel,
     QPushButton, QVBoxLayout,
 )
 
@@ -104,21 +103,19 @@ class WorkdayScreen(QDialog):
         origin_row = QHBoxLayout()
         origin_row.addWidget(QLabel("Origin"))
         self.origin_combo = QComboBox()
-        self._populate_stations(self.origin_combo, include_none=False)
+        self._populate_stations(self.origin_combo, include_round_robin=False)
         origin_row.addWidget(self.origin_combo, 1)
         layout.addLayout(origin_row)
 
-        # Final destination combo
+        # Final destination combo. The first entry is "Round Robin" — picking
+        # it means "return to origin after the last delivery" (no fixed final
+        # station), which replaces the old separate round-robin checkbox.
         final_row = QHBoxLayout()
         final_row.addWidget(QLabel("Final dest."))
         self.final_combo = QComboBox()
-        self._populate_stations(self.final_combo, include_none=True)
+        self._populate_stations(self.final_combo, include_round_robin=True)
         final_row.addWidget(self.final_combo, 1)
         layout.addLayout(final_row)
-
-        # Round robin
-        self.round_robin = QCheckBox("Round robin (return to origin)")
-        layout.addWidget(self.round_robin)
 
         # Start button
         start_row = QHBoxLayout()
@@ -130,9 +127,9 @@ class WorkdayScreen(QDialog):
 
         root.addWidget(card)
 
-    def _populate_stations(self, combo: QComboBox, *, include_none: bool) -> None:
-        if include_none:
-            combo.addItem("(none)", userData=None)
+    def _populate_stations(self, combo: QComboBox, *, include_round_robin: bool) -> None:
+        if include_round_robin:
+            combo.addItem("Round Robin (return to origin)", userData=None)
         rows = self.controller.conn.execute(
             """
             SELECT id, name FROM stations
@@ -159,7 +156,8 @@ class WorkdayScreen(QDialog):
     def _on_start_new(self) -> None:
         origin_id = self.origin_combo.currentData()
         final_id = self.final_combo.currentData()
-        rr = self.round_robin.isChecked()
+        # Round Robin is the dropdown entry whose userData is None.
+        rr = final_id is None
         wid = self.controller.start_workday(origin_id, final_id, rr)
         self.workday_id = wid
         self.accept()
