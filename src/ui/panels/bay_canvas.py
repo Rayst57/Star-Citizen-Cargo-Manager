@@ -70,7 +70,7 @@ class BayCanvasViewport(QWidget):
     def _compute_layout(self) -> None:
         margin = 16
         gap = 30
-        label_height = 30
+        label_height = 42
         ramp_height = 22
 
         avail_w = max(0, self.width() - 2 * margin - gap)
@@ -216,11 +216,11 @@ class BayCanvasViewport(QWidget):
         p.setPen(QPen(QColor("#deb447")))
         for label, x_off in (("F1", 0), ("F2", 2), ("F3", 4)):
             o = self._fwd_origin
-            rect = QRect(o.x() + x_off * cp, o.y() - 28, 2 * cp, 24)
+            rect = QRect(o.x() + x_off * cp, o.y() - 40, 2 * cp, 24)
             p.drawText(rect, Qt.AlignmentFlag.AlignCenter, label)
         for label, x_off in (("R1", 0), ("R2", 2), ("R3", 4), ("R4", 6)):
             o = self._rear_origin
-            rect = QRect(o.x() + x_off * cp, o.y() - 28, 2 * cp, 24)
+            rect = QRect(o.x() + x_off * cp, o.y() - 40, 2 * cp, 24)
             p.drawText(rect, Qt.AlignmentFlag.AlignCenter, label)
 
     def _draw_pallets(self, p: QPainter) -> None:
@@ -343,7 +343,9 @@ class ZoneStripsViewport(QWidget):
     def _compute_layout(self) -> None:
         margin = 16
         gap = 30
-        label_height = 30          # vertical space reserved above the bay
+        label_height = 42          # generous gap above the bay so the
+                                   # F1/F2/F3, R1-R4 labels never collide
+                                   # with the bay outline
         ramp_height = 22
         avail_w = max(0, self.width() - 2 * margin - gap)
         avail_h = max(0, self.height() - label_height - ramp_height - 2 * margin)
@@ -430,23 +432,20 @@ class ZoneStripsViewport(QWidget):
 
     def _draw_zone_labels(self, p: QPainter) -> None:
         cp = self._cell_px
-        # Cap the font so the label rect (24 px tall) always contains it
-        # — the label rect height is fixed; cell size shouldn't drive it
-        # past what fits.
         font_pt = max(8, min(cp - 6, 12))
         font = QFont("Segoe UI", font_pt)
         font.setBold(True)
         p.setFont(font)
         p.setPen(QPen(QColor("#deb447")))
-        # Label sits in the 30-px gap above the bay outline. We push it
-        # up by 28 so it has 4 px of clearance before the outline.
+        # Label sits high above the bay outline (16 px of clearance) so
+        # the letters can't touch or be cut off by the bay top.
         for label, x_off in (("F1", 0), ("F2", 2), ("F3", 4)):
             o = self._fwd_origin
-            rect = QRect(o.x() + x_off * cp, o.y() - 28, 2 * cp, 24)
+            rect = QRect(o.x() + x_off * cp, o.y() - 40, 2 * cp, 24)
             p.drawText(rect, Qt.AlignmentFlag.AlignCenter, label)
         for label, x_off in (("R1", 0), ("R2", 2), ("R3", 4), ("R4", 6)):
             o = self._rear_origin
-            rect = QRect(o.x() + x_off * cp, o.y() - 28, 2 * cp, 24)
+            rect = QRect(o.x() + x_off * cp, o.y() - 40, 2 * cp, 24)
             p.drawText(rect, Qt.AlignmentFlag.AlignCenter, label)
 
     def _draw_ramp_arrow(self, p: QPainter) -> None:
