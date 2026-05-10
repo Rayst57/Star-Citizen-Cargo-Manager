@@ -8,15 +8,27 @@ REM Output:                          dist\CargoManager\CargoManager.exe
 setlocal
 
 echo === Running test suite ===
-python -m pytest tests\ -q
+python -c "import pytest" 1>nul 2>nul
 if errorlevel 1 (
-    echo Tests failed. Aborting build.
-    exit /b 1
+    echo pytest not installed in this Python; skipping tests.
+    echo To enable: pip install pytest
+) else (
+    python -m pytest tests\ -q
+    if errorlevel 1 (
+        echo Tests failed. Aborting build.
+        exit /b 1
+    )
 )
 
 echo.
 echo === Building bundle with PyInstaller ===
-pyinstaller cargo_manager.spec --clean --noconfirm
+python -c "import PyInstaller" 1>nul 2>nul
+if errorlevel 1 (
+    echo PyInstaller not installed.
+    echo Install:  pip install pyinstaller
+    exit /b 1
+)
+python -m PyInstaller cargo_manager.spec --clean --noconfirm
 if errorlevel 1 (
     echo PyInstaller build failed.
     exit /b 1
