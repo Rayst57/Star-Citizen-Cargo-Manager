@@ -310,46 +310,119 @@ def _place_cargo_with_overflow(
     excluded_zones: set[str],
     conflict_group_zone: dict[int, str],
 ) -> None:
-    """Place cargo across multiple zones when no single zone fits it all."""
-    # Try one cargo line at a time, picking whichever zone has the most room.
+    """Place cargo across multiple zones when no single zone fits it all.
+
+    For each cargo line we first try to fit the whole line in a single
+    zone (preferring fresh zones). If no zone has the full SCU free, the
+    line is split at the pallet level — we walk pallets largest-first
+    and drop each into the first zone with capacity. Each zone receiving
+    a portion gets its own zone_assignments row whose pallet_breakdown
+    is just that zone's slice of the cargo, so loadout snapshots and
+    the detailed plan can see exactly what sits where.
+    """
     for c in cargo:
         scu = c["scu_amount"]
+        pallets = palletize(scu, c["max_pallet_size"])
+
+        # Single-zone fit — preferred (fresh zone first, then largest free)
         candidates = [
             z for z in zones
             if z.zone_label not in excluded_zones and z.remaining_scu >= scu
         ]
-        if not candidates:
+        candidates.sort(key=lambda z: (1 if z.occupants else 0, -z.remaining_scu))
+        if candidates:
+            target = candidates[0]
+            summary = palletize_summary(pallets)
+            conn.execute(
+                """
+                INSERT INTO zone_assignments
+                    (workday_id, cargo_line_id, primary_zone_label,
+                     pallet_breakdown, is_manual_override, notes)
+                VALUES (?, ?, ?, ?, 0, 'OVERFLOW — single zone')
+                """,
+                (workday_id, c["cargo_line_id"], target.zone_label, summary),
+            )
+            target.remaining_scu -= scu
+            target.occupants.add(delivery_station_id)
+            if c["group_id"] is not None and c["group_id"] not in conflict_group_zone:
+                conflict_group_zone[c["group_id"]] = target.zone_label
+            continue
+
+        # Split across zones — but fill ONE zone to its max before moving
+        # on, never sprinkle. Last-resort overflow only.  Sort zones once
+        # by preference (fresh first, then largest free) and walk the
+        # remaining pallets greedily through that ordering.
+        avail = sorted(
+            [z for z in zones
+             if z.zone_label not in excluded_zones and z.remaining_scu > 0],
+            key=lambda z: (1 if z.occupants else 0, -z.remaining_scu),
+        )
+        zone_pallets: dict[str, list[int]] = {}
+        unplaced: list[int] = []
+        remaining = list(pallets)        # largest-first ordering preserved
+        zi = 0
+        while remaining and zi < len(avail):
+            z = avail[zi]
+            took_any = False
+            kept: list[int] = []
+            for size in remaining:
+                if z.remaining_scu >= size:
+                    zone_pallets.setdefault(z.zone_label, []).append(size)
+                    z.remaining_scu -= size
+                    z.occupants.add(delivery_station_id)
+                    took_any = True
+                else:
+                    kept.append(size)
+            remaining = kept
+            if not took_any:
+                # Nothing fit in this zone; advance.
+                zi += 1
+            elif z.remaining_scu == 0:
+                # Filled to capacity, move on.
+                zi += 1
+            # If we DID place but the zone still has room and there are
+            # still pallets, we've already tried fitting them in the
+            # outer for-loop (size > remaining_scu blocked them), so
+            # advance.
+            else:
+                zi += 1
+        unplaced.extend(remaining)
+
+        if unplaced:
             _log_warn(
                 workday_id,
-                f"Cargo line {c['cargo_line_id']} ({scu} SCU) could not be "
-                f"assigned to any zone — ship is over capacity.",
+                f"Cargo line {c['cargo_line_id']} could not place "
+                f"{sum(unplaced)} SCU ({len(unplaced)} pallet(s)) — "
+                f"ship is over capacity.",
                 c["cargo_line_id"], conn,
             )
-            continue
-        # Prefer fresh zones, then largest remaining
-        candidates.sort(key=lambda z: (1 if z.occupants else 0, -z.remaining_scu))
-        target = candidates[0]
-        pallets = palletize(scu, c["max_pallet_size"])
-        summary = palletize_summary(pallets)
-        conn.execute(
-            """
-            INSERT INTO zone_assignments
-                (workday_id, cargo_line_id, primary_zone_label,
-                 pallet_breakdown, is_manual_override, notes)
-            VALUES (?, ?, ?, ?, 0, ?)
-            """,
-            (
-                workday_id, c["cargo_line_id"], target.zone_label, summary,
-                "OVERFLOW — cargo split across zones",
-            ),
-        )
-        target.remaining_scu -= scu
-        target.occupants.add(delivery_station_id)
-        if c["group_id"] is not None and c["group_id"] not in conflict_group_zone:
-            conflict_group_zone[c["group_id"]] = target.zone_label
-        _log_warn(
-            workday_id,
-            f"Cargo line {c['cargo_line_id']} placed with overflow in "
-            f"{target.zone_label}.",
-            c["cargo_line_id"], conn,
-        )
+
+        # Persist a row per zone receiving a portion
+        first_zone = None
+        for zone_label, sizes in zone_pallets.items():
+            sizes.sort(reverse=True)
+            summary = palletize_summary(sizes)
+            conn.execute(
+                """
+                INSERT INTO zone_assignments
+                    (workday_id, cargo_line_id, primary_zone_label,
+                     pallet_breakdown, is_manual_override, notes)
+                VALUES (?, ?, ?, ?, 0, 'OVERFLOW — split across zones')
+                """,
+                (workday_id, c["cargo_line_id"], zone_label, summary),
+            )
+            if first_zone is None:
+                first_zone = zone_label
+
+        if (c["group_id"] is not None
+                and c["group_id"] not in conflict_group_zone
+                and first_zone is not None):
+            conflict_group_zone[c["group_id"]] = first_zone
+
+        if zone_pallets:
+            _log_warn(
+                workday_id,
+                f"Cargo line {c['cargo_line_id']} ({scu} SCU) split across "
+                f"{', '.join(zone_pallets.keys())}.",
+                c["cargo_line_id"], conn,
+            )

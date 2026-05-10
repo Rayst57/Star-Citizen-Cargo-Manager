@@ -80,7 +80,7 @@ class _TopDownView(QWidget):
         y0 = title_h + (self.height() - title_h - ramp_h - used_h) // 2
 
         # Title
-        p.setPen(QPen(QColor("#deb447")))
+        p.setPen(QPen(QColor("#5be4ff")))
         f = QFont("Segoe UI", 11)
         f.setBold(True)
         p.setFont(f)
@@ -91,7 +91,7 @@ class _TopDownView(QWidget):
         # Floor
         rect = QRect(x0, y0, used_w, used_h)
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QBrush(QColor("#212e67")))
+        p.setBrush(QBrush(QColor("#142028")))
         p.drawRect(rect)
         p.setPen(QPen(QColor("#ffffff"), 1.5))
         p.setBrush(Qt.BrushStyle.NoBrush)
@@ -110,7 +110,7 @@ class _TopDownView(QWidget):
 
         # Draw dashed 1×1 outlines for unoccupied floor cells so the
         # pilot can see how much space is still available.
-        dash_pen = QPen(QColor("#5a6aae"), 1, Qt.PenStyle.DashLine)
+        dash_pen = QPen(QColor("#264a5c"), 1, Qt.PenStyle.DashLine)
         p.setPen(dash_pen)
         p.setBrush(Qt.BrushStyle.NoBrush)
         for x in range(zw):
@@ -146,20 +146,20 @@ class _TopDownView(QWidget):
             p.drawRect(r)
             if pl.is_conflicted:
                 _draw_conflict_stripes(p, r, pl.conflict_partner_colors)
-            text_color = QColor("#ffffff") if color.lightness() < 140 else QColor("#212e67")
+            text_color = QColor("#ffffff") if color.lightness() < 140 else QColor("#142028")
             p.setPen(QPen(text_color))
             f2 = QFont("Segoe UI", max(7, cell - 8))
             p.setFont(f2)
             p.drawText(r, Qt.AlignmentFlag.AlignCenter, str(pl.pallet_size))
 
         # Ramp arrow at bottom (low-Y end)
-        p.setPen(QPen(QColor("#ffbe20"), 2))
+        p.setPen(QPen(QColor("#ff8a3c"), 2))
         f3 = QFont("Segoe UI", 9)
         p.setFont(f3)
         p.drawText(QRect(x0, y0 + used_h + 4, used_w, ramp_h),
                    Qt.AlignmentFlag.AlignCenter, "▲ ramp / door")
         # Forward marker at top
-        p.setPen(QPen(QColor("#deb447")))
+        p.setPen(QPen(QColor("#5be4ff")))
         f4 = QFont("Segoe UI", 8)
         p.setFont(f4)
         p.drawText(QRect(x0, y0 - 16, used_w, 14),
@@ -200,7 +200,7 @@ class _SideView(QWidget):
         y0 = title_h + (self.height() - title_h - ramp_h - used_h) // 2
 
         # Title
-        p.setPen(QPen(QColor("#deb447")))
+        p.setPen(QPen(QColor("#5be4ff")))
         f = QFont("Segoe UI", 11)
         f.setBold(True)
         p.setFont(f)
@@ -211,7 +211,7 @@ class _SideView(QWidget):
         # Floor frame
         rect = QRect(x0, y0, used_w, used_h)
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QBrush(QColor("#212e67")))
+        p.setBrush(QBrush(QColor("#142028")))
         p.drawRect(rect)
         p.setPen(QPen(QColor("#ffffff"), 1.5))
         p.setBrush(Qt.BrushStyle.NoBrush)
@@ -244,7 +244,7 @@ class _SideView(QWidget):
             z_used_by_y[local_y] = current_z
 
         # Dashed outlines for unoccupied 1×1 cells
-        dash_pen = QPen(QColor("#5a6aae"), 1, Qt.PenStyle.DashLine)
+        dash_pen = QPen(QColor("#264a5c"), 1, Qt.PenStyle.DashLine)
         p.setPen(dash_pen)
         p.setBrush(Qt.BrushStyle.NoBrush)
         for y in range(zl):
@@ -279,7 +279,7 @@ class _SideView(QWidget):
                     p.setBrush(Qt.BrushStyle.NoBrush)
                     p.setPen(QPen(QColor("#ff3030"), 2))
                     p.drawRect(r)
-                text_color = QColor("#ffffff") if color.lightness() < 140 else QColor("#212e67")
+                text_color = QColor("#ffffff") if color.lightness() < 140 else QColor("#142028")
                 p.setPen(QPen(text_color))
                 f2 = QFont("Segoe UI", max(7, cell - 8))
                 p.setFont(f2)
@@ -287,7 +287,7 @@ class _SideView(QWidget):
                 current_z += h
 
         # Direction labels
-        p.setPen(QPen(QColor("#deb447")))
+        p.setPen(QPen(QColor("#5be4ff")))
         f3 = QFont("Segoe UI", 9)
         p.setFont(f3)
         p.drawText(QRect(x0, y0 + used_h + 4, used_w // 2, ramp_h),
@@ -368,7 +368,7 @@ class ZoneDetailDialog(QDialog):
                 "⚠ Conflict pallets staged at the ramp end (right side of "
                 "side view) for fast deconfliction."
             )
-            note.setStyleSheet("color: #ffbe20; font-weight: bold;")
+            note.setStyleSheet("color: #ff8a3c; font-weight: bold;")
             note.setWordWrap(True)
             root.addWidget(note)
 

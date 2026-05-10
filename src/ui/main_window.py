@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 from ..app_controller import AppController, ToolError
 from .dialogs.add_contract import AddContractDialog
 from .dialogs.detailed_plan import DetailedPlanDialog
+from .dialogs.paste_contracts import PasteContractsDialog
 from .dialogs.settings_dialog import SettingsDialog
 from .dialogs.zone_detail import ZoneDetailDialog
 from .panels.bay_canvas import BayCanvas
@@ -77,6 +78,7 @@ class MainWindow(QMainWindow):
     def _wire_signals(self) -> None:
         # Contracts panel
         self.contracts_panel.add_requested.connect(self._open_add_contract)
+        self.contracts_panel.paste_requested.connect(self._open_paste_contracts)
         self.contracts_panel.edit_requested.connect(self._open_edit_contract)
         self.contracts_panel.remove_requested.connect(self._on_remove_contract)
 
@@ -126,6 +128,10 @@ class MainWindow(QMainWindow):
                 self.controller.add_contract(dlg.value())
             except ToolError as e:
                 QMessageBox.warning(self, "Add contract failed", str(e))
+
+    def _open_paste_contracts(self) -> None:
+        dlg = PasteContractsDialog(self.controller, parent=self)
+        dlg.exec()
 
     def _open_edit_contract(self, contract_number: int) -> None:
         c = next(
@@ -178,9 +184,20 @@ class MainWindow(QMainWindow):
         dlg.exec()
 
     def _on_recompute_done(self, _result) -> None:
-        self.bay_canvas.refresh()
-        self.route_panel.refresh()
-        self.contracts_panel.refresh()
+        # Each refresh is wrapped so that a single panel hiccup can't
+        # cascade into the controller's catch-all and pop a "Recompute
+        # failed" dialog. Any error is logged to cargo_manager.log.
+        import traceback as _tb
+        for fn, name in (
+            (self.bay_canvas.refresh, "bay_canvas"),
+            (self.route_panel.refresh, "route_panel"),
+            (self.contracts_panel.refresh, "contracts_panel"),
+        ):
+            try:
+                fn()
+            except Exception:
+                from ..app_controller import _log
+                _log.error("Refresh of %s failed:\n%s", name, _tb.format_exc())
 
     def _on_recompute_failed(self, msg: str) -> None:
         QMessageBox.warning(self, "Recompute failed", msg)

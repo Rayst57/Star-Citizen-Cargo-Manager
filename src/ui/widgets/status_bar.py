@@ -41,7 +41,7 @@ class StatusBarWidget(QWidget):
     def _sep(self) -> QFrame:
         f = QFrame()
         f.setFrameShape(QFrame.Shape.VLine)
-        f.setStyleSheet("color: #3a4894;")
+        f.setStyleSheet("color: #264a5c;")
         return f
 
     def set_mic(self, state: str) -> None:

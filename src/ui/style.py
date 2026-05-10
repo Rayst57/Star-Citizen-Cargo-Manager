@@ -1,5 +1,10 @@
 """
 Loads theme/colors.json and produces the QSS stylesheet for the app.
+
+The current palette evokes Star Citizen's mobiglass UI: a deep
+near-black background, cyan accents reminiscent of holographic
+displays, amber for warnings and call-outs, and thin glowing borders
+on interactive surfaces.
 """
 
 from __future__ import annotations
@@ -24,11 +29,15 @@ def build_qss(colors: dict[str, str]) -> str:
     pri    = colors["primary"]
     pri_on = colors["primary_on"]
     accent = colors["accent"]
+    accent_bright = colors.get("accent_bright", accent)
     acc_on = colors["accent_on"]
     text   = colors["text"]
     muted  = colors["text_muted"]
+    border = colors.get("border", "#264a5c")
+    amber  = colors.get("secondary_accent", "#ff8a3c")
 
     return f"""
+    /* ── Base ─────────────────────────────────────────────────── */
     QMainWindow, QDialog, QWidget {{
         background-color: {bg};
         color: {text};
@@ -45,83 +54,175 @@ def build_qss(colors: dict[str, str]) -> str:
     QLabel[heading="true"] {{
         font-size: 14px;
         font-weight: bold;
-        color: {accent};
+        color: {accent_bright};
+        letter-spacing: 0.5px;
     }}
 
+    /* ── Buttons ─────────────────────────────────────────────── */
     QPushButton {{
-        background-color: {pri};
-        color: {pri_on};
-        border: none;
-        border-radius: 4px;
+        background-color: transparent;
+        color: {accent_bright};
+        border: 1px solid {accent};
+        border-radius: 2px;
         padding: 6px 14px;
+        font-weight: 500;
+        letter-spacing: 0.4px;
     }}
     QPushButton:hover {{
+        background-color: {pri};
+        color: {pri_on};
+        border-color: {accent_bright};
+    }}
+    QPushButton:pressed {{
         background-color: {accent};
         color: {acc_on};
     }}
     QPushButton:disabled {{
-        background-color: #2c3a78;
-        color: #6f7da8;
+        background-color: transparent;
+        color: {muted};
+        border-color: {border};
     }}
     QPushButton[flat="true"] {{
         background-color: transparent;
         color: {muted};
+        border: none;
         padding: 2px 6px;
     }}
     QPushButton[flat="true"]:hover {{
-        color: {accent};
+        color: {accent_bright};
+        background: transparent;
     }}
 
+    /* ── Cards / panels ──────────────────────────────────────── */
     QFrame#card {{
-        background-color: #2a3672;
-        border: 1px solid #3a4894;
-        border-radius: 6px;
+        background-color: {surf};
+        border: 1px solid {border};
+        border-radius: 2px;
     }}
     QFrame#card[conflict="true"] {{
-        background-color: #4a3024;
-        border: 1px solid {accent};
+        background-color: {surf};
+        border: 1px solid {amber};
     }}
 
+    /* ── Recompute banner ────────────────────────────────────── */
     QFrame#recompute_banner {{
         background-color: {bg};
-        border-top: 2px solid {accent};
+        border-top: 1px solid {amber};
     }}
     QFrame#recompute_banner QLabel {{
-        color: {accent};
+        color: {amber};
         font-weight: bold;
+        letter-spacing: 0.5px;
     }}
 
-    QComboBox, QLineEdit, QSpinBox {{
-        background-color: #1a2452;
+    /* ── Inputs ──────────────────────────────────────────────── */
+    QComboBox, QLineEdit, QSpinBox, QDoubleSpinBox {{
+        background-color: {bg};
         color: {text};
-        border: 1px solid #3a4894;
-        border-radius: 3px;
-        padding: 3px 6px;
+        border: 1px solid {border};
+        border-radius: 2px;
+        padding: 4px 8px;
+        selection-background-color: {pri};
+        selection-color: {pri_on};
+    }}
+    QComboBox:focus, QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {{
+        border-color: {accent};
     }}
     QComboBox::drop-down {{
         border: none;
+        width: 16px;
     }}
     QComboBox QAbstractItemView {{
-        background-color: #1a2452;
+        background-color: {surf};
         color: {text};
+        border: 1px solid {accent};
         selection-background-color: {pri};
+        selection-color: {pri_on};
     }}
 
+    QCheckBox {{
+        color: {text};
+        spacing: 6px;
+    }}
+    QCheckBox::indicator {{
+        width: 14px;
+        height: 14px;
+        border: 1px solid {border};
+        background: {bg};
+        border-radius: 1px;
+    }}
+    QCheckBox::indicator:checked {{
+        background: {accent};
+        border: 1px solid {accent_bright};
+    }}
+
+    /* ── Scroll area / scrollbars ────────────────────────────── */
     QScrollArea {{
         border: none;
     }}
     QScrollBar:vertical {{
-        background: #1a2452;
-        width: 10px;
+        background: {bg};
+        width: 8px;
+        margin: 0;
     }}
     QScrollBar::handle:vertical {{
         background: {pri};
         border-radius: 4px;
+        min-height: 24px;
+    }}
+    QScrollBar::handle:vertical:hover {{
+        background: {accent};
+    }}
+    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+        background: transparent;
+        height: 0;
+    }}
+    QScrollBar:horizontal {{
+        background: {bg};
+        height: 8px;
+    }}
+    QScrollBar::handle:horizontal {{
+        background: {pri};
+        border-radius: 4px;
+        min-width: 24px;
     }}
 
+    /* ── Status bar ──────────────────────────────────────────── */
     QStatusBar {{
-        background: #181f3f;
+        background: {bg};
         color: {muted};
+        border-top: 1px solid {border};
+    }}
+
+    /* ── Tabs (Settings dialog) ──────────────────────────────── */
+    QTabWidget::pane {{
+        border: 1px solid {border};
+        background: {surf};
+    }}
+    QTabBar::tab {{
+        background: {bg};
+        color: {muted};
+        border: 1px solid {border};
+        border-bottom: none;
+        padding: 6px 14px;
+        margin-right: 2px;
+    }}
+    QTabBar::tab:selected {{
+        color: {accent_bright};
+        border: 1px solid {accent};
+        border-bottom: none;
+        background: {surf};
+    }}
+    QTabBar::tab:hover {{
+        color: {accent_bright};
+    }}
+
+    /* ── Tooltip ─────────────────────────────────────────────── */
+    QToolTip {{
+        background: {surf};
+        color: {accent_bright};
+        border: 1px solid {accent};
+        padding: 4px 8px;
     }}
     """
 

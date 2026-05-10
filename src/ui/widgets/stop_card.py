@@ -65,5 +65,5 @@ class StopCard(QFrame):
         if conflict_note:
             cn = QLabel(f"⚠ {conflict_note}")
             cn.setWordWrap(True)
-            cn.setStyleSheet("color: #ffbe20; font-weight: bold;")
+            cn.setStyleSheet("color: #ff8a3c; font-weight: bold;")
             root.addWidget(cn)
