@@ -727,16 +727,15 @@ class BayCanvas(QWidget):
             self.stop_combo.blockSignals(False)
             return
         # Skip the FINAL stop — at the final destination the ship has been
-        # offloaded so there's no "departure loadout" to show. Each entry
-        # is named "Departure N: <station> — <action>", matching the
-        # pilot's mental model of inspecting the loadout BEFORE leaving.
+        # offloaded so there's no "departure loadout" to show. The label
+        # is just "Departure N: <station>" — the action (Arrival/Load/
+        # Unload/etc) is redundant context here since the dropdown is
+        # about the loadout you're carrying when you leave that stop.
         n_total = len(result.route_stops)
         for i, stop in enumerate(result.route_stops):
             if i == n_total - 1:
                 continue
-            label = (
-                f"Departure {i + 1}: {stop.station_name}  ({stop.action})"
-            )
+            label = f"Departure {i + 1}: {stop.station_name}"
             self.stop_combo.addItem(label, userData=stop.stop_number)
         # Default to STOP 1 (Initial Departure) on first compute; keep
         # whatever the user picked across recomputes if it's still valid.
