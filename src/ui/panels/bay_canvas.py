@@ -683,6 +683,12 @@ class BayCanvas(QWidget):
         totals.addWidget(self.rear_label)
         root.addLayout(totals)
 
+        # Color legend slot — refilled on every refresh() so it tracks
+        # the workday's destination set + any conflict pairs.
+        self._legend_slot = QVBoxLayout()
+        self._legend_slot.setContentsMargins(0, 0, 0, 0)
+        root.addLayout(self._legend_slot)
+
     def current_stop_number(self) -> int | None:
         """Return the stop_number the user has selected in the dropdown,
         or None if no stop is selected (no route)."""
@@ -749,3 +755,25 @@ class BayCanvas(QWidget):
         rear_used = sum(s.used_scu for s in strips if s.bay == "rear")
         self.fwd_label.setText(f"Forward: {fwd_used} / 216 SCU")
         self.rear_label.setText(f"Rear: {rear_used} / 480 SCU")
+        self._refresh_legend(stop_number)
+
+    def _refresh_legend(self, stop_number: int | None) -> None:
+        # Swap out whatever's in the legend slot — properly delete
+        # rather than orphan (same pattern as RoutePanel.refresh).
+        while self._legend_slot.count():
+            item = self._legend_slot.takeAt(0)
+            if item is None:
+                continue
+            w = item.widget()
+            if w is not None:
+                w.hide()
+                w.deleteLater()
+
+        from ..dialogs.zone_detail import build_workday_color_legend
+
+        # Pull the pallets at this stop so the conflict-pair chips know
+        # which pairs to show.
+        pallets = self.controller.get_pallet_rects(stop_number=stop_number)
+        legend = build_workday_color_legend(self.controller, pallets=pallets)
+        if legend is not None:
+            self._legend_slot.addWidget(legend)
