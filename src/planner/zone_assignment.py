@@ -253,10 +253,35 @@ def build_zone_plan(
     # Which station's cargo lives in each zone for each group — lets us
     # explain WHY a mix is happening (conflict-induced vs capacity-induced).
     conflict_group_stations: dict[int, dict[str, set[int]]] = {}
+    # Full footprint per destination: every zone that destination has
+    # ANY cargo in. Used for the strict "conflict partners must never
+    # share a zone" rule — when destination D's partner P already has
+    # cargo in zones {X, Y}, ALL of {X, Y} are off-limits for D, even
+    # the zones where P's cargo isn't from the same conflict group.
+    # (Otherwise PT could land in R4 with Seraphim just because the
+    # Lively-Pathway-Aluminum specifically lives in R3 — the partners
+    # still end up sharing R4 and the pilot still has trouble at the
+    # elevator.)
+    dest_zones: dict[int, set[str]] = {}
+    # Pre-compute partners-per-destination so the exclusion lookup is
+    # cheap inside the destination loop.
+    partners_by_dest: dict[int, set[int]] = {}
+    for grp in conflict_groups:
+        dest_ids = [d.delivery_station_id for d in grp.destinations]
+        for did in dest_ids:
+            for partner_did in dest_ids:
+                if partner_did != did:
+                    partners_by_dest.setdefault(did, set()).add(partner_did)
 
     # Seed the conflict tracking with manually-pinned cargo so a sibling
     # destination's exclusion still covers manually-placed partner zones.
     for r in manual_rows:
+        # Every manual row counts toward dest_zones, conflict-group
+        # cargo or not — a partner avoids the destination's full
+        # footprint, not just the group-specific portion.
+        dest_zones.setdefault(r["delivery_station_id"], set()).add(
+            r["primary_zone_label"]
+        )
         gid = cl_to_group.get(r["cargo_line_id"])
         if gid is None:
             continue
@@ -284,26 +309,19 @@ def build_zone_plan(
         is_dest_conflicted = any(c["is_conflicted"] for c in cargo)
         dest_name = station_names.get(did, str(did))
 
-        # Build sibling-zone exclusion set: every zone a conflict partner
-        # of this destination has cargo in (across every group we share).
+        # Build sibling-zone exclusion set. Strict rule: every zone a
+        # conflict partner has ANY cargo in is off-limits — not just the
+        # zones where the partner's same-group cargo lives. Without this,
+        # PT could land in R4 with Seraphim simply because Seraphim's
+        # Lively-Pathway-Aluminum specifically went to R3 — the partners
+        # would still share R4 and the pilot would still have a hard
+        # time at the elevator.
         excluded_zones: set[str] = set()
-        excluded_reason: dict[str, list[tuple[int, int]]] = {}  # zone → [(group_id, partner_did)]
-        if is_dest_conflicted:
-            grp_ids = {c["group_id"] for c in cargo if c["group_id"] is not None}
-            for gid in grp_ids:
-                for zone_label in conflict_group_zones.get(gid, set()):
-                    partner_dids = sorted(
-                        sid for sid in conflict_group_stations
-                            .get(gid, {})
-                            .get(zone_label, set())
-                        if sid != did
-                    )
-                    if not partner_dids:
-                        continue
-                    excluded_zones.add(zone_label)
-                    excluded_reason.setdefault(zone_label, []).extend(
-                        (gid, sid) for sid in partner_dids
-                    )
+        excluded_reason: dict[str, list[int]] = {}  # zone → [partner_did(s)]
+        for partner_did in partners_by_dest.get(did, set()):
+            for zone_label in dest_zones.get(partner_did, set()):
+                excluded_zones.add(zone_label)
+                excluded_reason.setdefault(zone_label, []).append(partner_did)
 
         # First-fit decreasing — biggest cargo lines claim zones first so
         # small ones top off leftover space instead of opening fresh zones.
@@ -322,7 +340,7 @@ def build_zone_plan(
             )
             _place_cargo_in_zone(
                 workday_id, target_zone, did, cargo, conn,
-                conflict_group_zones, conflict_group_stations,
+                conflict_group_zones, conflict_group_stations, dest_zones,
             )
             continue
 
@@ -342,6 +360,7 @@ def build_zone_plan(
         _place_cargo_with_overflow(
             workday_id, zones, did, cargo, conn,
             excluded_zones, conflict_group_zones, conflict_group_stations,
+            dest_zones,
             excluded_reason=excluded_reason,
         )
 
@@ -441,6 +460,7 @@ def _place_cargo_in_zone(
     conn: sqlite3.Connection,
     conflict_group_zones: dict[int, set[str]],
     conflict_group_stations: dict[int, dict[str, set[int]]],
+    dest_zones: dict[int, set[str]],
     notes: str | None = None,
 ) -> None:
     """Insert zone_assignment rows for *cargo* into *zone*."""
@@ -464,6 +484,7 @@ def _place_cargo_in_zone(
                 zone.zone_label, set()
             ).add(delivery_station_id)
     zone.occupants.add(delivery_station_id)
+    dest_zones.setdefault(delivery_station_id, set()).add(zone.zone_label)
 
 
 def _place_cargo_with_overflow(
@@ -475,7 +496,8 @@ def _place_cargo_with_overflow(
     excluded_zones: set[str],
     conflict_group_zones: dict[int, set[str]],
     conflict_group_stations: dict[int, dict[str, set[int]]],
-    excluded_reason: dict[str, list[tuple[int, int]]] | None = None,
+    dest_zones: dict[int, set[str]],
+    excluded_reason: dict[str, list[int]] | None = None,
 ) -> None:
     """Place cargo across multiple zones when no single zone fits it all.
 
@@ -592,6 +614,7 @@ def _place_cargo_with_overflow(
             ).extend(pallets_cl)
             target.remaining_scu -= cl["scu_amount"]
             target.occupants.add(delivery_station_id)
+        dest_zones.setdefault(delivery_station_id, set()).add(target.zone_label)
 
     def _split_cargo_line_into(
         cl: dict,
@@ -625,6 +648,10 @@ def _place_cargo_with_overflow(
                 else:
                     kept.append(size)
             line_pool = kept
+            if placed_any:
+                dest_zones.setdefault(delivery_station_id, set()).add(
+                    target.zone_label
+                )
             if not placed_any:
                 return line_pool
         return []
@@ -657,6 +684,9 @@ def _place_cargo_with_overflow(
                 ).extend(pallets_cl)
                 target.remaining_scu -= scu
                 target.occupants.add(delivery_station_id)
+                dest_zones.setdefault(delivery_station_id, set()).add(
+                    target.zone_label
+                )
                 continue
             # Try pallet-level split across same candidates.
             unplaced_pallets = _split_cargo_line_into(
@@ -805,10 +835,13 @@ def _place_cargo_with_overflow(
             (workday_id, cl_id, zone_label, summary, note),
         )
 
-    # 3. Record EVERY zone each conflict group uses (not just the
-    #    first), so a future destination's exclusion covers the full
-    #    footprint of its partner.
+    # 3. Record EVERY zone each conflict group uses + this destination's
+    #    full zone footprint. dest_zones drives the strict
+    #    "partners never share any zone" exclusion for future
+    #    destinations; conflict_group_zones is still kept for the mix-
+    #    reason logging.
     for (cl_id, zone_label) in placement.keys():
+        dest_zones.setdefault(delivery_station_id, set()).add(zone_label)
         c = cargo_meta[cl_id]
         gid = c.get("group_id")
         if gid is None:
@@ -855,6 +888,10 @@ def _place_cargo_with_overflow(
                     placed_any = True
                 else:
                     new_pool.append((cl_id, size))
+            if placed_any:
+                dest_zones.setdefault(delivery_station_id, set()).add(
+                    target.zone_label
+                )
             retry_pool = new_pool
             if not placed_any:
                 unplaced.extend(retry_pool)
