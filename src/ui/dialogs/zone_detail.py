@@ -17,8 +17,8 @@ planner so they are first off when the zone is unloaded.
 
 from __future__ import annotations
 
-from PySide6.QtCore import QPoint, QRect, Qt
-from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPen
+from PySide6.QtCore import QPoint, QRect, Qt, Signal
+from PySide6.QtGui import QBrush, QColor, QFont, QMouseEvent, QPainter, QPen
 from PySide6.QtWidgets import (
     QComboBox, QDialog, QHBoxLayout, QLabel, QMessageBox, QPushButton,
     QSizePolicy, QVBoxLayout, QWidget,
@@ -266,12 +266,41 @@ def _draw_conflict_stripes(p: QPainter, rect: QRect, partner_colors: list[str]) 
 class _TopDownView(QWidget):
     """Top-down view of a single zone (width × length)."""
 
+    pallet_clicked = Signal(object)   # PalletRect or None (cleared)
+
     def __init__(self, zone_meta: dict, pallets: list, parent=None):
         super().__init__(parent)
         self.zone_meta = zone_meta
         self.pallets = pallets
         self.setMinimumSize(160, 280)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        # (QRect on screen, PalletRect) — repopulated on every paint so
+        # mousePressEvent can hit-test against the same rectangles the
+        # user is looking at.
+        self._hit_rects: list[tuple[QRect, object]] = []
+        # cargo_line_id of the currently-selected pallet, or None. The
+        # selected one gets a bright cyan ring on the next paint.
+        self._selected_cl_id: int | None = None
+
+    def set_selected(self, cargo_line_id: int | None) -> None:
+        if self._selected_cl_id == cargo_line_id:
+            return
+        self._selected_cl_id = cargo_line_id
+        self.update()
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        if event.button() != Qt.MouseButton.LeftButton:
+            super().mousePressEvent(event)
+            return
+        pos = event.position().toPoint()
+        # Iterate in reverse so the topmost-painted pallet wins on
+        # overlap (defensive — top-down stacks share the same X/Y).
+        for r, pl in reversed(self._hit_rects):
+            if r.contains(pos):
+                self.pallet_clicked.emit(pl)
+                return
+        # Clicked empty space — clear the selection.
+        self.pallet_clicked.emit(None)
 
     def paintEvent(self, _event) -> None:  # noqa: N802
         p = QPainter(self)
@@ -347,6 +376,7 @@ class _TopDownView(QWidget):
 
         # Pallets — only floor footprint (z=0 layer). For stacked pallets,
         # only the bottom one is drawn here; the side view shows the stack.
+        self._hit_rects = []
         already = set()
         for pl in self.pallets:
             local_x = pl.cell_x - self.zone_meta["cube_offset_x"]
@@ -362,6 +392,7 @@ class _TopDownView(QWidget):
                       screen_y + 1,
                       pl.cell_w * cell - 2,
                       pl.cell_l * cell - 2)
+            self._hit_rects.append((r, pl))
             color = QColor(pl.color)
             p.setBrush(QBrush(color))
             p.setPen(QPen(color.darker(140), 1))
@@ -373,6 +404,10 @@ class _TopDownView(QWidget):
             f2 = QFont("Segoe UI", max(7, cell - 8))
             p.setFont(f2)
             p.drawText(r, Qt.AlignmentFlag.AlignCenter, str(pl.pallet_size))
+            if pl.cargo_line_id == self._selected_cl_id:
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.setPen(QPen(QColor("#ffd45e"), 3))
+                p.drawRect(r.adjusted(-1, -1, 1, 1))
 
         # Ramp + interior labels follow the rear-view convention:
         # ship-forward (interior side) is always at the TOP of the
@@ -415,12 +450,33 @@ class _SideView(QWidget):
     of the bay, toward the cockpit.
     """
 
+    pallet_clicked = Signal(object)   # PalletRect or None
+
     def __init__(self, zone_meta: dict, pallets: list, parent=None):
         super().__init__(parent)
         self.zone_meta = zone_meta
         self.pallets = pallets
         self.setMinimumSize(280, 160)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self._hit_rects: list[tuple[QRect, object]] = []
+        self._selected_cl_id: int | None = None
+
+    def set_selected(self, cargo_line_id: int | None) -> None:
+        if self._selected_cl_id == cargo_line_id:
+            return
+        self._selected_cl_id = cargo_line_id
+        self.update()
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        if event.button() != Qt.MouseButton.LeftButton:
+            super().mousePressEvent(event)
+            return
+        pos = event.position().toPoint()
+        for r, pl in reversed(self._hit_rects):
+            if r.contains(pos):
+                self.pallet_clicked.emit(pl)
+                return
+        self.pallet_clicked.emit(None)
 
     def paintEvent(self, _event) -> None:  # noqa: N802
         p = QPainter(self)
@@ -497,6 +553,7 @@ class _SideView(QWidget):
         # cumulative stack-order; this prevents two side-by-side pallets
         # at the same Y from being rendered as if they were vertically
         # stacked.
+        self._hit_rects = []
         for pl in sorted(self.pallets,
                          key=lambda p: (p.cell_y, p.cell_z, p.cell_x)):
             local_y = pl.cell_y - self.zone_meta["cube_offset_y"]
@@ -508,6 +565,7 @@ class _SideView(QWidget):
             w_px = pl.cell_l * cell
             h_px = pl.cell_h * cell
             r = QRect(screen_x + 1, screen_y + 1, w_px - 2, h_px - 2)
+            self._hit_rects.append((r, pl))
             color = QColor(pl.color)
             p.setBrush(QBrush(color))
             p.setPen(QPen(color.darker(140), 1))
@@ -519,6 +577,10 @@ class _SideView(QWidget):
             f2 = QFont("Segoe UI", max(7, cell - 8))
             p.setFont(f2)
             p.drawText(r, Qt.AlignmentFlag.AlignCenter, str(pl.pallet_size))
+            if pl.cargo_line_id == self._selected_cl_id:
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.setPen(QPen(QColor("#ffd45e"), 3))
+                p.drawRect(r.adjusted(-1, -1, 1, 1))
 
         # Direction labels
         p.setPen(QPen(QColor("#5be4ff")))
@@ -597,9 +659,24 @@ class ZoneDetailDialog(QDialog):
         views.setSpacing(12)
         self.top_view = _TopDownView(zone_meta, pallets)
         self.side_view = _SideView(zone_meta, pallets)
+        # Click a pallet in either view → both views highlight it and
+        # the pallet-info label below the views fills in.
+        self.top_view.pallet_clicked.connect(self._on_pallet_clicked)
+        self.side_view.pallet_clicked.connect(self._on_pallet_clicked)
         views.addWidget(self.top_view, 2)
         views.addWidget(self.side_view, 3)
         root.addLayout(views, 1)
+
+        # Pallet-info status line — updates on click. Placed above the
+        # capacity bar so it's directly under the pallet you just clicked.
+        self.pallet_info = QLabel("Click a pallet to see its contract / commodity / destination.")
+        self.pallet_info.setProperty("muted", True)
+        self.pallet_info.setWordWrap(True)
+        self.pallet_info.setStyleSheet(
+            "color: #5be4ff; padding: 4px 8px; background-color: #0c1620; "
+            "border: 1px solid #1f3242; border-radius: 3px;"
+        )
+        root.addWidget(self.pallet_info)
 
         # Capacity bar text
         if strip:
@@ -701,6 +778,28 @@ class ZoneDetailDialog(QDialog):
             # Discard: leave the dialog open so the user can pick another
             # target without losing the rest of their context.
             return
+
+    def _on_pallet_clicked(self, pallet) -> None:
+        """Update the pallet-info label and highlight the selection in
+        BOTH views (so a click on the top-down also rings the matching
+        pallet on the side view, and vice versa). Pass None to clear."""
+        if pallet is None:
+            self.top_view.set_selected(None)
+            self.side_view.set_selected(None)
+            self.pallet_info.setText(
+                "Click a pallet to see its contract / commodity / destination."
+            )
+            return
+        self.top_view.set_selected(pallet.cargo_line_id)
+        self.side_view.set_selected(pallet.cargo_line_id)
+        conflict_tag = ""
+        if pallet.is_conflicted:
+            conflict_tag = "  ⚠ ambiguous size — see Legend for partner"
+        self.pallet_info.setText(
+            f"{pallet.pallet_size}-SCU pallet · {pallet.commodity_name} → "
+            f"{pallet.delivery_station_name} · Contract {pallet.contract_number}"
+            f"{conflict_tag}"
+        )
 
     def _open_legend(self) -> None:
         # Only the destinations whose cargo is actually IN this zone.
