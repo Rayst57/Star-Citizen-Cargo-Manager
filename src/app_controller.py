@@ -1190,7 +1190,7 @@ class AppController(QObject):
                 )
                 for dest in grp.destinations:
                     ambig = ", ".join(f"{dest.pallet_counts[s]}×{s}" for s in dest.ambiguous_sizes)
-                    lines.append(f"      {dest.delivery_station_name}: ambiguous {ambig or '—'}")
+                    lines.append(f"      {dest.delivery_station_name}: conflict {ambig or '—'}")
 
         return "\n".join(lines)
 

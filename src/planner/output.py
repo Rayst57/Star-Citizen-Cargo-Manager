@@ -17,7 +17,7 @@ Conflict Notes follow the handbook §16 / conflicts.md display rules:
   - Each conflict group handled one at a time with explicit instructions:
       · Bring up zone X only (that contract's zone).
       · Unique pallets listed first (safe to load).
-      · Ambiguous pallets listed after (test these).
+      · Conflict pallets listed after (test these).
       · Rejected pallets → reload to sibling zone.
 """
 
@@ -194,7 +194,7 @@ def format_stop(
                     if unique_str != "—":
                         lines.append(f"      Unique (safe): {unique_str} SCU {dest.commodity_name}")
                     if ambig_str != "—":
-                        lines.append(f"      Ambiguous ⚠:   {ambig_str} SCU {dest.commodity_name}")
+                        lines.append(f"      Conflict ⚠:    {ambig_str} SCU {dest.commodity_name}")
                 lines.append(f"    Load each destination into its assigned zone separately.")
                 lines.append(f"    Keep zone assignments clean — do not mix zones at pickup.")
 
@@ -221,7 +221,7 @@ def format_stop(
                     lines.append(f"    → Bring up zone {z_here} only.")
                     if unique_str != "—":
                         lines.append(f"       Unique (deliver confidently): {unique_str} SCU")
-                    lines.append(f"       Ambiguous (test these last): {ambig_str} SCU")
+                    lines.append(f"       Conflict (test these last): {ambig_str} SCU")
                     if sibling_dests:
                         for sib in sibling_dests:
                             z_sib = zone_map.get(sib.delivery_station_id, "?")

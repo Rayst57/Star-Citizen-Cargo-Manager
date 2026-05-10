@@ -237,7 +237,7 @@ class DetailedPlanDialog(QDialog):
                     f"  ⚠ Group {g.group_id} — {g.pickup_station_name} × "
                     f"{g.commodity_name}\n"
                     f"      destinations: {names}\n"
-                    f"      ambiguous sizes: {amb}"
+                    f"      conflict sizes: {amb}"
                 )
                 lbl.setStyleSheet("color: #ff8a3c;")
                 lbl.setWordWrap(True)
@@ -366,7 +366,7 @@ class DetailedPlanDialog(QDialog):
                 # of this size, the partner had matching ones — but be
                 # safe rather than render a header with no follow-up.
                 fallback = QLabel(
-                    "        Resolve the ambiguous pallets at the "
+                    "        Resolve the conflict pallets at the "
                     "elevator before continuing."
                 )
                 fallback.setWordWrap(True)

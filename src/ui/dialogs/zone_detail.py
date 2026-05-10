@@ -877,7 +877,7 @@ class ZoneDetailDialog(QDialog):
             shown_dest = partners[0] if partners else pallet.delivery_station_name
         self.pallet_info.setText(
             f"⚠ {shown_dest}  —  {commodity}  "
-            f"(ambiguous with {partner_summary})"
+            f"(conflicts with {partner_summary})"
         )
 
     def _open_legend(self) -> None:

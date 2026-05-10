@@ -871,7 +871,7 @@ def _place_cargo_with_overflow(
                 f"MIXED (CONFLICT-OVERRIDE) — sharing {zone_label} with "
                 f"destination(s) {others}; conflict exclusion overridden "
                 f"because the ship had no legal home for this cargo. "
-                f"Resolve the ambiguous pallets manually at delivery."
+                f"Resolve the conflict pallets manually at delivery."
             )
             conn.execute(
                 """
