@@ -195,7 +195,11 @@ def build_zone_plan(
                 if gid in conflict_group_zone:
                     excluded_zones.add(conflict_group_zone[gid])
 
-        cargo.sort(key=lambda c: (0 if c["is_conflicted"] else 1, c["cargo_line_id"]))
+        # First-fit decreasing — biggest cargo lines claim zones first so
+        # small ones top off leftover space instead of opening fresh zones
+        # (Baijini's 9 lines used to leak a 20 SCU tail into F3, blocking
+        # Port Tressler's 35 SCU from getting its own zone).
+        cargo.sort(key=lambda c: -c["scu_amount"])
 
         target_zone = _claim_fresh_zone(
             zones, total_dest_scu, excluded_zones=excluded_zones
@@ -328,24 +332,41 @@ def _place_cargo_with_overflow(
 ) -> None:
     """Place cargo across multiple zones when no single zone fits it all.
 
-    For each cargo line we first try to fit the whole line in a single
-    zone (preferring fresh zones). If no zone has the full SCU free, the
-    line is split at the pallet level — we walk pallets largest-first
-    and drop each into the first zone with capacity. Each zone receiving
-    a portion gets its own zone_assignments row whose pallet_breakdown
-    is just that zone's slice of the cargo, so loadout snapshots and
-    the detailed plan can see exactly what sits where.
+    Per-cargo-line greedy fill, with the sort order tuned to MAXIMISE
+    consolidation:
+      1. Continue filling a zone this destination already uses
+         (smallest-remaining first so we top it off before opening another)
+      2. A fresh zone (no occupants)
+      3. A zone occupied by ANOTHER destination — last resort, this is
+         the only path that introduces a mixed-destination zone
+
+    The previous sort preferred "fresh zones with largest free space"
+    every iteration, which sprayed each cargo line into a different
+    fresh zone and depleted the fresh pool prematurely. That left
+    later destinations no choice but to mix.
     """
+    def _rank(z: ZoneState) -> tuple[int, int]:
+        if delivery_station_id in z.occupants:
+            # Same destination — fill this zone first; smaller remaining
+            # wins so we top it off rather than choose its sibling.
+            return (0, z.remaining_scu)
+        if not z.occupants:
+            # Fresh zone — start a new home for this destination.
+            # Largest first so we don't block big future cargo.
+            return (1, -z.remaining_scu)
+        # Other destination's zone — only mix as last resort.
+        return (2, -z.remaining_scu)
+
     for c in cargo:
         scu = c["scu_amount"]
         pallets = palletize(scu, c["max_pallet_size"])
 
-        # Single-zone fit — preferred (fresh zone first, then largest free)
+        # Single-zone fit (this whole cargo line into one zone) — preferred.
         candidates = [
             z for z in zones
             if z.zone_label not in excluded_zones and z.remaining_scu >= scu
         ]
-        candidates.sort(key=lambda z: (1 if z.occupants else 0, -z.remaining_scu))
+        candidates.sort(key=_rank)
         if candidates:
             target = candidates[0]
             summary = palletize_summary(pallets)
@@ -364,14 +385,13 @@ def _place_cargo_with_overflow(
                 conflict_group_zone[c["group_id"]] = target.zone_label
             continue
 
-        # Split across zones — but fill ONE zone to its max before moving
-        # on, never sprinkle. Last-resort overflow only.  Sort zones once
-        # by preference (fresh first, then largest free) and walk the
-        # remaining pallets greedily through that ordering.
+        # Split across zones — fill ONE zone to its max before moving on.
+        # Same destination-aware ranking: continue our own zones first,
+        # then fresh, then mix.
         avail = sorted(
             [z for z in zones
              if z.zone_label not in excluded_zones and z.remaining_scu > 0],
-            key=lambda z: (1 if z.occupants else 0, -z.remaining_scu),
+            key=_rank,
         )
         zone_pallets: dict[str, list[int]] = {}
         unplaced: list[int] = []
