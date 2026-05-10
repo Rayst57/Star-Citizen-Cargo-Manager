@@ -222,11 +222,16 @@ class PasteContractsDialog(QDialog):
         self.status_label.setText(f"Parse failed: {msg}")
 
     def _clear_preview(self) -> None:
-        # Drop everything except the trailing stretch
+        # Drop everything except the trailing stretch — properly delete
+        # so old preview cards don't become ghost top-level windows.
         for i in reversed(range(self.preview_layout.count() - 1)):
-            item = self.preview_layout.itemAt(i)
-            if item and item.widget():
-                item.widget().setParent(None)
+            item = self.preview_layout.takeAt(i)
+            if item is None:
+                continue
+            w = item.widget()
+            if w is not None:
+                w.hide()
+                w.deleteLater()
         self._row_checkboxes = []
 
     def _build_preview_card(self, contract: dict) -> QFrame:
