@@ -23,9 +23,13 @@ jump_gates):
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 from dataclasses import dataclass, field
 from typing import Optional
+
+
+_log = logging.getLogger("cargo_manager")
 
 
 @dataclass
@@ -77,7 +81,13 @@ def build_simple_route(
         (workday_id,),
     ).fetchall()
 
+    _log.info(
+        "route: building for workday=%d, %d contracts, "
+        "final_destination_id=%s, round_robin=%s",
+        workday_id, len(contracts), final_destination_id, round_robin,
+    )
     if not contracts:
+        _log.info("route: no contracts, returning empty route")
         return []
 
     cargo_lines = conn.execute(
@@ -201,6 +211,31 @@ def build_simple_route(
 
     ordered_ids = [sid for sid in ordered_ids if _has_work(sid)]
 
+    _log.info(
+        "route: ordered station ids=%s (origin=%d, final=%s)",
+        ordered_ids, origin_id, final_destination_id,
+    )
+    for sid in ordered_ids:
+        info = station_map[sid]
+        _log.info(
+            "  station %d (%s) sort=%d loads=%d unloads=%d",
+            sid, info["name"], info["sort_order"],
+            len(info["loads"]), len(info["unloads"]),
+        )
+
+    # If the origin is also a delivery destination, those unloads must
+    # happen at the END of the route, not at the Initial Departure
+    # (the ship leaves origin empty, so there's nothing to unload then).
+    # Save them off; they'll go onto a synthesized return-to-origin stop.
+    pending_origin_unloads: list[CargoLineRef] = []
+    if origin_id in station_map and station_map[origin_id]["unloads"]:
+        pending_origin_unloads = station_map[origin_id]["unloads"]
+        station_map[origin_id]["unloads"] = []
+    # If origin now has no work AND origin isn't the final_destination,
+    # drop it from the middle ordering (it will be re-added as
+    # departure stop 1 below).
+    # (Origin is at idx=0 in ordered_ids per _sort_key above.)
+
     # ── Assign actions ────────────────────────────────────────────────────
     stops: list[RouteStop] = []
     for idx, sid in enumerate(ordered_ids):
@@ -212,7 +247,7 @@ def build_simple_route(
 
         if is_first:
             action = "Depart"
-        elif is_last and not round_robin:
+        elif is_last and not round_robin and not pending_origin_unloads:
             action = "Final unload" if has_unload else "Arrive"
         elif has_load and has_unload:
             action = "Arrive"
@@ -234,17 +269,28 @@ def build_simple_route(
             )
         )
 
-    # ── Round-robin return ────────────────────────────────────────────────
-    if round_robin and stops and stops[-1].station_id != origin_id:
+    # ── Return-to-origin Final unload ────────────────────────────────────
+    # Triggered when:
+    #   (a) round_robin is on and origin isn't already the last stop, OR
+    #   (b) origin has cargo to unload (origin == one of the deliveries).
+    needs_return = (
+        (round_robin and stops and stops[-1].station_id != origin_id)
+        or pending_origin_unloads
+    )
+    if needs_return:
         stops.append(
             RouteStop(
                 stop_number=len(stops) + 1,
                 station_id=origin_id,
                 station_name=origin_station["name"],
-                action="Final unload",
+                action="Final unload" if pending_origin_unloads else "Arrive",
                 loads=[],
-                unloads=[],
-                notes="Round-robin return to origin",
+                unloads=pending_origin_unloads,
+                notes=(
+                    "Return to origin — final unload"
+                    if pending_origin_unloads
+                    else "Round-robin return to origin"
+                ),
             )
         )
 

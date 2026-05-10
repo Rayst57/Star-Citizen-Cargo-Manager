@@ -105,6 +105,7 @@ class PalletRect:
     bay: str
     cell_x: int
     cell_y: int
+    cell_z: int                 # vertical position in 1.25 m cubes (0 = floor)
     cell_w: int
     cell_l: int
     cell_h: int
@@ -528,21 +529,51 @@ class AppController(QObject):
         _log.info("recompute flag cleared")
 
     def _on_recompute_done(self, result: RecomputeResult) -> None:
+        # Each step is wrapped so a downstream slot misbehaving cannot
+        # cascade into a "Recompute failed" popup. Anything that goes
+        # wrong is captured in cargo_manager.log instead.
+        _log.info(
+            "recompute done — %d stops, %d conflict groups, %d snapshots",
+            len(result.route_stops),
+            len(result.conflict_groups),
+            len(result.snapshots),
+        )
+        # Per-stop summary
+        for s in result.route_stops:
+            _log.info(
+                "  stop %d: %s (%s) loads=%d unloads=%d",
+                s.stop_number, s.station_name, s.action,
+                len(s.loads), len(s.unloads),
+            )
+        for grp in result.conflict_groups:
+            dests = ", ".join(d.delivery_station_name for d in grp.destinations)
+            _log.info(
+                "  conflict group %d: %s × %s [dests=%s, ambiguous_sizes=%s]",
+                grp.group_id, grp.pickup_station_name, grp.commodity_name,
+                dests, grp.ambiguous_sizes,
+            )
+
         try:
-            _log.info("recompute done — %d stops, %d conflict groups",
-                      len(result.route_stops), len(result.conflict_groups))
             self._last_result = result
             if self.workday_id:
                 assign_destination_colors(self.workday_id, self.conn)
-            self.plan_dirty_changed.emit(False)
-            self.contracts_changed.emit()
-            self.route_changed.emit()
-            self._emit_progress()
-            self.recompute_done.emit(result)
         except Exception:
-            _log.error("Exception in _on_recompute_done:\n%s",
+            _log.error("assign_destination_colors raised:\n%s",
                        traceback.format_exc())
-            self.recompute_failed.emit("Internal error after recompute — see log.")
+        for emit_fn, label in (
+            (lambda: self.plan_dirty_changed.emit(False), "plan_dirty_changed"),
+            (self.contracts_changed.emit, "contracts_changed"),
+            (self.route_changed.emit, "route_changed"),
+            (self._emit_progress, "stop_progress"),
+            (lambda: self.recompute_done.emit(result), "recompute_done"),
+        ):
+            try:
+                emit_fn()
+            except Exception:
+                _log.error(
+                    "Slot raised on signal %s:\n%s",
+                    label, traceback.format_exc(),
+                )
 
     def _on_recompute_failed(self, message: str) -> None:
         _log.error("recompute failed: %s", message)
@@ -633,7 +664,6 @@ class AppController(QObject):
             zw = zone["width_units"]
             zl = zone["length_units"]
             zh = zone["scu_capacity"] // (zw * zl) if zw * zl else 4
-            grid = zone_grids.setdefault(zone_label, [[0] * zl for _ in range(zw)])
 
             # Build a flat list of (entry, size) pairs across all cargo
             # lines in this zone; we'll partition into large/small below.
@@ -643,36 +673,33 @@ class AppController(QObject):
                 for size in sizes:
                     placements.append((entry, size))
 
-            # Split + sort: large pallets descending (largest deepest).
-            # Small pallets ALSO descending so the largest-floored small
-            # (e.g. 4 SCU) lands first at the ramp and smaller ones (2, 1)
-            # stack on top — keeps every small pallet inside the bay even
-            # in tight zones, and matches the unload workflow (lift the
-            # tiny ambiguous ones off the top first).
+            # Large pallets always go from the far end, biggest first.
             large_first = sorted(
                 [p for p in placements if p[1] in LARGE_SIZES],
                 key=lambda p: -p[1],
             )
-            small_first = sorted(
-                [p for p in placements if p[1] not in LARGE_SIZES],
-                key=lambda p: -p[1],
+            small_pool = [p for p in placements if p[1] not in LARGE_SIZES]
+
+            # Try smalls SMALLEST-first (best layout when there's room —
+            # 1 SCU at the door, 4 SCU flat behind it, no awkward stacks).
+            # If anything in that pass overflows, retry with LARGEST-first
+            # (stacks 2 on 4, 1 on 2 — fits but uglier).
+            placement_result, grid = _try_place_zone(
+                zw, zl, zh,
+                large_first,
+                sorted(small_pool, key=lambda p: p[1]),       # ASCENDING
+                boxes,
             )
-
-            for (entry, size), from_far in (
-                [(p, True) for p in large_first]
-                + [(p, False) for p in small_first]
-            ):
-                box = boxes.get(size, {"width": 1, "length": 1, "height": 1})
-                w, l, h = box["width"], box["length"], box["height"]
-                if w > zw and box.get("rotatable") and l <= zw:
-                    w, l = l, w
-                placed = _place_in_grid(
-                    grid, w, l, h, zw, zl, zh, from_far_end=from_far
+            if placement_result is None:
+                placement_result, grid = _try_place_zone(
+                    zw, zl, zh,
+                    large_first,
+                    sorted(small_pool, key=lambda p: -p[1]),  # DESCENDING fallback
+                    boxes,
                 )
-                if placed is None:
-                    placed = (max(0, zw - w), max(0, zl - l))
-                cell_x, cell_y = placed
+            zone_grids[zone_label] = grid
 
+            for (entry, size, w, l, h, cell_x, cell_y, cell_z) in placement_result or []:
                 color = color_map.get(entry.delivery_station_name, "#888888")
                 amb_sizes, partner_colors = cl_conflict_info.get(
                     entry.cargo_line_id, (set(), [])
@@ -685,6 +712,7 @@ class AppController(QObject):
                     bay=zone["bay_label"],
                     cell_x=zone["cube_offset_x"] + cell_x,
                     cell_y=zone["cube_offset_y"] + cell_y,
+                    cell_z=cell_z,
                     cell_w=w,
                     cell_l=l,
                     cell_h=h,
@@ -697,6 +725,29 @@ class AppController(QObject):
                     contract_number=entry.contract_number,
                     conflict_partner_colors=partner_colors if is_pallet_conflict else [],
                 ))
+
+        # ── Cubic occupancy fault check ───────────────────────────────
+        # Walk all PalletRects we just produced and assert no two
+        # occupy the same (zone, x, y, z) cube. If they do, log a
+        # WARN to validation_log so it's visible in cargo_manager.log
+        # — this catches placement bugs before they reach the user.
+        occupied: dict[tuple[str, int, int, int], int] = {}
+        for r in rects:
+            for dx in range(r.cell_w):
+                for dy in range(r.cell_l):
+                    for dz in range(r.cell_h):
+                        key = (r.zone_label,
+                               r.cell_x + dx, r.cell_y + dy,
+                               r.cell_z + dz)
+                        if key in occupied:
+                            _log.warning(
+                                "Cubic overlap: zone=%s cube=(%d,%d,%d) "
+                                "occupied by cargo_line=%d AND %d",
+                                r.zone_label,
+                                r.cell_x + dx, r.cell_y + dy, r.cell_z + dz,
+                                occupied[key], r.cargo_line_id,
+                            )
+                        occupied[key] = r.cargo_line_id
 
         return rects
 
@@ -1153,6 +1204,44 @@ def _load_box_footprints() -> dict[int, dict]:
     return {b["scu"]: b for b in data["boxes"]}
 
 
+def _try_place_zone(
+    zone_w: int,
+    zone_l: int,
+    zone_h: int,
+    large_first: list,            # [(entry, size), ...] biggest first
+    smalls_in_order: list,        # [(entry, size), ...] caller-chosen order
+    boxes: dict,
+) -> tuple[list, list[list[int]]] | tuple[None, list[list[int]]]:
+    """Run a single placement pass with the given small-pallet ordering.
+
+    placements is a list of tuples:
+        (entry, size, w, l, h, cell_x, cell_y, cell_z).
+    """
+    grid = [[0] * zone_l for _ in range(zone_w)]
+    placements: list = []
+
+    def _place(entry, size, *, from_far: bool) -> bool:
+        box = boxes.get(size, {"width": 1, "length": 1, "height": 1})
+        w, l, h = box["width"], box["length"], box["height"]
+        if w > zone_w and box.get("rotatable") and l <= zone_w:
+            w, l = l, w
+        spot = _place_in_grid(grid, w, l, h, zone_w, zone_l, zone_h,
+                              from_far_end=from_far)
+        if spot is None:
+            return False
+        x, y, z = spot
+        placements.append((entry, size, w, l, h, x, y, z))
+        return True
+
+    for entry, size in large_first:
+        if not _place(entry, size, from_far=True):
+            return None, grid
+    for entry, size in smalls_in_order:
+        if not _place(entry, size, from_far=False):
+            return None, grid
+    return placements, grid
+
+
 def _place_in_grid(
     grid: list[list[int]],
     w: int, l: int, h: int,
@@ -1160,22 +1249,15 @@ def _place_in_grid(
     stack_limit: int,
     *,
     from_far_end: bool = False,
-) -> tuple[int, int] | None:
-    """First-fit placement scanning row-by-row, requiring uniform support.
+) -> tuple[int, int, int] | None:
+    """Best-fit placement requiring uniform support.
 
-    A pallet sits on a flat surface, so every cell in its footprint must
-    share the SAME current height before placement.
-
-    *from_far_end* flips the Y scan direction: when True the scan starts
-    at the FORWARD end (high Y, far from the ramp) so large pallets land
-    deep first and stack toward the door. When False, scan starts at the
-    ramp end (Y=0) so small pallets land closest to the door.
+    Returns (x, y, z) of the placement or None if it doesn't fit.
+    The z is needed by the renderer so it can draw each pallet at its
+    actual height instead of guessing from cumulative stack-order.
     """
-    if from_far_end:
-        y_iter = range(zone_l - l, -1, -1)
-    else:
-        y_iter = range(zone_l - l + 1)
-    for y in y_iter:
+    candidates: list[tuple[int, int, int]] = []   # (y, x, z)
+    for y in range(zone_l - l + 1):
         for x in range(zone_w - w + 1):
             heights = [
                 grid[x + dx][y + dy]
@@ -1187,11 +1269,21 @@ def _place_in_grid(
             z = heights[0]
             if z + h > stack_limit:
                 continue
-            for dx in range(w):
-                for dy in range(l):
-                    grid[x + dx][y + dy] = z + h
-            return (x, y)
-    return None
+            candidates.append((y, x, z))
+
+    if not candidates:
+        return None
+
+    if from_far_end:
+        candidates.sort(key=lambda c: (-c[0], -c[2], c[1]))
+    else:
+        candidates.sort(key=lambda c: (c[0], c[2], c[1]))
+
+    y, x, z = candidates[0]
+    for dx in range(w):
+        for dy in range(l):
+            grid[x + dx][y + dy] = z + h
+    return (x, y, z)
 
 
 def _parse_breakdown(text: str | None) -> list[int]:

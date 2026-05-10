@@ -26,11 +26,15 @@ Commodity granularity:
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from collections import Counter
 from dataclasses import dataclass, field
 
 from .palletizer import palletize, palletize_summary, VALID_SIZES
+
+
+_log = logging.getLogger("cargo_manager")
 
 
 @dataclass
@@ -123,6 +127,11 @@ def detect_conflicts(workday_id: int, conn: sqlite3.Connection) -> list[Conflict
         (workday_id,),
     ).fetchall()
 
+    _log.info(
+        "conflicts: scanning %d cargo lines across %d (pickup × commodity) groups",
+        len(rows),
+        len({(r["pickup_station_id"], r["commodity_id"]) for r in rows}),
+    )
     if not rows:
         return []
 
@@ -227,8 +236,14 @@ def detect_conflicts(workday_id: int, conn: sqlite3.Connection) -> list[Conflict
                 ambiguous_sizes=ambiguous_sizes,
             )
         )
+        _log.info(
+            "  conflict group %d: %s × %s — %d dests, ambiguous_sizes=%s",
+            group_id, pickup_name, commodity_name,
+            len(dest_infos), ambiguous_sizes,
+        )
         group_id += 1
 
+    _log.info("conflicts: detected %d group(s) total", len(groups))
     return groups
 
 
