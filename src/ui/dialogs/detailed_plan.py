@@ -77,6 +77,16 @@ class DetailedPlanDialog(QDialog):
             cl_to_zone[r["id"]] = r["zone_label"] or "?"
             cl_to_max_pallet[r["id"]] = r["max_pallet_size"]
 
+        # Reverse-lookup: destination name → zone label, used in
+        # conflict notes so we can tell the pilot exactly where the
+        # partner-destination's cargo lives.
+        dest_to_zone: dict[str, str] = {}
+        for cl_id, dest_name in cl_to_dest.items():
+            zone = cl_to_zone.get(cl_id)
+            if zone and dest_name not in dest_to_zone:
+                dest_to_zone[dest_name] = zone
+        self._dest_to_zone = dest_to_zone
+
         # Per-cargo-line conflict info: ambiguous sizes + partner destination names
         cl_conflict_info: dict[int, tuple[set[int], list[str]]] = {}
         for grp in result.conflict_groups:
@@ -253,25 +263,51 @@ class DetailedPlanDialog(QDialog):
         lbl.setWordWrap(True)
         layout.addWidget(lbl)
 
-        # Per-ambiguous-size note
-        # At a delivery: each ambiguous pallet might be returned (it
-        # could belong to one of the partner destinations).
-        # At a pickup load: the pilot can't distinguish those sizes from
-        # the partner contracts on the elevator, hence the conflict.
+        # Per-ambiguous-size note. Spell out:
+        #   • how many pallets of this size are ambiguous
+        #   • which destination(s) they could belong to
+        #   • the partner zone where rejected pallets get reloaded
+        # so the message is fully actionable on its own.
         for size in sorted(amb_sizes, reverse=True):
             n_here = counts[size]
             if n_here == 0:
                 continue
-            partner_str = " / ".join(partners) if partners else "the conflicting destination"
+            # Partner names + their zones, e.g. "Baijini Point (zone F2)"
+            partner_strs = []
+            for pname in partners:
+                pzone = self._dest_to_zone.get(pname)
+                if pzone and pzone != "?":
+                    partner_strs.append(f"{pname} (zone {pzone})")
+                else:
+                    partner_strs.append(pname)
+            partners_text = " or ".join(partner_strs) if partner_strs else "another destination"
+            partner_zones = sorted({
+                self._dest_to_zone.get(p) for p in partners
+                if self._dest_to_zone.get(p) and self._dest_to_zone.get(p) != "?"
+            })
+            reload_text = (
+                f"reload to zone {' or '.join(partner_zones)}"
+                if partner_zones
+                else "reload to the partner destination's zone"
+            )
+
             if action == "deliver":
                 msg = (
-                    f"      ⚠ {n_here}×{size} SCU* — Conflict; "
-                    f"some may be returned (belong to {partner_str})"
+                    f"      ⚠ {n_here}×{size} SCU pallet"
+                    f"{'s' if n_here != 1 else ''} ambiguous with "
+                    f"{partners_text}.\n"
+                    f"        Test at the elevator LAST. If the station "
+                    f"rejects a pallet, {reload_text} — that one belongs "
+                    f"there, not here."
                 )
-            else:
+            else:                     # load (at pickup)
                 msg = (
-                    f"      ⚠ {n_here}×{size} SCU* — Conflict on elevator "
-                    f"with {partner_str}; load to assigned zone, test at delivery"
+                    f"      ⚠ {n_here}×{size} SCU pallet"
+                    f"{'s' if n_here != 1 else ''} share size + count "
+                    f"with {partners_text} on the elevator.\n"
+                    f"        Load this contract's pallets into your "
+                    f"assigned zone; rejected ones at delivery will be "
+                    f"reloaded to the partner zone."
                 )
             note = QLabel(msg)
             note.setWordWrap(True)

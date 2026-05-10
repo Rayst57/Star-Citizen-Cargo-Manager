@@ -217,31 +217,23 @@ class _SideView(QWidget):
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawRect(rect)
 
-        # Per-Y stack columns: track which Z heights are filled.
-        #   stacks[y] = list of (pallet, h)
-        stacks: dict[int, list] = {}
-        for pl in sorted(self.pallets, key=lambda x: (x.cell_x, x.cargo_line_id)):
-            local_y = pl.cell_y - self.zone_meta["cube_offset_y"]
-            if local_y < 0:
-                continue
-            stacks.setdefault(local_y, []).append((pl, pl.cell_h))
-
         # Build (Y, Z) occupancy in zone-local cells so we can dash the
-        # empty ones. Each pallet covers cell_l Y-cells × cell_h Z-cells.
+        # empty ones. Each pallet covers cell_l Y-cells × cell_h Z-cells
+        # at its actual cell_z (never cumulative — two pallets at the
+        # same Y but different X are NOT vertically stacked).
         occ = [[False] * zh_units for _ in range(zl)]
-        z_used_by_y: dict[int, int] = {}
-        for local_y in sorted(stacks):
-            current_z = 0
-            for pl, h in stacks[local_y]:
-                for dy in range(pl.cell_l):
-                    yidx = local_y + dy
-                    if 0 <= yidx < zl:
-                        for dz in range(h):
-                            zidx = current_z + dz
-                            if 0 <= zidx < zh_units:
-                                occ[yidx][zidx] = True
-                current_z += h
-            z_used_by_y[local_y] = current_z
+        for pl in self.pallets:
+            local_y = pl.cell_y - self.zone_meta["cube_offset_y"]
+            local_z = pl.cell_z
+            if local_y < 0 or local_z < 0:
+                continue
+            for dy in range(pl.cell_l):
+                yidx = local_y + dy
+                if 0 <= yidx < zl:
+                    for dz in range(pl.cell_h):
+                        zidx = local_z + dz
+                        if 0 <= zidx < zh_units:
+                            occ[yidx][zidx] = True
 
         # Dashed outlines for unoccupied 1×1 cells
         dash_pen = QPen(QColor("#264a5c"), 1, Qt.PenStyle.DashLine)
@@ -255,36 +247,33 @@ class _SideView(QWidget):
                 screen_y = y0 + (zh_units - 1 - z) * cell
                 p.drawRect(screen_x + 1, screen_y + 1, cell - 2, cell - 2)
 
-        # Pallets — forward on LEFT, ramp on RIGHT. Defensive clip:
-        # if a stack would exceed the zone height, skip the overflow
-        # pallet rather than drawing it outside the bay outline.
-        for local_y, items in stacks.items():
-            current_z = 0
-            for pl, h in items:
-                if current_z + h > zh_units:
-                    continue   # would render outside the bay; skip
-                screen_x = x0 + (zl - local_y - pl.cell_l) * cell
-                screen_y = y0 + (zh_units - current_z - h) * cell
-                w_px = pl.cell_l * cell
-                h_px = h * cell
-                r = QRect(screen_x + 1, screen_y + 1, w_px - 2, h_px - 2)
-                color = QColor(pl.color)
-                p.setBrush(QBrush(color))
-                p.setPen(QPen(color.darker(140), 1))
-                p.drawRect(r)
-                if pl.is_conflicted:
-                    p.setBrush(QBrush(QColor(255, 48, 48, 90), Qt.BrushStyle.BDiagPattern))
-                    p.setPen(Qt.PenStyle.NoPen)
-                    p.drawRect(r)
-                    p.setBrush(Qt.BrushStyle.NoBrush)
-                    p.setPen(QPen(QColor("#ff3030"), 2))
-                    p.drawRect(r)
-                text_color = QColor("#ffffff") if color.lightness() < 140 else QColor("#142028")
-                p.setPen(QPen(text_color))
-                f2 = QFont("Segoe UI", max(7, cell - 8))
-                p.setFont(f2)
-                p.drawText(r, Qt.AlignmentFlag.AlignCenter, str(pl.pallet_size))
-                current_z += h
+        # Pallets — forward on LEFT, ramp on RIGHT. Each pallet is drawn
+        # at its actual (cell_y, cell_z) instead of guessing from the
+        # cumulative stack-order; this prevents two side-by-side pallets
+        # at the same Y from being rendered as if they were vertically
+        # stacked.
+        for pl in sorted(self.pallets,
+                         key=lambda p: (p.cell_y, p.cell_z, p.cell_x)):
+            local_y = pl.cell_y - self.zone_meta["cube_offset_y"]
+            local_z = pl.cell_z
+            if local_y < 0 or local_z + pl.cell_h > zh_units:
+                continue
+            screen_x = x0 + (zl - local_y - pl.cell_l) * cell
+            screen_y = y0 + (zh_units - local_z - pl.cell_h) * cell
+            w_px = pl.cell_l * cell
+            h_px = pl.cell_h * cell
+            r = QRect(screen_x + 1, screen_y + 1, w_px - 2, h_px - 2)
+            color = QColor(pl.color)
+            p.setBrush(QBrush(color))
+            p.setPen(QPen(color.darker(140), 1))
+            p.drawRect(r)
+            if pl.is_conflicted:
+                _draw_conflict_stripes(p, r, pl.conflict_partner_colors)
+            text_color = QColor("#ffffff") if color.lightness() < 140 else QColor("#142028")
+            p.setPen(QPen(text_color))
+            f2 = QFont("Segoe UI", max(7, cell - 8))
+            p.setFont(f2)
+            p.drawText(r, Qt.AlignmentFlag.AlignCenter, str(pl.pallet_size))
 
         # Direction labels
         p.setPen(QPen(QColor("#5be4ff")))

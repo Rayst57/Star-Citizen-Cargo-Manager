@@ -105,6 +105,7 @@ class PalletRect:
     bay: str
     cell_x: int
     cell_y: int
+    cell_z: int                 # vertical position in 1.25 m cubes (0 = floor)
     cell_w: int
     cell_l: int
     cell_h: int
@@ -668,7 +669,7 @@ class AppController(QObject):
                 )
             zone_grids[zone_label] = grid
 
-            for (entry, size, w, l, h, cell_x, cell_y) in placement_result or []:
+            for (entry, size, w, l, h, cell_x, cell_y, cell_z) in placement_result or []:
                 color = color_map.get(entry.delivery_station_name, "#888888")
                 amb_sizes, partner_colors = cl_conflict_info.get(
                     entry.cargo_line_id, (set(), [])
@@ -681,6 +682,7 @@ class AppController(QObject):
                     bay=zone["bay_label"],
                     cell_x=zone["cube_offset_x"] + cell_x,
                     cell_y=zone["cube_offset_y"] + cell_y,
+                    cell_z=cell_z,
                     cell_w=w,
                     cell_l=l,
                     cell_h=h,
@@ -693,6 +695,29 @@ class AppController(QObject):
                     contract_number=entry.contract_number,
                     conflict_partner_colors=partner_colors if is_pallet_conflict else [],
                 ))
+
+        # ── Cubic occupancy fault check ───────────────────────────────
+        # Walk all PalletRects we just produced and assert no two
+        # occupy the same (zone, x, y, z) cube. If they do, log a
+        # WARN to validation_log so it's visible in cargo_manager.log
+        # — this catches placement bugs before they reach the user.
+        occupied: dict[tuple[str, int, int, int], int] = {}
+        for r in rects:
+            for dx in range(r.cell_w):
+                for dy in range(r.cell_l):
+                    for dz in range(r.cell_h):
+                        key = (r.zone_label,
+                               r.cell_x + dx, r.cell_y + dy,
+                               r.cell_z + dz)
+                        if key in occupied:
+                            _log.warning(
+                                "Cubic overlap: zone=%s cube=(%d,%d,%d) "
+                                "occupied by cargo_line=%d AND %d",
+                                r.zone_label,
+                                r.cell_x + dx, r.cell_y + dy, r.cell_z + dz,
+                                occupied[key], r.cargo_line_id,
+                            )
+                        occupied[key] = r.cargo_line_id
 
         return rects
 
@@ -1159,11 +1184,8 @@ def _try_place_zone(
 ) -> tuple[list, list[list[int]]] | tuple[None, list[list[int]]]:
     """Run a single placement pass with the given small-pallet ordering.
 
-    Returns (placements, grid) on success, or (None, grid) if any pallet
-    failed to find a uniform-support landing spot. The caller can then
-    retry with a different ordering before falling back to overflow.
-
-    placements is a list of tuples: (entry, size, w, l, h, cell_x, cell_y).
+    placements is a list of tuples:
+        (entry, size, w, l, h, cell_x, cell_y, cell_z).
     """
     grid = [[0] * zone_l for _ in range(zone_w)]
     placements: list = []
@@ -1177,7 +1199,8 @@ def _try_place_zone(
                               from_far_end=from_far)
         if spot is None:
             return False
-        placements.append((entry, size, w, l, h, spot[0], spot[1]))
+        x, y, z = spot
+        placements.append((entry, size, w, l, h, x, y, z))
         return True
 
     for entry, size in large_first:
@@ -1196,20 +1219,14 @@ def _place_in_grid(
     stack_limit: int,
     *,
     from_far_end: bool = False,
-) -> tuple[int, int] | None:
+) -> tuple[int, int, int] | None:
     """Best-fit placement requiring uniform support.
 
-    Every cell in the pallet's footprint must share the SAME current
-    height before placement (so the pallet sits flat). Among all valid
-    spots, we PREFER:
-      1. Lowest z — fill the floor before stacking. Prevents two 1 SCU
-         pallets from landing on top of each other at (0,0) when (1,0)
-         is still empty floor.
-      2. The y-direction asked for via *from_far_end* — low y near the
-         ramp for smalls, high y at the forward end for larges.
-      3. Lowest x — deterministic tiebreak.
+    Returns (x, y, z) of the placement or None if it doesn't fit.
+    The z is needed by the renderer so it can draw each pallet at its
+    actual height instead of guessing from cumulative stack-order.
     """
-    candidates: list[tuple[int, int, int, int]] = []  # (z, y_rank, x, y)
+    candidates: list[tuple[int, int, int]] = []   # (y, x, z)
     for y in range(zone_l - l + 1):
         for x in range(zone_w - w + 1):
             heights = [
@@ -1222,19 +1239,21 @@ def _place_in_grid(
             z = heights[0]
             if z + h > stack_limit:
                 continue
-            y_rank = -y if from_far_end else y
-            candidates.append((z, y_rank, x, y))
+            candidates.append((y, x, z))
 
     if not candidates:
         return None
 
-    candidates.sort()
-    _, _, x, y = candidates[0]
-    z = grid[x][y]
+    if from_far_end:
+        candidates.sort(key=lambda c: (-c[0], -c[2], c[1]))
+    else:
+        candidates.sort(key=lambda c: (c[0], c[2], c[1]))
+
+    y, x, z = candidates[0]
     for dx in range(w):
         for dy in range(l):
             grid[x + dx][y + dy] = z + h
-    return (x, y)
+    return (x, y, z)
 
 
 def _parse_breakdown(text: str | None) -> list[int]:
