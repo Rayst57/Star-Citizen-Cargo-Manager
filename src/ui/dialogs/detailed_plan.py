@@ -8,6 +8,8 @@ and the user scrolls through all stops in a single dialog.
 
 from __future__ import annotations
 
+from collections import Counter
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton,
@@ -15,6 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from ...app_controller import AppController
+from ...planner.palletizer import VALID_SIZES, palletize
 
 
 class DetailedPlanDialog(QDialog):
@@ -52,11 +55,13 @@ class DetailedPlanDialog(QDialog):
             conflict_cl_ids.update(grp.cargo_line_ids)
         cl_to_dest: dict[int, str] = {}
         cl_to_zone: dict[int, str] = {}
+        cl_to_max_pallet: dict[int, int] = {}
 
-        # Lookup zone + delivery name for each cargo line
+        # Lookup zone + delivery name + max pallet size for each cargo line
         rows = controller.conn.execute(
             """
-            SELECT cl.id, s.name AS dest_name, za.primary_zone_label AS zone_label
+            SELECT cl.id, s.name AS dest_name, za.primary_zone_label AS zone_label,
+                   ct.max_pallet_size
             FROM cargo_lines cl
             JOIN stations s ON s.id = cl.delivery_station_id
             JOIN contracts ct ON ct.id = cl.contract_id
@@ -70,6 +75,22 @@ class DetailedPlanDialog(QDialog):
         for r in rows:
             cl_to_dest[r["id"]] = r["dest_name"]
             cl_to_zone[r["id"]] = r["zone_label"] or "?"
+            cl_to_max_pallet[r["id"]] = r["max_pallet_size"]
+
+        # Per-cargo-line conflict info: ambiguous sizes + partner destination names
+        cl_conflict_info: dict[int, tuple[set[int], list[str]]] = {}
+        for grp in result.conflict_groups:
+            amb_sizes = set(grp.ambiguous_sizes)
+            for d in grp.destinations:
+                partners = [
+                    od.delivery_station_name
+                    for od in grp.destinations
+                    if od.delivery_station_id != d.delivery_station_id
+                ]
+                for cl_id in d.cargo_line_ids:
+                    cl_conflict_info[cl_id] = (amb_sizes, partners)
+        self._cl_conflict_info = cl_conflict_info
+        self._cl_to_max_pallet = cl_to_max_pallet
 
         # Scrollable list of per-stop sections
         list_widget = QWidget()
@@ -117,34 +138,37 @@ class DetailedPlanDialog(QDialog):
         h.setWordWrap(True)
         layout.addWidget(h)
 
-        # Unload section
+        # Unload section — pallet-level breakdown with ambiguity markers
         if stop.unloads:
             layout.addWidget(self._section_label("Unload"))
             for ref in stop.unloads:
-                tag = "  ⚠ CONFLICT" if ref.cargo_line_id in conflict_cl_ids else ""
                 zone = cl_to_zone.get(ref.cargo_line_id, "?")
                 lbl = QLabel(
                     f"  {zone} → {ref.scu_amount} SCU {ref.commodity_name}"
-                    f"  [Contract {ref.contract_number}]{tag}"
+                    f"  [Contract {ref.contract_number}]"
                 )
                 lbl.setWordWrap(True)
+                lbl.setStyleSheet("font-weight: bold;")
                 layout.addWidget(lbl)
+                self._add_pallet_breakdown(layout, ref.cargo_line_id, action="deliver")
+
         else:
             layout.addWidget(self._muted("Unload: none"))
 
-        # Load section
+        # Load section — pallet-level breakdown with ambiguity markers
         if stop.loads:
             layout.addWidget(self._section_label("Load"))
             for ref in stop.loads:
-                tag = "  ⚠ CONFLICT" if ref.cargo_line_id in conflict_cl_ids else ""
                 zone = cl_to_zone.get(ref.cargo_line_id, "?")
                 dest = cl_to_dest.get(ref.cargo_line_id, "?")
                 lbl = QLabel(
                     f"  {zone} → {ref.scu_amount} SCU {ref.commodity_name} "
-                    f"→ {dest}  [Contract {ref.contract_number}]{tag}"
+                    f"→ {dest}  [Contract {ref.contract_number}]"
                 )
                 lbl.setWordWrap(True)
+                lbl.setStyleSheet("font-weight: bold;")
                 layout.addWidget(lbl)
+                self._add_pallet_breakdown(layout, ref.cargo_line_id, action="load")
         else:
             layout.addWidget(self._muted("Load: none"))
 
@@ -185,6 +209,62 @@ class DetailedPlanDialog(QDialog):
             layout.addWidget(self._muted("Onboard after this stop: empty"))
 
         return card
+
+    def _add_pallet_breakdown(
+        self,
+        layout: QVBoxLayout,
+        cargo_line_id: int,
+        *,
+        action: str,
+    ) -> None:
+        """Show the pallet count×size breakdown for a cargo line, with
+        an asterisk on ambiguous (conflict-group) sizes and a footer
+        line per ambiguous size telling the pilot what to expect."""
+        max_pallet = self._cl_to_max_pallet.get(cargo_line_id)
+        scu = self.controller.conn.execute(
+            "SELECT scu_amount FROM cargo_lines WHERE id = ?", (cargo_line_id,)
+        ).fetchone()
+        if not scu or not max_pallet:
+            return
+        pallets = palletize(scu["scu_amount"], max_pallet)
+        counts = Counter(pallets)
+        amb_sizes, partners = self._cl_conflict_info.get(cargo_line_id, (set(), []))
+
+        # Pallet line
+        parts = []
+        for size in VALID_SIZES:
+            if counts[size] > 0:
+                star = "*" if size in amb_sizes else ""
+                parts.append(f"{counts[size]}×{size} SCU{star}")
+        breakdown_text = "    Pallets: " + " + ".join(parts) if parts else ""
+        lbl = QLabel(breakdown_text)
+        lbl.setWordWrap(True)
+        layout.addWidget(lbl)
+
+        # Per-ambiguous-size note
+        # At a delivery: each ambiguous pallet might be returned (it
+        # could belong to one of the partner destinations).
+        # At a pickup load: the pilot can't distinguish those sizes from
+        # the partner contracts on the elevator, hence the conflict.
+        for size in sorted(amb_sizes, reverse=True):
+            n_here = counts[size]
+            if n_here == 0:
+                continue
+            partner_str = " / ".join(partners) if partners else "the conflicting destination"
+            if action == "deliver":
+                msg = (
+                    f"      ⚠ {n_here}×{size} SCU* — Conflict; "
+                    f"some may be returned (belong to {partner_str})"
+                )
+            else:
+                msg = (
+                    f"      ⚠ {n_here}×{size} SCU* — Conflict on elevator "
+                    f"with {partner_str}; load to assigned zone, test at delivery"
+                )
+            note = QLabel(msg)
+            note.setWordWrap(True)
+            note.setStyleSheet("color: #ffbe20;")
+            layout.addWidget(note)
 
     def _section_label(self, text: str) -> QLabel:
         lbl = QLabel(text)

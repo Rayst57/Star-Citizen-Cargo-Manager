@@ -484,13 +484,28 @@ class ZoneStripsViewport(QWidget):
             p.setBrush(QBrush(color))
             p.drawRect(fill_rect)
 
-        # Conflict overlay
+        # Conflict overlay — stripes use the conflicting destination(s)'
+        # colors so paired conflict zones are visually linked. Red is
+        # only used as a fallback when partner colors are missing.
         if strip.is_conflicted:
-            p.setBrush(QBrush(QColor(255, 48, 48, 90), Qt.BrushStyle.BDiagPattern))
-            p.setPen(Qt.PenStyle.NoPen)
-            p.drawRect(fill_rect)
-            p.setBrush(Qt.BrushStyle.NoBrush)
-            p.setPen(QPen(QColor("#ff3030"), 2))
+            partners = strip.conflict_partner_colors or []
+            if partners:
+                for i, c_str in enumerate(partners[:2]):
+                    pattern = (Qt.BrushStyle.BDiagPattern if i % 2 == 0
+                               else Qt.BrushStyle.FDiagPattern)
+                    c = QColor(c_str)
+                    c.setAlpha(140)
+                    p.setBrush(QBrush(c, pattern))
+                    p.setPen(Qt.PenStyle.NoPen)
+                    p.drawRect(fill_rect)
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.setPen(QPen(QColor(partners[0]), 2))
+            else:
+                p.setBrush(QBrush(QColor(255, 48, 48, 90), Qt.BrushStyle.BDiagPattern))
+                p.setPen(Qt.PenStyle.NoPen)
+                p.drawRect(fill_rect)
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.setPen(QPen(QColor("#ff3030"), 2))
             p.drawRect(rect.adjusted(1, 1, -1, -1))
 
         # Hover ring

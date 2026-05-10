@@ -73,6 +73,14 @@ class ZoneStrip:
     used_scu: int
     destinations: list[ZoneStripDestination]
     is_conflicted: bool
+    # Colors of destinations that conflict with this zone's cargo (used
+    # to draw stripes in the conflicting destination's colors instead
+    # of plain red).
+    conflict_partner_colors: list[str] = None
+
+    def __post_init__(self):
+        if self.conflict_partner_colors is None:
+            self.conflict_partner_colors = []
 
     @property
     def is_empty(self) -> bool:
@@ -93,20 +101,27 @@ class ZoneStrip:
 class PalletRect:
     """A single pallet drawn on the BayCanvas viewport."""
     cargo_line_id: int
-    zone_label: str          # 'F1', 'R3', etc.
-    bay: str                 # 'forward' | 'rear'
-    cell_x: int              # origin within bay (0 = port edge)
-    cell_y: int              # origin within bay (0 = ramp edge)
-    cell_w: int              # pallet width (cells)
-    cell_l: int              # pallet length (cells)
-    cell_h: int              # pallet height (cells, 1 or 2)
-    pallet_size: int         # SCU
-    color: str               # hex of delivery destination
-    is_conflicted: bool
-    label: str               # short label inside rectangle
+    zone_label: str
+    bay: str
+    cell_x: int
+    cell_y: int
+    cell_w: int
+    cell_l: int
+    cell_h: int
+    pallet_size: int
+    color: str
+    is_conflicted: bool         # True only if THIS pallet's size is ambiguous
+    label: str
     delivery_station_name: str
     commodity_name: str
     contract_number: int
+    # Colors of the OTHER destinations sharing this pallet's ambiguous
+    # size — used to render stripes in those destinations' colors.
+    conflict_partner_colors: list[str] = None
+
+    def __post_init__(self):
+        if self.conflict_partner_colors is None:
+            self.conflict_partner_colors = []
 
 
 # ── Recompute thread ──────────────────────────────────────────────────────
@@ -574,6 +589,24 @@ class AppController(QObject):
         # Box footprints for pallet sizes
         boxes = _load_box_footprints()
 
+        # Per-cargo-line conflict info: which sizes are ambiguous AND the
+        # partner destinations' colors for striping.
+        cl_conflict_info: dict[int, tuple[set[int], list[str]]] = {}
+        for grp in (self._last_result.conflict_groups
+                    if self._last_result else []):
+            amb_sizes = set(grp.ambiguous_sizes)
+            dest_colors = {
+                d.delivery_station_id: color_map.get(d.delivery_station_name, "#888888")
+                for d in grp.destinations
+            }
+            for d in grp.destinations:
+                partners = [
+                    c for sid, c in dest_colors.items()
+                    if sid != d.delivery_station_id
+                ]
+                for cl_id in d.cargo_line_ids:
+                    cl_conflict_info[cl_id] = (amb_sizes, partners)
+
         # Per-zone height grid: [height_units_used_at(x,y)]
         # Zone height is the full vertical capacity in 1.25 m cubes (e.g. 4
         # for the C2). A 2-height pallet adds 2 to grid[x][y]; capping at the
@@ -582,51 +615,73 @@ class AppController(QObject):
 
         rects: list[PalletRect] = []
 
-        # Sort within each zone so conflict cargo is placed first (low Y =
-        # ramp side) for fast deconfliction at unload (handbook §10).
-        sorted_entries = sorted(
-            entries,
-            key=lambda e: (e.zone_label, 0 if e.is_conflicted else 1, e.cargo_line_id),
-        )
+        # Loading doctrine: large pallets (≥8 SCU) load from the FAR end
+        # (forward) and stack toward the ramp; small pallets (<8 SCU)
+        # fill from the ramp end. They naturally meet in the middle.
+        LARGE_SIZES = {8, 16, 24, 32}
 
-        for entry in sorted_entries:
-            zone = zone_meta.get(entry.zone_label)
+        # Group entries by zone so we place each zone's contents in a single
+        # large→small pass.
+        entries_by_zone: dict[str, list] = {}
+        for e in entries:
+            entries_by_zone.setdefault(e.zone_label, []).append(e)
+
+        for zone_label, zone_entries in entries_by_zone.items():
+            zone = zone_meta.get(zone_label)
             if not zone:
                 continue
             zw = zone["width_units"]
             zl = zone["length_units"]
             zh = zone["scu_capacity"] // (zw * zl) if zw * zl else 4
-            grid = zone_grids.setdefault(
-                entry.zone_label, [[0] * zl for _ in range(zw)]
-            )
-            sizes = _parse_breakdown(entry.pallet_breakdown) or [entry.scu_amount]
-            # For conflict cargo: place SMALL pallets first so they land at
-            # low Y (ramp side). Small pallets are typically the ambiguous
-            # ones (e.g. 1×2 + 1×1 in the Everus/Baijini Tungsten case);
-            # the pilot can test-send them at the ramp before bringing up
-            # the unique-size stacks.
-            if entry.is_conflicted:
-                sizes = sorted(sizes)        # ascending = smallest first
-            color = color_map.get(entry.delivery_station_name, "#888888")
+            grid = zone_grids.setdefault(zone_label, [[0] * zl for _ in range(zw)])
 
-            for size in sizes:
+            # Build a flat list of (entry, size) pairs across all cargo
+            # lines in this zone; we'll partition into large/small below.
+            placements = []
+            for entry in zone_entries:
+                sizes = _parse_breakdown(entry.pallet_breakdown) or [entry.scu_amount]
+                for size in sizes:
+                    placements.append((entry, size))
+
+            # Split + sort: large pallets descending (largest deepest).
+            # Small pallets ALSO descending so the largest-floored small
+            # (e.g. 4 SCU) lands first at the ramp and smaller ones (2, 1)
+            # stack on top — keeps every small pallet inside the bay even
+            # in tight zones, and matches the unload workflow (lift the
+            # tiny ambiguous ones off the top first).
+            large_first = sorted(
+                [p for p in placements if p[1] in LARGE_SIZES],
+                key=lambda p: -p[1],
+            )
+            small_first = sorted(
+                [p for p in placements if p[1] not in LARGE_SIZES],
+                key=lambda p: -p[1],
+            )
+
+            for (entry, size), from_far in (
+                [(p, True) for p in large_first]
+                + [(p, False) for p in small_first]
+            ):
                 box = boxes.get(size, {"width": 1, "length": 1, "height": 1})
                 w, l, h = box["width"], box["length"], box["height"]
-                # The 16/24/32 SCU pallets are stored in scu_boxes.json
-                # with their natural orientation (long axis = length axis,
-                # along the bay's length). The rotatable flag exists for
-                # future ships whose bays have a different aspect ratio.
                 if w > zw and box.get("rotatable") and l <= zw:
                     w, l = l, w
-                placed = _place_in_grid(grid, w, l, h, zw, zl, zh)
+                placed = _place_in_grid(
+                    grid, w, l, h, zw, zl, zh, from_far_end=from_far
+                )
                 if placed is None:
-                    # Zone visually full — anchor at corner, label as overflow
                     placed = (max(0, zw - w), max(0, zl - l))
-
                 cell_x, cell_y = placed
+
+                color = color_map.get(entry.delivery_station_name, "#888888")
+                amb_sizes, partner_colors = cl_conflict_info.get(
+                    entry.cargo_line_id, (set(), [])
+                )
+                is_pallet_conflict = size in amb_sizes
+
                 rects.append(PalletRect(
                     cargo_line_id=entry.cargo_line_id,
-                    zone_label=entry.zone_label,
+                    zone_label=zone_label,
                     bay=zone["bay_label"],
                     cell_x=zone["cube_offset_x"] + cell_x,
                     cell_y=zone["cube_offset_y"] + cell_y,
@@ -635,11 +690,12 @@ class AppController(QObject):
                     cell_h=h,
                     pallet_size=size,
                     color=color,
-                    is_conflicted=entry.is_conflicted,
+                    is_conflicted=is_pallet_conflict,
                     label=f"{size}",
                     delivery_station_name=entry.delivery_station_name,
                     commodity_name=entry.commodity_name,
                     contract_number=entry.contract_number,
+                    conflict_partner_colors=partner_colors if is_pallet_conflict else [],
                 ))
 
         return rects
@@ -698,6 +754,25 @@ class AppController(QObject):
             if e.is_conflicted:
                 conflicted.add(e.zone_label)
 
+        # Pre-compute partner-color lookup per (group_id, station_id) so we
+        # can render stripes in the conflicting destination's color rather
+        # than a generic red.
+        groups = self._last_result.conflict_groups if self._last_result else []
+        partner_colors_for_dest: dict[int, list[str]] = {}
+        for grp in groups:
+            for d in grp.destinations:
+                others = []
+                for od in grp.destinations:
+                    if od.delivery_station_id == d.delivery_station_id:
+                        continue
+                    c = color_map.get(od.delivery_station_name)
+                    if c and c not in others:
+                        others.append(c)
+                bucket = partner_colors_for_dest.setdefault(d.delivery_station_id, [])
+                for c in others:
+                    if c not in bucket:
+                        bucket.append(c)
+
         strips: list[ZoneStrip] = []
         for r in zone_rows:
             label = r["zone_label"]
@@ -706,6 +781,12 @@ class AppController(QObject):
                 dests_dict.values(),
                 key=lambda d: -d.scu_amount,
             )
+            # Strip-level partner colors: union across destinations in this strip
+            partners: list[str] = []
+            for d in dests_sorted:
+                for c in partner_colors_for_dest.get(d.station_id, []):
+                    if c not in partners:
+                        partners.append(c)
             strips.append(ZoneStrip(
                 zone_label=label,
                 bay=r["bay_label"],
@@ -718,6 +799,7 @@ class AppController(QObject):
                 used_scu=sum(d.scu_amount for d in dests_sorted),
                 destinations=dests_sorted,
                 is_conflicted=label in conflicted,
+                conflict_partner_colors=partners,
             ))
         return strips
 
@@ -1076,30 +1158,35 @@ def _place_in_grid(
     w: int, l: int, h: int,
     zone_w: int, zone_l: int,
     stack_limit: int,
+    *,
+    from_far_end: bool = False,
 ) -> tuple[int, int] | None:
     """First-fit placement scanning row-by-row, requiring uniform support.
 
     A pallet sits on a flat surface, so every cell in its footprint must
-    share the SAME current height before placement. This prevents the
-    "small pallet at floor + bigger pallet on top" tilt that the user
-    flagged (e.g. a 4 SCU pallet cannot rest half on a 2 SCU pallet and
-    half on the bare floor).
+    share the SAME current height before placement.
 
-    Returns (x, y) of the placement or None if the pallet does not fit.
+    *from_far_end* flips the Y scan direction: when True the scan starts
+    at the FORWARD end (high Y, far from the ramp) so large pallets land
+    deep first and stack toward the door. When False, scan starts at the
+    ramp end (Y=0) so small pallets land closest to the door.
     """
-    for y in range(zone_l - l + 1):
+    if from_far_end:
+        y_iter = range(zone_l - l, -1, -1)
+    else:
+        y_iter = range(zone_l - l + 1)
+    for y in y_iter:
         for x in range(zone_w - w + 1):
-            # Collect heights under the proposed footprint
             heights = [
                 grid[x + dx][y + dy]
                 for dx in range(w)
                 for dy in range(l)
             ]
             if len(set(heights)) != 1:
-                continue                 # uneven surface, skip
+                continue
             z = heights[0]
             if z + h > stack_limit:
-                continue                 # exceeds zone height
+                continue
             for dx in range(w):
                 for dy in range(l):
                     grid[x + dx][y + dy] = z + h

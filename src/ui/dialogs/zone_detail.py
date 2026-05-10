@@ -22,6 +22,35 @@ from PySide6.QtWidgets import (
 )
 
 
+def _draw_conflict_stripes(p: QPainter, rect: QRect, partner_colors: list[str]) -> None:
+    """Stripe a conflicted pallet in the conflicting destination(s)' colors.
+
+    For a 2-way conflict there is one partner — diagonal stripes in that
+    color plus a border. For 3+ ways we alternate two patterns so both
+    partners are visible. Falls back to a generic red overlay only if no
+    partner colors are provided (shouldn't normally happen).
+    """
+    if not partner_colors:
+        p.setBrush(QBrush(QColor(255, 48, 48, 100), Qt.BrushStyle.BDiagPattern))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawRect(rect)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.setPen(QPen(QColor("#ff3030"), 2))
+        p.drawRect(rect)
+        return
+    for i, c_str in enumerate(partner_colors[:2]):
+        pattern = (Qt.BrushStyle.BDiagPattern if i % 2 == 0
+                   else Qt.BrushStyle.FDiagPattern)
+        c = QColor(c_str)
+        c.setAlpha(160)
+        p.setBrush(QBrush(c, pattern))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawRect(rect)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.setPen(QPen(QColor(partner_colors[0]), 2))
+    p.drawRect(rect)
+
+
 class _TopDownView(QWidget):
     """Top-down view of a single zone (width × length)."""
 
@@ -116,12 +145,7 @@ class _TopDownView(QWidget):
             p.setPen(QPen(color.darker(140), 1))
             p.drawRect(r)
             if pl.is_conflicted:
-                p.setBrush(QBrush(QColor(255, 48, 48, 90), Qt.BrushStyle.BDiagPattern))
-                p.setPen(Qt.PenStyle.NoPen)
-                p.drawRect(r)
-                p.setBrush(Qt.BrushStyle.NoBrush)
-                p.setPen(QPen(QColor("#ff3030"), 2))
-                p.drawRect(r)
+                _draw_conflict_stripes(p, r, pl.conflict_partner_colors)
             text_color = QColor("#ffffff") if color.lightness() < 140 else QColor("#212e67")
             p.setPen(QPen(text_color))
             f2 = QFont("Segoe UI", max(7, cell - 8))
@@ -231,10 +255,14 @@ class _SideView(QWidget):
                 screen_y = y0 + (zh_units - 1 - z) * cell
                 p.drawRect(screen_x + 1, screen_y + 1, cell - 2, cell - 2)
 
-        # Pallets — forward on LEFT, ramp on RIGHT.
+        # Pallets — forward on LEFT, ramp on RIGHT. Defensive clip:
+        # if a stack would exceed the zone height, skip the overflow
+        # pallet rather than drawing it outside the bay outline.
         for local_y, items in stacks.items():
             current_z = 0
             for pl, h in items:
+                if current_z + h > zh_units:
+                    continue   # would render outside the bay; skip
                 screen_x = x0 + (zl - local_y - pl.cell_l) * cell
                 screen_y = y0 + (zh_units - current_z - h) * cell
                 w_px = pl.cell_l * cell
