@@ -2,7 +2,8 @@
   "_meta": {
     "purpose": "Initial C2 Hercules ship + zone definitions.",
     "axis_convention": "Width = port-to-starboard (X). Length = ramp-end to forward (Y). Height = floor up (Z). All units are 1.25 m cubes.",
-    "ramp_note": "The C2 has TWO ramps. The forward bay is loaded via the nose ramp; the rear bay is loaded via the rear ramp. Both bays use Y=0 = ramp edge convention, hence ramp_side='low_y' for every zone."
+    "ramp_note": "The C2 has TWO ramps. The forward bay is loaded via the nose ramp; the rear bay is loaded via the rear ramp. Both bays use Y=0 = ramp edge convention, hence ramp_side='low_y' for every zone.",
+    "render_note": "ship_forward_y per zone tells the renderer which local-Y direction points toward the ship's nose. Rear-view top-down diagrams put forward at the top of the screen. F-bay nose-end is at low-Y so ship_forward_y='low' (renders flipped). R-bay's forward direction is high-Y so ship_forward_y='high' (renders normal)."
   },
   "ship": {
     "name": "C2 Hercules",
@@ -11,12 +12,12 @@
     "is_active": 1
   },
   "zones": [
-    { "zone_label": "F1", "bay_label": "forward", "width_units": 2, "length_units": 9,  "height_units": 4, "cube_offset_x": 0, "cube_offset_y": 0, "scu_capacity": 72,  "load_order": 1, "unload_priority": 1, "left_zone_label": null, "right_zone_label": "F2", "ramp_side": "low_y", "notes": "Forward bay, port column. Loaded via the nose ramp (Y=0 = nose edge)." },
-    { "zone_label": "F2", "bay_label": "forward", "width_units": 2, "length_units": 9,  "height_units": 4, "cube_offset_x": 2, "cube_offset_y": 0, "scu_capacity": 72,  "load_order": 2, "unload_priority": 2, "left_zone_label": "F1", "right_zone_label": "F3", "ramp_side": "low_y", "notes": "Forward bay, middle column." },
-    { "zone_label": "F3", "bay_label": "forward", "width_units": 2, "length_units": 9,  "height_units": 4, "cube_offset_x": 4, "cube_offset_y": 0, "scu_capacity": 72,  "load_order": 3, "unload_priority": 3, "left_zone_label": "F2", "right_zone_label": null, "ramp_side": "low_y", "notes": "Forward bay, starboard column." },
-    { "zone_label": "R1", "bay_label": "rear",    "width_units": 2, "length_units": 15, "height_units": 4, "cube_offset_x": 0, "cube_offset_y": 0, "scu_capacity": 120, "load_order": 4, "unload_priority": 4, "left_zone_label": null, "right_zone_label": "R2", "ramp_side": "low_y", "notes": "Rear bay, port column. Loaded via the rear ramp (Y=0 = rear edge)." },
-    { "zone_label": "R2", "bay_label": "rear",    "width_units": 2, "length_units": 15, "height_units": 4, "cube_offset_x": 2, "cube_offset_y": 0, "scu_capacity": 120, "load_order": 5, "unload_priority": 5, "left_zone_label": "R1", "right_zone_label": "R3", "ramp_side": "low_y", "notes": "Rear bay, mid-port column." },
-    { "zone_label": "R3", "bay_label": "rear",    "width_units": 2, "length_units": 15, "height_units": 4, "cube_offset_x": 4, "cube_offset_y": 0, "scu_capacity": 120, "load_order": 6, "unload_priority": 6, "left_zone_label": "R2", "right_zone_label": "R4", "ramp_side": "low_y", "notes": "Rear bay, mid-starboard column." },
-    { "zone_label": "R4", "bay_label": "rear",    "width_units": 2, "length_units": 15, "height_units": 4, "cube_offset_x": 6, "cube_offset_y": 0, "scu_capacity": 120, "load_order": 7, "unload_priority": 7, "left_zone_label": "R3", "right_zone_label": null, "ramp_side": "low_y", "notes": "Rear bay, starboard column." }
+    { "zone_label": "F1", "bay_label": "forward", "width_units": 2, "length_units": 9,  "height_units": 4, "cube_offset_x": 0, "cube_offset_y": 0, "scu_capacity": 72,  "load_order": 1, "unload_priority": 1, "left_zone_label": null, "right_zone_label": "F2", "ramp_side": "low_y", "ship_forward_y": "low", "notes": "Forward bay, port column. Loaded via the nose ramp (Y=0 = nose edge)." },
+    { "zone_label": "F2", "bay_label": "forward", "width_units": 2, "length_units": 9,  "height_units": 4, "cube_offset_x": 2, "cube_offset_y": 0, "scu_capacity": 72,  "load_order": 2, "unload_priority": 2, "left_zone_label": "F1", "right_zone_label": "F3", "ramp_side": "low_y", "ship_forward_y": "low",  "notes": "Forward bay, middle column." },
+    { "zone_label": "F3", "bay_label": "forward", "width_units": 2, "length_units": 9,  "height_units": 4, "cube_offset_x": 4, "cube_offset_y": 0, "scu_capacity": 72,  "load_order": 3, "unload_priority": 3, "left_zone_label": "F2", "right_zone_label": null, "ramp_side": "low_y", "ship_forward_y": "low",  "notes": "Forward bay, starboard column." },
+    { "zone_label": "R1", "bay_label": "rear",    "width_units": 2, "length_units": 15, "height_units": 4, "cube_offset_x": 0, "cube_offset_y": 0, "scu_capacity": 120, "load_order": 4, "unload_priority": 4, "left_zone_label": null, "right_zone_label": "R2", "ramp_side": "low_y", "ship_forward_y": "high", "notes": "Rear bay, port column. Loaded via the rear ramp (Y=0 = rear edge)." },
+    { "zone_label": "R2", "bay_label": "rear",    "width_units": 2, "length_units": 15, "height_units": 4, "cube_offset_x": 2, "cube_offset_y": 0, "scu_capacity": 120, "load_order": 5, "unload_priority": 5, "left_zone_label": "R1", "right_zone_label": "R3", "ramp_side": "low_y", "ship_forward_y": "high", "notes": "Rear bay, mid-port column." },
+    { "zone_label": "R3", "bay_label": "rear",    "width_units": 2, "length_units": 15, "height_units": 4, "cube_offset_x": 4, "cube_offset_y": 0, "scu_capacity": 120, "load_order": 6, "unload_priority": 6, "left_zone_label": "R2", "right_zone_label": "R4", "ramp_side": "low_y", "ship_forward_y": "high", "notes": "Rear bay, mid-starboard column." },
+    { "zone_label": "R4", "bay_label": "rear",    "width_units": 2, "length_units": 15, "height_units": 4, "cube_offset_x": 6, "cube_offset_y": 0, "scu_capacity": 120, "load_order": 7, "unload_priority": 7, "left_zone_label": "R3", "right_zone_label": null, "ramp_side": "low_y", "ship_forward_y": "high", "notes": "Rear bay, starboard column." }
   ]
 }

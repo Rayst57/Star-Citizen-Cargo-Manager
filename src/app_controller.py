@@ -73,6 +73,10 @@ class ZoneStrip:
     used_scu: int
     destinations: list[ZoneStripDestination]
     is_conflicted: bool
+    # 'high' (no flip) or 'low' (flip on screen — F-bay style). Drives
+    # the rear-view top-down rendering convention so ship-forward is
+    # always at the top of the screen.
+    ship_forward_y: str = "high"
     # Colors of destinations that conflict with this zone's cargo (used
     # to draw stripes in the conflicting destination's colors instead
     # of plain red).
@@ -116,6 +120,10 @@ class PalletRect:
     delivery_station_name: str
     commodity_name: str
     contract_number: int
+    # 'high' (no flip) or 'low' (flip on screen — F-bay style). The
+    # renderer combines this with the bay's hardcoded length to mirror
+    # pallet Y positions when ship-forward is at low local-Y.
+    ship_forward_y: str = "high"
     # Colors of the OTHER destinations sharing this pallet's ambiguous
     # size — used to render stripes in those destinations' colors.
     conflict_partner_colors: list[str] = None
@@ -602,7 +610,8 @@ class AppController(QObject):
             for r in self.conn.execute(
                 """
                 SELECT z.zone_label, z.bay_label, z.width_units, z.length_units,
-                       z.cube_offset_x, z.cube_offset_y, z.scu_capacity
+                       z.cube_offset_x, z.cube_offset_y, z.scu_capacity,
+                       z.ship_forward_y
                 FROM ship_zones z
                 JOIN workdays w ON w.ship_id = z.ship_id
                 WHERE w.id = ?
@@ -723,6 +732,7 @@ class AppController(QObject):
                     delivery_station_name=entry.delivery_station_name,
                     commodity_name=entry.commodity_name,
                     contract_number=entry.contract_number,
+                    ship_forward_y=zone.get("ship_forward_y", "high"),
                     conflict_partner_colors=partner_colors if is_pallet_conflict else [],
                 ))
 
@@ -769,7 +779,8 @@ class AppController(QObject):
         zone_rows = self.conn.execute(
             """
             SELECT z.zone_label, z.bay_label, z.cube_offset_x, z.cube_offset_y,
-                   z.width_units, z.length_units, z.height_units, z.scu_capacity
+                   z.width_units, z.length_units, z.height_units, z.scu_capacity,
+                   z.ship_forward_y
             FROM ship_zones z
             JOIN workdays w ON w.ship_id = z.ship_id
             WHERE w.id = ?
@@ -850,6 +861,7 @@ class AppController(QObject):
                 used_scu=sum(d.scu_amount for d in dests_sorted),
                 destinations=dests_sorted,
                 is_conflicted=label in conflicted,
+                ship_forward_y=r["ship_forward_y"],
                 conflict_partner_colors=partners,
             ))
         return strips

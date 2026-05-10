@@ -58,6 +58,24 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
         )
         conn.commit()
 
+    # Rear-view top-down rendering metadata. 'high' = current behavior
+    # (no flip; high local-Y at top of screen). For C2 the F-bay needs
+    # 'low' so the nose ramp appears at the top of every diagram, but
+    # we default existing rows to 'high' to avoid changing rendering
+    # for any bay where we can't infer the correct value automatically.
+    if not _has_column(conn, "ship_zones", "ship_forward_y"):
+        conn.execute(
+            "ALTER TABLE ship_zones "
+            "ADD COLUMN ship_forward_y TEXT NOT NULL DEFAULT 'high'"
+        )
+        # Backfill known C2 forward bay zones — anything labelled
+        # 'forward' on the C2 has its nose ramp at low-Y.
+        conn.execute(
+            "UPDATE ship_zones SET ship_forward_y = 'low' "
+            "WHERE bay_label = 'forward'"
+        )
+        conn.commit()
+
 
 def initialize_database(db_path: Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
     """Initialize the database on first launch; open existing DB otherwise.

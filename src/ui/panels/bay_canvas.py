@@ -11,6 +11,16 @@ top-down + side view of that single zone.
 LoadViewModal (per-stop modal) keeps the original individual-pallet
 rendering — see `BayCanvasViewport` in this module which is also used
 there with `interactive=False`.
+
+Rendering convention: rear-view, top-down — ship-forward is always at
+the TOP of the screen, mirroring standard aircraft diagrams. For each
+bay, ZoneStrip / PalletRect carry a `ship_forward_y` field telling us
+which local-Y direction points toward the ship's nose:
+  'high' → high local-Y is forward → render normally (Y=0 at the
+            bottom of the bay rectangle, matching the C2 R-bay).
+  'low'  → low local-Y is forward → render flipped (Y=0 at the top of
+            the bay rectangle, matching the C2 F-bay's nose ramp).
+The flip lives entirely in the renderer; data layer is unchanged.
 """
 
 from __future__ import annotations
@@ -29,6 +39,27 @@ from PySide6.QtWidgets import (
 # Rear bay:    8 cells wide × 15 cells deep
 FORWARD_W, FORWARD_L = 6, 9
 REAR_W, REAR_L = 8, 15
+
+
+def _local_y_to_screen_y(
+    bay_top_y: int,
+    local_y: int,
+    cell_l: int,
+    bay_length_cells: int,
+    cell_px: int,
+    ship_forward_y: str,
+) -> int:
+    """Convert a zone-local Y cell to a screen Y in pixels.
+
+    The screen always shows ship-forward at the top. For 'high' bays
+    (forward at high local-Y, e.g. C2 R-bay) we flip so the high end
+    is at the top of the bay rect; for 'low' bays (forward at low
+    local-Y, e.g. C2 F-bay nose) the local axis already points the
+    same way as screen-Y so no flip is needed.
+    """
+    if ship_forward_y == "high":
+        return bay_top_y + (bay_length_cells - local_y - cell_l) * cell_px
+    return bay_top_y + local_y * cell_px
 
 
 # ── per-pallet viewport (used by LoadViewModal) ──────────────────────────
@@ -208,6 +239,10 @@ class BayCanvasViewport(QWidget):
             p.drawLine(x, o.y(), x, o.y() + REAR_L * cp)
 
     def _draw_zone_labels(self, p: QPainter) -> None:
+        # Column labels go on the END OPPOSITE THE RAMP. For the C2 the
+        # F-bay's nose ramp is at the top of the bay rect, so F1/F2/F3
+        # labels go at the BOTTOM. R-bay's rear ramp is at the bottom,
+        # so R1-R4 labels go at the TOP (current behaviour).
         cp = self._cell_px
         font_pt = max(8, min(cp - 6, 12))
         font = QFont("Segoe UI", font_pt)
@@ -216,7 +251,9 @@ class BayCanvasViewport(QWidget):
         p.setPen(QPen(QColor("#5be4ff")))
         for label, x_off in (("F1", 0), ("F2", 2), ("F3", 4)):
             o = self._fwd_origin
-            rect = QRect(o.x() + x_off * cp, o.y() - 40, 2 * cp, 24)
+            rect = QRect(o.x() + x_off * cp,
+                         o.y() + FORWARD_L * cp + 4,
+                         2 * cp, 24)
             p.drawText(rect, Qt.AlignmentFlag.AlignCenter, label)
         for label, x_off in (("R1", 0), ("R2", 2), ("R3", 4), ("R4", 6)):
             o = self._rear_origin
@@ -231,8 +268,12 @@ class BayCanvasViewport(QWidget):
             if r.cargo_line_id == self._drag_id:
                 continue
             o = self._fwd_origin if r.bay == "forward" else self._rear_origin
+            bay_l = FORWARD_L if r.bay == "forward" else REAR_L
+            screen_y = _local_y_to_screen_y(
+                o.y(), r.cell_y, r.cell_l, bay_l, cp, r.ship_forward_y,
+            )
             rect = QRect(o.x() + r.cell_x * cp + 1,
-                         o.y() + r.cell_y * cp + 1,
+                         screen_y + 1,
                          r.cell_w * cp - 2,
                          r.cell_l * cp - 2)
             color = QColor(r.color)
@@ -251,21 +292,24 @@ class BayCanvasViewport(QWidget):
             p.drawText(rect, Qt.AlignmentFlag.AlignCenter, r.label)
 
     def _draw_ramp_arrow(self, p: QPainter) -> None:
-        # The C2 has TWO ramps — one in front of the F-bay (nose ramp)
-        # and one behind the R-bay (rear ramp). Both bays use Y=0 = ramp
-        # edge in zone coords, so annotate each bay's low-Y edge.
+        # Rear-view top-down convention: ship-forward at top of screen.
+        # The F-bay's nose ramp is at the FORWARD (top) edge of the bay
+        # rectangle; the R-bay's rear ramp is at the AFT (bottom) edge.
+        # Arrow shape flips accordingly so it always points OFF-SHIP.
         cp = self._cell_px
         p.setPen(QPen(QColor("#ff8a3c"), 2))
         font = QFont("Segoe UI", 10)
         p.setFont(font)
-        for origin, width, length, label in (
-            (self._fwd_origin,  FORWARD_W, FORWARD_L, "▲ nose ramp"),
-            (self._rear_origin, REAR_W,    REAR_L,    "▲ rear ramp"),
-        ):
-            x = origin.x() + width * cp // 2
-            y = origin.y() + length * cp + 6
-            p.drawText(QRect(x - 70, y, 140, 18),
-                       Qt.AlignmentFlag.AlignCenter, label)
+        # F-bay: arrow ABOVE the bay, ▲ pointing up (off the nose).
+        x = self._fwd_origin.x() + FORWARD_W * cp // 2
+        y = self._fwd_origin.y() - 22
+        p.drawText(QRect(x - 70, y, 140, 18),
+                   Qt.AlignmentFlag.AlignCenter, "▲ nose ramp")
+        # R-bay: arrow BELOW the bay, ▼ pointing down (off the tail).
+        x = self._rear_origin.x() + REAR_W * cp // 2
+        y = self._rear_origin.y() + REAR_L * cp + 6
+        p.drawText(QRect(x - 70, y, 140, 18),
+                   Qt.AlignmentFlag.AlignCenter, "▼ rear ramp")
 
     def _draw_drag_preview(self, p: QPainter) -> None:
         cp = self._cell_px
@@ -437,17 +481,20 @@ class ZoneStripsViewport(QWidget):
             p.drawRect(rect)
 
     def _draw_zone_labels(self, p: QPainter) -> None:
+        # Column labels go on the END OPPOSITE THE RAMP so the ramp
+        # arrow has clearance: F-bay labels at the bottom (its nose
+        # ramp is now at the top), R-bay labels at the top.
         cp = self._cell_px
         font_pt = max(8, min(cp - 6, 12))
         font = QFont("Segoe UI", font_pt)
         font.setBold(True)
         p.setFont(font)
         p.setPen(QPen(QColor("#5be4ff")))
-        # Label sits high above the bay outline (16 px of clearance) so
-        # the letters can't touch or be cut off by the bay top.
         for label, x_off in (("F1", 0), ("F2", 2), ("F3", 4)):
             o = self._fwd_origin
-            rect = QRect(o.x() + x_off * cp, o.y() - 40, 2 * cp, 24)
+            rect = QRect(o.x() + x_off * cp,
+                         o.y() + FORWARD_L * cp + 4,
+                         2 * cp, 24)
             p.drawText(rect, Qt.AlignmentFlag.AlignCenter, label)
         for label, x_off in (("R1", 0), ("R2", 2), ("R3", 4), ("R4", 6)):
             o = self._rear_origin
@@ -455,21 +502,24 @@ class ZoneStripsViewport(QWidget):
             p.drawText(rect, Qt.AlignmentFlag.AlignCenter, label)
 
     def _draw_ramp_arrow(self, p: QPainter) -> None:
-        # The C2 has TWO ramps — one in front of the F-bay (nose ramp)
-        # and one behind the R-bay (rear ramp). Both bays use Y=0 = ramp
-        # edge in zone coords, so annotate each bay's low-Y edge.
+        # Rear-view top-down convention: ship-forward at top of screen.
+        # The F-bay's nose ramp is at the FORWARD (top) edge of the bay
+        # rectangle; the R-bay's rear ramp is at the AFT (bottom) edge.
+        # Arrow shape flips accordingly so it always points OFF-SHIP.
         cp = self._cell_px
         p.setPen(QPen(QColor("#ff8a3c"), 2))
         font = QFont("Segoe UI", 10)
         p.setFont(font)
-        for origin, width, length, label in (
-            (self._fwd_origin,  FORWARD_W, FORWARD_L, "▲ nose ramp"),
-            (self._rear_origin, REAR_W,    REAR_L,    "▲ rear ramp"),
-        ):
-            x = origin.x() + width * cp // 2
-            y = origin.y() + length * cp + 6
-            p.drawText(QRect(x - 70, y, 140, 18),
-                       Qt.AlignmentFlag.AlignCenter, label)
+        # F-bay: arrow ABOVE the bay, ▲ pointing up (off the nose).
+        x = self._fwd_origin.x() + FORWARD_W * cp // 2
+        y = self._fwd_origin.y() - 22
+        p.drawText(QRect(x - 70, y, 140, 18),
+                   Qt.AlignmentFlag.AlignCenter, "▲ nose ramp")
+        # R-bay: arrow BELOW the bay, ▼ pointing down (off the tail).
+        x = self._rear_origin.x() + REAR_W * cp // 2
+        y = self._rear_origin.y() + REAR_L * cp + 6
+        p.drawText(QRect(x - 70, y, 140, 18),
+                   Qt.AlignmentFlag.AlignCenter, "▼ rear ramp")
 
     def _draw_strip(self, p: QPainter, strip) -> None:
         rect = self._strip_rect(strip)
@@ -477,13 +527,19 @@ class ZoneStripsViewport(QWidget):
             self._draw_empty_strip(p, rect, strip)
             return
 
-        # Compute filled height proportional to SCU usage. Fill fills
-        # from the ramp end (bottom of strip in screen coords) so the
-        # remaining empty cells are at the forward end.
+        # Fill always grows from the RAMP end inward, so the visible
+        # block reads as "loaded depth from the door". With ship-forward
+        # at top of screen, the F-bay ramp is at the top of the strip
+        # and R-bay ramp is at the bottom.
         fill_ratio = min(1.0, strip.used_scu / max(strip.scu_capacity, 1))
         fill_height = int(rect.height() * fill_ratio)
-        fill_top = rect.bottom() - fill_height + 1
-        fill_rect = QRect(rect.x(), fill_top, rect.width(), fill_height)
+        if strip.ship_forward_y == "low":
+            # Ramp at top → fill from top down.
+            fill_rect = QRect(rect.x(), rect.y(), rect.width(), fill_height)
+        else:
+            # Ramp at bottom → fill from bottom up.
+            fill_top = rect.bottom() - fill_height + 1
+            fill_rect = QRect(rect.x(), fill_top, rect.width(), fill_height)
 
         is_mixed = strip.is_mixed
         flashing = is_mixed and strip.zone_label not in self._acknowledged

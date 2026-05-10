@@ -131,6 +131,15 @@ CREATE TABLE ship_zones (
     -- exists so future ship layouts (nose-only, side-loaders, etc.) can
     -- declare ramp geometry without code changes.
     ramp_side           TEXT    NOT NULL DEFAULT 'low_y',
+    -- Which local-Y direction points toward the SHIP's forward (nose) end.
+    -- Renderers always show ship-forward at the top of the screen
+    -- (rear-view, top-down — the standard aircraft diagram convention),
+    -- so this drives whether a bay is drawn flipped vertically.
+    --   'high'  = high local-Y is forward (e.g. C2 R-bay: Y=0 at the
+    --             rear ramp, length-1 toward cockpit). NOT flipped.
+    --   'low'   = low local-Y is forward (e.g. C2 F-bay: Y=0 at the
+    --             nose ramp, length-1 toward ship interior). FLIPPED.
+    ship_forward_y      TEXT    NOT NULL DEFAULT 'high',
     notes               TEXT,
     UNIQUE (ship_id, zone_label)
 );
