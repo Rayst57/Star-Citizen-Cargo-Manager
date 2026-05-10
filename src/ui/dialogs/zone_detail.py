@@ -139,6 +139,18 @@ class _TopDownView(QWidget):
                     if 0 <= lx + dx < zw and 0 <= ly + dy < zl:
                         occupied[lx + dx][ly + dy] = True
 
+        # Rear-view top-down: ship-forward at TOP of screen.
+        #   ship_forward_y='high' → forward is at high local-Y → flip
+        #     so high local-Y ends up at the top of the rect (R-bay).
+        #   ship_forward_y='low'  → forward is at low local-Y → no
+        #     flip; low local-Y is already drawn at the top (F-bay).
+        forward_y = self.zone_meta.get("ship_forward_y", "high")
+
+        def _local_y_to_screen(local_y: int, span: int = 1) -> int:
+            if forward_y == "high":
+                return y0 + (zl - local_y - span) * cell
+            return y0 + local_y * cell
+
         # Draw dashed 1×1 outlines for unoccupied floor cells so the
         # pilot can see how much space is still available.
         dash_pen = QPen(QColor("#264a5c"), 1, Qt.PenStyle.DashLine)
@@ -148,14 +160,12 @@ class _TopDownView(QWidget):
             for y in range(zl):
                 if occupied[x][y]:
                     continue
-                screen_y = y0 + (zl - 1 - y) * cell
+                screen_y = _local_y_to_screen(y)
                 p.drawRect(x0 + x * cell + 1, screen_y + 1,
                            cell - 2, cell - 2)
 
         # Pallets — only floor footprint (z=0 layer). For stacked pallets,
         # only the bottom one is drawn here; the side view shows the stack.
-        # Zone Y=0 is the ramp end; we flip Y on screen so the ramp ends
-        # up at the BOTTOM of the view (matches the "ramp / door" label).
         already = set()
         for pl in self.pallets:
             local_x = pl.cell_x - self.zone_meta["cube_offset_x"]
@@ -166,7 +176,7 @@ class _TopDownView(QWidget):
             if key in already:
                 continue
             already.add(key)
-            screen_y = y0 + (zl - local_y - pl.cell_l) * cell
+            screen_y = _local_y_to_screen(local_y, pl.cell_l)
             r = QRect(x0 + local_x * cell + 1,
                       screen_y + 1,
                       pl.cell_w * cell - 2,
@@ -183,20 +193,35 @@ class _TopDownView(QWidget):
             p.setFont(f2)
             p.drawText(r, Qt.AlignmentFlag.AlignCenter, str(pl.pallet_size))
 
-        # Ramp arrow at bottom (low-Y end)
+        # Ramp + interior labels follow the rear-view convention:
+        # ship-forward (interior side) is always at the TOP of the
+        # rectangle; the ramp is at the OPPOSITE end. So for 'high'
+        # bays (R-bay) the ramp is at the bottom; for 'low' bays
+        # (F-bay) the ramp is at the top.
         bay = self.zone_meta.get("bay_label", "")
+        ramp_at_top = forward_y == "low"
+        ramp_label_text = _ramp_label(bay)
+        interior_label_text = _interior_label(bay)
+
+        if ramp_at_top:
+            ramp_y, ramp_arrow = y0 - 22, "▼"   # arrow points off-ship
+            interior_y = y0 + used_h + 6
+        else:
+            ramp_y, ramp_arrow = y0 + used_h + 4, "▲"
+            interior_y = y0 - 16
+
         p.setPen(QPen(QColor("#ff8a3c"), 2))
         f3 = QFont("Segoe UI", 9)
         p.setFont(f3)
-        p.drawText(QRect(x0, y0 + used_h + 4, used_w, ramp_h),
+        p.drawText(QRect(x0, ramp_y, used_w, ramp_h),
                    Qt.AlignmentFlag.AlignCenter,
-                   f"▲ {_ramp_label(bay)} / door")
-        # Interior / forward marker at top (high-Y end)
+                   f"{ramp_arrow} {ramp_label_text} / door")
+
         p.setPen(QPen(QColor("#5be4ff")))
         f4 = QFont("Segoe UI", 8)
         p.setFont(f4)
-        p.drawText(QRect(x0, y0 - 16, used_w, 14),
-                   Qt.AlignmentFlag.AlignCenter, _interior_label(bay))
+        p.drawText(QRect(x0, interior_y, used_w, 14),
+                   Qt.AlignmentFlag.AlignCenter, interior_label_text)
 
         p.end()
 
@@ -449,7 +474,8 @@ class ZoneDetailDialog(QDialog):
         row = self.controller.conn.execute(
             """
             SELECT z.zone_label, z.bay_label, z.cube_offset_x, z.cube_offset_y,
-                   z.width_units, z.length_units, z.height_units, z.scu_capacity
+                   z.width_units, z.length_units, z.height_units, z.scu_capacity,
+                   z.ship_forward_y
             FROM ship_zones z
             JOIN workdays w ON w.ship_id = z.ship_id
             WHERE w.id = ? AND z.zone_label = ?
