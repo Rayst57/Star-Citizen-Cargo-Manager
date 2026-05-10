@@ -123,6 +123,14 @@ CREATE TABLE ship_zones (
     unload_priority     INTEGER,
     left_zone_label     TEXT,
     right_zone_label    TEXT,
+    -- Which Y end of THIS zone's bay is the loading ramp.
+    -- 'low_y'  = ramp at Y=0 (current C2 default for both bays)
+    -- 'high_y' = ramp at Y=length-1 (e.g. nose-only loaders)
+    -- 'none'   = sealed bay; loaded indirectly
+    -- Metadata-only — the planner already treats Y=0 as ramp; this column
+    -- exists so future ship layouts (nose-only, side-loaders, etc.) can
+    -- declare ramp geometry without code changes.
+    ramp_side           TEXT    NOT NULL DEFAULT 'low_y',
     notes               TEXT,
     UNIQUE (ship_id, zone_label)
 );

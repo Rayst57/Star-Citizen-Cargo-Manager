@@ -3,9 +3,12 @@ ZoneDetailDialog — single-zone deep-dive view.
 
 Shows two synchronised renderings of one zone (e.g. F1):
   - Top-down: looking down at the floor (width × length)
-  - Side: looking at the port side, FORWARD on the LEFT, ramp on the RIGHT
-          (so the pilot reads pallets left-to-right going from the nose
-          to the door — matches `ui_interactions.md` request)
+  - Side: ramp on the RIGHT (low-Y end), interior on the LEFT.
+          For F-bay zones the ramp is the *nose ramp* and the
+          interior is the ship middle; for R-bay zones the ramp is
+          the *rear ramp* and the interior is forward (toward the
+          cockpit). The pilot reads pallets left-to-right going from
+          the interior to the door.
 
 Conflict pallets are highlighted with red border + diagonal stripe.
 Conflict pallets are also placed at the ramp end (low Y) by the
@@ -20,6 +23,34 @@ from PySide6.QtWidgets import (
     QComboBox, QDialog, QHBoxLayout, QLabel, QPushButton, QSizePolicy,
     QVBoxLayout, QWidget,
 )
+
+
+def _ramp_label(bay_label: str) -> str:
+    """User-visible name for the ramp on this zone's bay.
+
+    The C2 has TWO ramps: forward bay loads via the nose ramp, rear
+    bay loads via the rear ramp. Other ships may load both bays from
+    a single ramp; in that case the bay_label drives the wording.
+    """
+    if bay_label == "forward":
+        return "nose ramp"
+    if bay_label == "rear":
+        return "rear ramp"
+    return "ramp"
+
+
+def _interior_label(bay_label: str) -> str:
+    """High-Y (non-ramp) end label.
+
+    For the rear bay, high-Y is toward the cockpit, so 'forward'
+    is the directionally accurate label. For the forward bay,
+    high-Y is the ship interior (mid-fuselage), so 'interior' is
+    more accurate than 'forward' (which would suggest the nose,
+    where the F-bay ramp actually is).
+    """
+    if bay_label == "forward":
+        return "interior"
+    return "forward"
 
 
 def _draw_conflict_stripes(p: QPainter, rect: QRect, partner_colors: list[str]) -> None:
@@ -153,23 +184,30 @@ class _TopDownView(QWidget):
             p.drawText(r, Qt.AlignmentFlag.AlignCenter, str(pl.pallet_size))
 
         # Ramp arrow at bottom (low-Y end)
+        bay = self.zone_meta.get("bay_label", "")
         p.setPen(QPen(QColor("#ff8a3c"), 2))
         f3 = QFont("Segoe UI", 9)
         p.setFont(f3)
         p.drawText(QRect(x0, y0 + used_h + 4, used_w, ramp_h),
-                   Qt.AlignmentFlag.AlignCenter, "▲ ramp / door")
-        # Forward marker at top
+                   Qt.AlignmentFlag.AlignCenter,
+                   f"▲ {_ramp_label(bay)} / door")
+        # Interior / forward marker at top (high-Y end)
         p.setPen(QPen(QColor("#5be4ff")))
         f4 = QFont("Segoe UI", 8)
         p.setFont(f4)
         p.drawText(QRect(x0, y0 - 16, used_w, 14),
-                   Qt.AlignmentFlag.AlignCenter, "forward")
+                   Qt.AlignmentFlag.AlignCenter, _interior_label(bay))
 
         p.end()
 
 
 class _SideView(QWidget):
-    """Side view: forward on the LEFT, ramp on the RIGHT."""
+    """Side view: interior on the LEFT, ramp on the RIGHT.
+
+    For F-bay zones the interior is mid-fuselage (the F-bay's ramp is
+    the nose ramp, at low-Y). For R-bay zones the interior is forward
+    of the bay, toward the cockpit.
+    """
 
     def __init__(self, zone_meta: dict, pallets: list, parent=None):
         super().__init__(parent)
@@ -200,13 +238,14 @@ class _SideView(QWidget):
         y0 = title_h + (self.height() - title_h - ramp_h - used_h) // 2
 
         # Title
+        bay = self.zone_meta.get("bay_label", "")
         p.setPen(QPen(QColor("#5be4ff")))
         f = QFont("Segoe UI", 11)
         f.setBold(True)
         p.setFont(f)
         p.drawText(QRect(0, 4, self.width(), title_h),
                    Qt.AlignmentFlag.AlignCenter,
-                   f"Side view — forward to the left")
+                   f"Side view — {_interior_label(bay)} to the left")
 
         # Floor frame
         rect = QRect(x0, y0, used_w, used_h)
@@ -280,9 +319,11 @@ class _SideView(QWidget):
         f3 = QFont("Segoe UI", 9)
         p.setFont(f3)
         p.drawText(QRect(x0, y0 + used_h + 4, used_w // 2, ramp_h),
-                   Qt.AlignmentFlag.AlignLeft, "◀ forward")
+                   Qt.AlignmentFlag.AlignLeft,
+                   f"◀ {_interior_label(bay)}")
         p.drawText(QRect(x0 + used_w // 2, y0 + used_h + 4, used_w // 2, ramp_h),
-                   Qt.AlignmentFlag.AlignRight, "ramp ▶")
+                   Qt.AlignmentFlag.AlignRight,
+                   f"{_ramp_label(bay)} ▶")
 
         p.end()
 
