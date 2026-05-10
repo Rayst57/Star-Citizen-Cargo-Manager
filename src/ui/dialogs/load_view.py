@@ -117,7 +117,7 @@ class LoadViewModal(QDialog):
         for r in rows:
             chip = QLabel(f"  {r['name']}  ")
             chip.setStyleSheet(
-                f"background-color: {r['color_hex']}; color: #212e67; "
+                f"background-color: {r['color_hex']}; color: #142028; "
                 f"padding: 2px 6px; border-radius: 3px; font-weight: bold;"
             )
             self.legend_layout.addWidget(chip)

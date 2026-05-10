@@ -59,7 +59,7 @@ class BayCanvasViewport(QWidget):
         self._drag_pos: QPoint | None = None
         self._hover_zone: str | None = None
 
-        self.setStyleSheet("background-color: #181f3f;")
+        self.setStyleSheet("background-color: #070b10;")
 
     def set_pallet_rects(self, rects: list) -> None:
         self._pallet_rects = list(rects)
@@ -188,15 +188,15 @@ class BayCanvasViewport(QWidget):
     def _draw_bay(self, p: QPainter, bay: str) -> None:
         rect = self._bay_rect(bay)
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QBrush(QColor("#212e67")))
+        p.setBrush(QBrush(QColor("#142028")))
         p.drawRect(rect)
-        p.setPen(QPen(QColor("#ffffff"), 1.5))
+        p.setPen(QPen(QColor("#26b6d4"), 1.5))
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawRect(rect)
 
     def _draw_zone_dividers(self, p: QPainter) -> None:
         cp = self._cell_px
-        pen = QPen(QColor("#3a4894"), 1, Qt.PenStyle.DotLine)
+        pen = QPen(QColor("#264a5c"), 1, Qt.PenStyle.DotLine)
         p.setPen(pen)
         o = self._fwd_origin
         for cx in (2, 4):
@@ -213,7 +213,7 @@ class BayCanvasViewport(QWidget):
         font = QFont("Segoe UI", font_pt)
         font.setBold(True)
         p.setFont(font)
-        p.setPen(QPen(QColor("#deb447")))
+        p.setPen(QPen(QColor("#5be4ff")))
         for label, x_off in (("F1", 0), ("F2", 2), ("F3", 4)):
             o = self._fwd_origin
             rect = QRect(o.x() + x_off * cp, o.y() - 40, 2 * cp, 24)
@@ -246,7 +246,7 @@ class BayCanvasViewport(QWidget):
                 p.setBrush(QBrush(QColor(255, 48, 48, 70), Qt.BrushStyle.BDiagPattern))
                 p.setPen(Qt.PenStyle.NoPen)
                 p.drawRect(rect)
-            text_color = QColor("#ffffff") if color.lightness() < 140 else QColor("#212e67")
+            text_color = QColor("#ffffff") if color.lightness() < 140 else QColor("#142028")
             p.setPen(QPen(text_color))
             p.drawText(rect, Qt.AlignmentFlag.AlignCenter, r.label)
 
@@ -255,7 +255,7 @@ class BayCanvasViewport(QWidget):
         o = self._rear_origin
         x = o.x() + REAR_W * cp // 2
         y = o.y() + REAR_L * cp + 6
-        p.setPen(QPen(QColor("#ffbe20"), 2))
+        p.setPen(QPen(QColor("#ff8a3c"), 2))
         font = QFont("Segoe UI", 10)
         p.setFont(font)
         p.drawText(QRect(x - 60, y, 120, 18),
@@ -322,7 +322,7 @@ class ZoneStripsViewport(QWidget):
         self._timer.timeout.connect(self._toggle_flash)
         self._timer.start()
 
-        self.setStyleSheet("background-color: #181f3f;")
+        self.setStyleSheet("background-color: #070b10;")
 
     def set_strips(self, strips: list) -> None:
         # If a zone is no longer mixed, drop its acknowledgement
@@ -424,9 +424,9 @@ class ZoneStripsViewport(QWidget):
         ):
             rect = QRect(o.x(), o.y(), w * cp, l * cp)
             p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QBrush(QColor("#212e67")))
+            p.setBrush(QBrush(QColor("#142028")))
             p.drawRect(rect)
-            p.setPen(QPen(QColor("#ffffff"), 1.5))
+            p.setPen(QPen(QColor("#26b6d4"), 1.5))
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawRect(rect)
 
@@ -436,7 +436,7 @@ class ZoneStripsViewport(QWidget):
         font = QFont("Segoe UI", font_pt)
         font.setBold(True)
         p.setFont(font)
-        p.setPen(QPen(QColor("#deb447")))
+        p.setPen(QPen(QColor("#5be4ff")))
         # Label sits high above the bay outline (16 px of clearance) so
         # the letters can't touch or be cut off by the bay top.
         for label, x_off in (("F1", 0), ("F2", 2), ("F3", 4)):
@@ -453,7 +453,7 @@ class ZoneStripsViewport(QWidget):
         o = self._rear_origin
         x = o.x() + REAR_W * cp // 2
         y = o.y() + REAR_L * cp + 6
-        p.setPen(QPen(QColor("#ffbe20"), 2))
+        p.setPen(QPen(QColor("#ff8a3c"), 2))
         font = QFont("Segoe UI", 10)
         p.setFont(font)
         p.drawText(QRect(x - 60, y, 120, 18),
@@ -511,7 +511,7 @@ class ZoneStripsViewport(QWidget):
         # Hover ring
         if self._hover_zone == strip.zone_label:
             p.setBrush(Qt.BrushStyle.NoBrush)
-            p.setPen(QPen(QColor("#ffbe20"), 2))
+            p.setPen(QPen(QColor("#ff8a3c"), 2))
             p.drawRect(rect.adjusted(1, 1, -1, -1))
 
         # Strips are tall and narrow — rotate the destination name 90° to
@@ -539,11 +539,11 @@ class ZoneStripsViewport(QWidget):
         p.restore()
 
     def _draw_empty_strip(self, p: QPainter, rect: QRect, strip) -> None:
-        p.setPen(QPen(QColor("#3a4894"), 1, Qt.PenStyle.DashLine))
+        p.setPen(QPen(QColor("#264a5c"), 1, Qt.PenStyle.DashLine))
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawRect(rect.adjusted(1, 1, -1, -1))
         if self._hover_zone == strip.zone_label:
-            p.setPen(QPen(QColor("#ffbe20"), 2))
+            p.setPen(QPen(QColor("#ff8a3c"), 2))
             p.drawRect(rect.adjusted(1, 1, -1, -1))
 
     def _draw_mixed_fill(self, p: QPainter, rect: QRect, strip, flashing: bool) -> None:
@@ -562,7 +562,7 @@ class ZoneStripsViewport(QWidget):
         p.drawRect(rect)
         # warning border
         p.setBrush(Qt.BrushStyle.NoBrush)
-        p.setPen(QPen(QColor("#ffbe20"), 2))
+        p.setPen(QPen(QColor("#ff8a3c"), 2))
         p.drawRect(rect.adjusted(1, 1, -1, -1))
 
 
@@ -641,12 +641,19 @@ class BayCanvas(QWidget):
         if not result or not result.route_stops:
             self.stop_combo.blockSignals(False)
             return
-        for stop in result.route_stops:
-            label = f"Stop {stop.stop_number} — {stop.station_name} ({stop.action})"
+        # Skip the FINAL stop — at the final destination the ship has been
+        # offloaded so there's no "departure loadout" to show. Each entry
+        # is named "Departure N: <station> — <action>", matching the
+        # pilot's mental model of inspecting the loadout BEFORE leaving.
+        n_total = len(result.route_stops)
+        for i, stop in enumerate(result.route_stops):
+            if i == n_total - 1:
+                continue
+            label = (
+                f"Departure {i + 1}: {stop.station_name}  ({stop.action})"
+            )
             self.stop_combo.addItem(label, userData=stop.stop_number)
-        # Restore previous selection when possible; otherwise default to
-        # the busiest stop (most cargo onboard) since that's the most
-        # informative single moment.
+        # Default to busiest, otherwise first entry
         target = prev if prev is not None else self.controller._busiest_stop_number()
         for i in range(self.stop_combo.count()):
             if self.stop_combo.itemData(i) == target:

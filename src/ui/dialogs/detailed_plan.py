@@ -98,10 +98,21 @@ class DetailedPlanDialog(QDialog):
         list_layout.setContentsMargins(0, 0, 0, 0)
         list_layout.setSpacing(8)
 
-        for stop in result.route_stops:
+        n_stops = len(result.route_stops)
+        for idx, stop in enumerate(result.route_stops):
+            # Naming: first stop = "Initial Departure", last = "Final
+            # Destination", everything in between = "Stop 1, 2, …".
+            if idx == 0:
+                stop_title = "Initial Departure"
+            elif idx == n_stops - 1:
+                stop_title = "Final Destination"
+            else:
+                stop_title = f"Stop {idx}"
             list_layout.addWidget(
-                self._build_stop_section(stop, conflict_cl_ids, cl_to_dest,
-                                          cl_to_zone, result)
+                self._build_stop_section(
+                    stop, stop_title, conflict_cl_ids, cl_to_dest,
+                    cl_to_zone, result,
+                )
             )
         list_layout.addStretch(1)
 
@@ -116,6 +127,7 @@ class DetailedPlanDialog(QDialog):
     def _build_stop_section(
         self,
         stop,
+        stop_title: str,
         conflict_cl_ids: set[int],
         cl_to_dest: dict[int, str],
         cl_to_zone: dict[int, str],
@@ -123,7 +135,6 @@ class DetailedPlanDialog(QDialog):
     ) -> QFrame:
         card = QFrame()
         card.setObjectName("card")
-        # Highlight stops whose cargo participates in a conflict group
         stop_cl_ids = {r.cargo_line_id for r in stop.loads + stop.unloads}
         is_conflict_stop = bool(stop_cl_ids & conflict_cl_ids)
         card.setProperty("conflict", is_conflict_stop)
@@ -132,8 +143,9 @@ class DetailedPlanDialog(QDialog):
         layout.setContentsMargins(12, 10, 12, 10)
         layout.setSpacing(4)
 
-        # Header
-        h = QLabel(f"Stop {stop.stop_number}: {stop.station_name} — {stop.action}")
+        # Header — label by role (Initial Departure / Stop N / Final
+        # Destination) plus the station name and the action.
+        h = QLabel(f"{stop_title}: {stop.station_name} — {stop.action}")
         h.setProperty("heading", True)
         h.setWordWrap(True)
         layout.addWidget(h)
@@ -188,7 +200,7 @@ class DetailedPlanDialog(QDialog):
                     f"      destinations: {names}\n"
                     f"      ambiguous sizes: {amb}"
                 )
-                lbl.setStyleSheet("color: #ffbe20;")
+                lbl.setStyleSheet("color: #ff8a3c;")
                 lbl.setWordWrap(True)
                 layout.addWidget(lbl)
 
@@ -263,12 +275,12 @@ class DetailedPlanDialog(QDialog):
                 )
             note = QLabel(msg)
             note.setWordWrap(True)
-            note.setStyleSheet("color: #ffbe20;")
+            note.setStyleSheet("color: #ff8a3c;")
             layout.addWidget(note)
 
     def _section_label(self, text: str) -> QLabel:
         lbl = QLabel(text)
-        lbl.setStyleSheet("font-weight: bold; color: #deb447; margin-top: 4px;")
+        lbl.setStyleSheet("font-weight: bold; color: #5be4ff; margin-top: 4px;")
         return lbl
 
     def _muted(self, text: str) -> QLabel:
