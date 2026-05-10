@@ -167,7 +167,14 @@ class MainWindow(QMainWindow):
         self.bay_canvas.refresh()
 
     def _open_zone_detail(self, zone_label: str) -> None:
-        dlg = ZoneDetailDialog(self.controller, zone_label, parent=self)
+        # Open the detail at the SAME stop the user is currently
+        # viewing in the main canvas, so loadout / pallet positions
+        # match what they just clicked on.
+        stop_number = self.bay_canvas.current_stop_number()
+        dlg = ZoneDetailDialog(
+            self.controller, zone_label,
+            stop_number=stop_number, parent=self,
+        )
         dlg.exec()
 
     def _on_recompute_done(self, _result) -> None:

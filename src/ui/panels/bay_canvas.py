@@ -21,7 +21,7 @@ from PySide6.QtGui import (
     QPen, QResizeEvent,
 )
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget,
+    QComboBox, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget,
 )
 
 
@@ -575,15 +575,23 @@ class BayCanvas(QWidget):
     def __init__(self, controller, parent=None):
         super().__init__(parent)
         self.controller = controller
-        # The bay's content has a fixed footprint (6+8 = 14 cells wide
-        # at most 28 px each, plus margins). Cap the panel width so the
-        # side panels absorb extra horizontal space when the window grows.
         self.setMinimumWidth(460)
         self.setMaximumWidth(560)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(6, 6, 6, 6)
         root.setSpacing(4)
+
+        # Stop selector — the bay state changes at every stop (load /
+        # unload), so the user picks which moment to inspect.
+        stop_row = QHBoxLayout()
+        stop_lbl = QLabel("Bay state at:")
+        stop_lbl.setProperty("muted", True)
+        stop_row.addWidget(stop_lbl)
+        self.stop_combo = QComboBox()
+        self.stop_combo.currentIndexChanged.connect(self._on_stop_changed)
+        stop_row.addWidget(self.stop_combo, 1)
+        root.addLayout(stop_row)
 
         # Hint
         hint = QLabel("Click a zone for the detailed top + side view.")
@@ -607,7 +615,50 @@ class BayCanvas(QWidget):
         totals.addWidget(self.rear_label)
         root.addLayout(totals)
 
+    def current_stop_number(self) -> int | None:
+        """Return the stop_number the user has selected in the dropdown,
+        or None if no stop is selected (no route)."""
+        return self.stop_combo.currentData()
+
     def refresh(self, *, stop_number: int | None = None) -> None:
+        # Repopulate the stop selector so it stays in sync with the
+        # current route.  If the caller didn't pass an explicit stop,
+        # use whatever the user has selected (or fall back to busiest).
+        self._populate_stop_combo()
+
+        if stop_number is None:
+            stop_number = self.stop_combo.currentData()
+        if stop_number is None:
+            stop_number = self.controller._busiest_stop_number() or None
+
+        self._render_stop(stop_number)
+
+    def _populate_stop_combo(self) -> None:
+        result = self.controller.get_last_result()
+        prev = self.stop_combo.currentData()
+        self.stop_combo.blockSignals(True)
+        self.stop_combo.clear()
+        if not result or not result.route_stops:
+            self.stop_combo.blockSignals(False)
+            return
+        for stop in result.route_stops:
+            label = f"Stop {stop.stop_number} — {stop.station_name} ({stop.action})"
+            self.stop_combo.addItem(label, userData=stop.stop_number)
+        # Restore previous selection when possible; otherwise default to
+        # the busiest stop (most cargo onboard) since that's the most
+        # informative single moment.
+        target = prev if prev is not None else self.controller._busiest_stop_number()
+        for i in range(self.stop_combo.count()):
+            if self.stop_combo.itemData(i) == target:
+                self.stop_combo.setCurrentIndex(i)
+                break
+        self.stop_combo.blockSignals(False)
+
+    def _on_stop_changed(self, _idx: int) -> None:
+        stop_number = self.stop_combo.currentData()
+        self._render_stop(stop_number)
+
+    def _render_stop(self, stop_number: int | None) -> None:
         strips = self.controller.get_zone_strips(stop_number=stop_number)
         self.viewport.set_strips(strips)
 
