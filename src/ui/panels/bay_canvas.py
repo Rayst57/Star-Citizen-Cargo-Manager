@@ -251,15 +251,21 @@ class BayCanvasViewport(QWidget):
             p.drawText(rect, Qt.AlignmentFlag.AlignCenter, r.label)
 
     def _draw_ramp_arrow(self, p: QPainter) -> None:
+        # The C2 has TWO ramps — one in front of the F-bay (nose ramp)
+        # and one behind the R-bay (rear ramp). Both bays use Y=0 = ramp
+        # edge in zone coords, so annotate each bay's low-Y edge.
         cp = self._cell_px
-        o = self._rear_origin
-        x = o.x() + REAR_W * cp // 2
-        y = o.y() + REAR_L * cp + 6
         p.setPen(QPen(QColor("#ff8a3c"), 2))
         font = QFont("Segoe UI", 10)
         p.setFont(font)
-        p.drawText(QRect(x - 60, y, 120, 18),
-                   Qt.AlignmentFlag.AlignCenter, "▲ ramp")
+        for origin, width, length, label in (
+            (self._fwd_origin,  FORWARD_W, FORWARD_L, "▲ nose ramp"),
+            (self._rear_origin, REAR_W,    REAR_L,    "▲ rear ramp"),
+        ):
+            x = origin.x() + width * cp // 2
+            y = origin.y() + length * cp + 6
+            p.drawText(QRect(x - 70, y, 140, 18),
+                       Qt.AlignmentFlag.AlignCenter, label)
 
     def _draw_drag_preview(self, p: QPainter) -> None:
         cp = self._cell_px
@@ -449,15 +455,21 @@ class ZoneStripsViewport(QWidget):
             p.drawText(rect, Qt.AlignmentFlag.AlignCenter, label)
 
     def _draw_ramp_arrow(self, p: QPainter) -> None:
+        # The C2 has TWO ramps — one in front of the F-bay (nose ramp)
+        # and one behind the R-bay (rear ramp). Both bays use Y=0 = ramp
+        # edge in zone coords, so annotate each bay's low-Y edge.
         cp = self._cell_px
-        o = self._rear_origin
-        x = o.x() + REAR_W * cp // 2
-        y = o.y() + REAR_L * cp + 6
         p.setPen(QPen(QColor("#ff8a3c"), 2))
         font = QFont("Segoe UI", 10)
         p.setFont(font)
-        p.drawText(QRect(x - 60, y, 120, 18),
-                   Qt.AlignmentFlag.AlignCenter, "▲ ramp")
+        for origin, width, length, label in (
+            (self._fwd_origin,  FORWARD_W, FORWARD_L, "▲ nose ramp"),
+            (self._rear_origin, REAR_W,    REAR_L,    "▲ rear ramp"),
+        ):
+            x = origin.x() + width * cp // 2
+            y = origin.y() + length * cp + 6
+            p.drawText(QRect(x - 70, y, 140, 18),
+                       Qt.AlignmentFlag.AlignCenter, label)
 
     def _draw_strip(self, p: QPainter, strip) -> None:
         rect = self._strip_rect(strip)

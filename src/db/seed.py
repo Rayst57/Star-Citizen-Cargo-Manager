@@ -144,8 +144,8 @@ def load_c2(conn: sqlite3.Connection) -> None:
                  width_units, length_units, height_units,
                  cube_offset_x, cube_offset_y,
                  scu_capacity, load_order, unload_priority,
-                 left_zone_label, right_zone_label, notes)
-            VALUES (?, ?, ?, 'STRUCTURED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 left_zone_label, right_zone_label, ramp_side, notes)
+            VALUES (?, ?, ?, 'STRUCTURED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 ship_id,
@@ -161,6 +161,7 @@ def load_c2(conn: sqlite3.Connection) -> None:
                 z.get("unload_priority"),
                 z.get("left_zone_label"),
                 z.get("right_zone_label"),
+                z.get("ramp_side", "low_y"),
                 z.get("notes"),
             ),
         )

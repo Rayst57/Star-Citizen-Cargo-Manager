@@ -37,6 +37,28 @@ def _is_initialized(conn: sqlite3.Connection) -> bool:
     return row[0] > 0
 
 
+def _has_column(conn: sqlite3.Connection, table: str, column: str) -> bool:
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return any(r[1] == column for r in rows)
+
+
+def _apply_migrations(conn: sqlite3.Connection) -> None:
+    """Bring an already-initialized DB up to the current schema.
+
+    Each step is idempotent — re-running the migration on an up-to-date
+    DB is a no-op. New steps go at the bottom.
+    """
+    # Forward-compatible ramp metadata: distinguishes ramp-at-Y=0 (C2
+    # default) from nose-ramp / sealed bays for ships beyond the C2.
+    # Existing C2 zones keep their current Y=0 ramp behavior.
+    if not _has_column(conn, "ship_zones", "ramp_side"):
+        conn.execute(
+            "ALTER TABLE ship_zones "
+            "ADD COLUMN ramp_side TEXT NOT NULL DEFAULT 'low_y'"
+        )
+        conn.commit()
+
+
 def initialize_database(db_path: Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
     """Initialize the database on first launch; open existing DB otherwise.
 
@@ -52,5 +74,7 @@ def initialize_database(db_path: Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
         from .seed import load_all_seeds
 
         load_all_seeds(conn)
+    else:
+        _apply_migrations(conn)
 
     return conn
