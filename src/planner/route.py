@@ -23,9 +23,13 @@ jump_gates):
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 from dataclasses import dataclass, field
 from typing import Optional
+
+
+_log = logging.getLogger("cargo_manager")
 
 
 @dataclass
@@ -77,7 +81,13 @@ def build_simple_route(
         (workday_id,),
     ).fetchall()
 
+    _log.info(
+        "route: building for workday=%d, %d contracts, "
+        "final_destination_id=%s, round_robin=%s",
+        workday_id, len(contracts), final_destination_id, round_robin,
+    )
     if not contracts:
+        _log.info("route: no contracts, returning empty route")
         return []
 
     cargo_lines = conn.execute(
@@ -200,6 +210,18 @@ def build_simple_route(
         return bool(info["loads"] or info["unloads"])
 
     ordered_ids = [sid for sid in ordered_ids if _has_work(sid)]
+
+    _log.info(
+        "route: ordered station ids=%s (origin=%d, final=%s)",
+        ordered_ids, origin_id, final_destination_id,
+    )
+    for sid in ordered_ids:
+        info = station_map[sid]
+        _log.info(
+            "  station %d (%s) sort=%d loads=%d unloads=%d",
+            sid, info["name"], info["sort_order"],
+            len(info["loads"]), len(info["unloads"]),
+        )
 
     # If the origin is also a delivery destination, those unloads must
     # happen at the END of the route, not at the Initial Departure

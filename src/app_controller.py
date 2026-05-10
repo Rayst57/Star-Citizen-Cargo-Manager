@@ -529,21 +529,51 @@ class AppController(QObject):
         _log.info("recompute flag cleared")
 
     def _on_recompute_done(self, result: RecomputeResult) -> None:
+        # Each step is wrapped so a downstream slot misbehaving cannot
+        # cascade into a "Recompute failed" popup. Anything that goes
+        # wrong is captured in cargo_manager.log instead.
+        _log.info(
+            "recompute done — %d stops, %d conflict groups, %d snapshots",
+            len(result.route_stops),
+            len(result.conflict_groups),
+            len(result.snapshots),
+        )
+        # Per-stop summary
+        for s in result.route_stops:
+            _log.info(
+                "  stop %d: %s (%s) loads=%d unloads=%d",
+                s.stop_number, s.station_name, s.action,
+                len(s.loads), len(s.unloads),
+            )
+        for grp in result.conflict_groups:
+            dests = ", ".join(d.delivery_station_name for d in grp.destinations)
+            _log.info(
+                "  conflict group %d: %s × %s [dests=%s, ambiguous_sizes=%s]",
+                grp.group_id, grp.pickup_station_name, grp.commodity_name,
+                dests, grp.ambiguous_sizes,
+            )
+
         try:
-            _log.info("recompute done — %d stops, %d conflict groups",
-                      len(result.route_stops), len(result.conflict_groups))
             self._last_result = result
             if self.workday_id:
                 assign_destination_colors(self.workday_id, self.conn)
-            self.plan_dirty_changed.emit(False)
-            self.contracts_changed.emit()
-            self.route_changed.emit()
-            self._emit_progress()
-            self.recompute_done.emit(result)
         except Exception:
-            _log.error("Exception in _on_recompute_done:\n%s",
+            _log.error("assign_destination_colors raised:\n%s",
                        traceback.format_exc())
-            self.recompute_failed.emit("Internal error after recompute — see log.")
+        for emit_fn, label in (
+            (lambda: self.plan_dirty_changed.emit(False), "plan_dirty_changed"),
+            (self.contracts_changed.emit, "contracts_changed"),
+            (self.route_changed.emit, "route_changed"),
+            (self._emit_progress, "stop_progress"),
+            (lambda: self.recompute_done.emit(result), "recompute_done"),
+        ):
+            try:
+                emit_fn()
+            except Exception:
+                _log.error(
+                    "Slot raised on signal %s:\n%s",
+                    label, traceback.format_exc(),
+                )
 
     def _on_recompute_failed(self, message: str) -> None:
         _log.error("recompute failed: %s", message)

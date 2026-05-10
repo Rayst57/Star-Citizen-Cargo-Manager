@@ -32,11 +32,15 @@ validation_log.
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 from dataclasses import dataclass
 
 from .palletizer import palletize, palletize_summary
 from .conflicts import ConflictGroup
+
+
+_log = logging.getLogger("cargo_manager")
 
 
 @dataclass
@@ -172,6 +176,11 @@ def build_zone_plan(
     # Track which zone each conflict group is using (so siblings differ)
     conflict_group_zone: dict[int, str] = {}
 
+    _log.info(
+        "zone_assignment: %d destinations, ordered=%s",
+        len(ordered_dests), ordered_dests,
+    )
+
     # ── Assign each destination to one (or more) zones ───────────────────
     for did in ordered_dests:
         cargo = by_destination[did]
@@ -186,21 +195,28 @@ def build_zone_plan(
                 if gid in conflict_group_zone:
                     excluded_zones.add(conflict_group_zone[gid])
 
-        # Sort cargo lines within this destination: conflict pallets first
-        # (so they land at low-Y, the ramp side, when placed in the bay).
         cargo.sort(key=lambda c: (0 if c["is_conflicted"] else 1, c["cargo_line_id"]))
 
-        # Try to find ONE empty zone that fits everything (preferred).
         target_zone = _claim_fresh_zone(
             zones, total_dest_scu, excluded_zones=excluded_zones
         )
 
         if target_zone is not None:
+            _log.info(
+                "  dest %d: %d SCU → fresh zone %s "
+                "(conflict=%s, excluded=%s)",
+                did, total_dest_scu, target_zone.zone_label,
+                is_dest_conflicted, sorted(excluded_zones),
+            )
             _place_cargo_in_zone(
                 workday_id, target_zone, did, cargo, conn,
                 conflict_group_zone,
             )
             continue
+        _log.info(
+            "  dest %d: %d SCU → no fresh zone fits, trying mixed",
+            did, total_dest_scu,
+        )
 
         # Fall back: try any zone with enough headroom — might mix destinations
         # but stays single-zone for THIS destination.

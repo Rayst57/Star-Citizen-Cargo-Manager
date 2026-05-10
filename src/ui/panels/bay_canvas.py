@@ -653,12 +653,20 @@ class BayCanvas(QWidget):
                 f"Departure {i + 1}: {stop.station_name}  ({stop.action})"
             )
             self.stop_combo.addItem(label, userData=stop.stop_number)
-        # Default to busiest, otherwise first entry
-        target = prev if prev is not None else self.controller._busiest_stop_number()
+        # Default to STOP 1 (Initial Departure) on first compute; keep
+        # whatever the user picked across recomputes if it's still valid.
+        target = prev if prev is not None else 1
         for i in range(self.stop_combo.count()):
             if self.stop_combo.itemData(i) == target:
                 self.stop_combo.setCurrentIndex(i)
                 break
+        else:
+            # The previously-selected stop disappeared (route changed).
+            # Fall back to Stop 1.
+            for i in range(self.stop_combo.count()):
+                if self.stop_combo.itemData(i) == 1:
+                    self.stop_combo.setCurrentIndex(i)
+                    break
         self.stop_combo.blockSignals(False)
 
     def _on_stop_changed(self, _idx: int) -> None:
