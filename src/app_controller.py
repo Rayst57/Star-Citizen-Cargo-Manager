@@ -1000,6 +1000,38 @@ class AppController(QObject):
         self.contracts_changed.emit()
         self.route_changed.emit()
 
+    def merge_zone_into(self, source_zone: str, target_zone: str) -> None:
+        """Move every cargo line in *source_zone* INTO *target_zone* without
+        evicting anything that's already there. Source ends up empty;
+        target ends up with both sets of cargo (mixed) — i.e. the
+        Merge option in the Zone Detail prompt."""
+        self._require_workday()
+        if source_zone == target_zone:
+            return
+        self.conn.execute(
+            """
+            UPDATE zone_assignments
+            SET primary_zone_label = ?, is_manual_override = 1,
+                notes = COALESCE(notes, '') ||
+                        ' [merged from ' || ? || ' by user]'
+            WHERE workday_id = ? AND primary_zone_label = ?
+            """,
+            (target_zone, source_zone, self.workday_id, source_zone),
+        )
+        self.conn.commit()
+
+        # In-memory snapshot patch so the bay canvas reflects the merge
+        # without waiting for a recompute.
+        if self._last_result:
+            for entries in self._last_result.snapshots.values():
+                for e in entries:
+                    if e.zone_label == source_zone:
+                        e.zone_label = target_zone
+
+        self._set_dirty()
+        self.contracts_changed.emit()
+        self.route_changed.emit()
+
     def move_cargo(self, cargo_line_id: int, target_zone: str) -> None:
         self._require_workday()
         # Update or insert a manual override row

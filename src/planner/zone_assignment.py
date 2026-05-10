@@ -124,9 +124,14 @@ def build_zone_plan(
     )
 
     # ── Delivery priority map ────────────────────────────────────────────
-    delivery_priority: dict[int, int] = {
-        sid: idx for idx, sid in enumerate(route_stop_order)
-    }
+    # Round-robin routes have the origin at BOTH stop 1 (depart) and the
+    # final stop. We want the FIRST occurrence (= when the destination's
+    # cargo is first picked up / unloaded), so build the map only from
+    # not-yet-seen station ids.
+    delivery_priority: dict[int, int] = {}
+    for idx, sid in enumerate(route_stop_order):
+        if sid not in delivery_priority:
+            delivery_priority[sid] = idx
 
     # ── Identify conflicted cargo lines + their group ────────────────────
     conflicted_ids: set[int] = {
@@ -167,11 +172,36 @@ def build_zone_plan(
             "group_id": cl_to_group.get(r["id"]),
         })
 
-    # Sort destinations by route position (earliest first = highest priority)
+    # Sort destinations by TOTAL SCU descending. Big destinations claim
+    # zones first so their cargo stays contiguous; small ones top off
+    # what's left. delivery_priority is the tiebreaker — earliest-route
+    # ties so neighbours' cargo ends up in adjacent zones.
+    #
+    # Why not earliest-route first (the prior strategy)? With that order,
+    # large round-robin destinations like the origin (Seraphim is dest 1
+    # AND the final unload at the end of a round-robin) ended up
+    # processed last, after every fresh zone was claimed by smaller
+    # destinations — and had to fragment across 5+ leftover zones. Sorting
+    # by size keeps Baijini's 236 SCU and Seraphim's 195 SCU each in two
+    # adjacent R-bay zones instead.
+    def _dest_total_scu(did: int) -> int:
+        return sum(c["scu_amount"] for c in by_destination[did])
+
     ordered_dests = sorted(
         by_destination.keys(),
-        key=lambda did: delivery_priority.get(did, 9999),
+        key=lambda did: (-_dest_total_scu(did),
+                         delivery_priority.get(did, 9999)),
     )
+
+    # Resolve station names once for readable logging.
+    station_names: dict[int, str] = {
+        r["id"]: r["name"]
+        for r in conn.execute(
+            "SELECT id, name FROM stations WHERE id IN (%s)"
+            % ",".join("?" * len(ordered_dests)),
+            list(ordered_dests),
+        ).fetchall()
+    } if ordered_dests else {}
 
     # Track every zone each conflict group's cargo lands in. We need the
     # full set (not just the first zone) so a destination's conflict
@@ -185,15 +215,23 @@ def build_zone_plan(
     conflict_group_stations: dict[int, dict[str, set[int]]] = {}
 
     _log.info(
-        "zone_assignment: %d destinations, ordered=%s",
-        len(ordered_dests), ordered_dests,
+        "zone_assignment: %d destinations (size-descending order):",
+        len(ordered_dests),
     )
+    for did in ordered_dests:
+        name = station_names.get(did, f"station {did}")
+        _log.info(
+            "  dest %d %s — %d SCU (route_priority=%d)",
+            did, name, _dest_total_scu(did),
+            delivery_priority.get(did, 9999),
+        )
 
     # ── Assign each destination to one (or more) zones ───────────────────
     for did in ordered_dests:
         cargo = by_destination[did]
         total_dest_scu = sum(c["scu_amount"] for c in cargo)
         is_dest_conflicted = any(c["is_conflicted"] for c in cargo)
+        dest_name = station_names.get(did, str(did))
 
         # Build sibling-zone exclusion set: every zone a conflict partner
         # of this destination has cargo in (across every group we share).
@@ -226,9 +264,9 @@ def build_zone_plan(
 
         if target_zone is not None:
             _log.info(
-                "  dest %d: %d SCU → fresh zone %s "
+                "  dest %d %s: %d SCU → fresh zone %s "
                 "(conflict=%s, excluded=%s)",
-                did, total_dest_scu, target_zone.zone_label,
+                did, dest_name, total_dest_scu, target_zone.zone_label,
                 is_dest_conflicted, sorted(excluded_zones),
             )
             _place_cargo_in_zone(
@@ -262,8 +300,9 @@ def build_zone_plan(
                     f"destination(s) {others} ({reason})"
                 )
                 _log.info(
-                    "  dest %d: %d SCU → MIXED into %s with %s — %s",
-                    did, total_dest_scu, target_zone.zone_label, others, reason,
+                    "  dest %d %s: %d SCU → MIXED into %s with %s — %s",
+                    did, dest_name, total_dest_scu,
+                    target_zone.zone_label, others, reason,
                 )
                 _log_warn(
                     workday_id,
@@ -274,8 +313,9 @@ def build_zone_plan(
                 )
             else:
                 _log.info(
-                    "  dest %d: %d SCU → claimed %s (still fresh, no fresh-with-headroom path)",
-                    did, total_dest_scu, target_zone.zone_label,
+                    "  dest %d %s: %d SCU → claimed %s "
+                    "(still fresh, no fresh-with-headroom path)",
+                    did, dest_name, total_dest_scu, target_zone.zone_label,
                 )
             _place_cargo_in_zone(
                 workday_id, target_zone, did, cargo, conn,
@@ -285,9 +325,9 @@ def build_zone_plan(
             continue
 
         _log.info(
-            "  dest %d: %d SCU → no single zone fits, falling to overflow "
+            "  dest %d %s: %d SCU → no single zone fits, falling to overflow "
             "(excluded=%s)",
-            did, total_dest_scu, sorted(excluded_zones),
+            did, dest_name, total_dest_scu, sorted(excluded_zones),
         )
         # Last resort: split across multiple zones.
         _place_cargo_with_overflow(

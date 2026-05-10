@@ -20,8 +20,8 @@ from __future__ import annotations
 from PySide6.QtCore import QPoint, QRect, Qt
 from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import (
-    QComboBox, QDialog, QHBoxLayout, QLabel, QPushButton, QSizePolicy,
-    QVBoxLayout, QWidget,
+    QComboBox, QDialog, QHBoxLayout, QLabel, QMessageBox, QPushButton,
+    QSizePolicy, QVBoxLayout, QWidget,
 )
 
 
@@ -51,6 +51,84 @@ def _interior_label(bay_label: str) -> str:
     if bay_label == "forward":
         return "interior"
     return "forward"
+
+
+def build_workday_color_legend(controller, pallets: list | None = None) -> QWidget | None:
+    """Build a horizontal legend of destination colors for the active workday.
+
+    Each chip shows the station's color block followed by its name. If
+    *pallets* is given and any are conflicted, an extra hashmark chip is
+    appended per conflict pair: the partner colors are striped together
+    and labelled "conflict <X> / <Y>" so the pilot can match the bay
+    rendering against the destinations they belong to.
+
+    Returns None when there's nothing to legend (e.g. brand-new workday
+    with no destinations yet).
+    """
+    rows = controller.conn.execute(
+        """
+        SELECT DISTINCT s.name, s.color_hex
+        FROM stations s
+        JOIN cargo_lines cl ON cl.delivery_station_id = s.id
+        JOIN contracts ct ON ct.id = cl.contract_id
+        WHERE ct.workday_id = ?
+          AND s.color_hex IS NOT NULL
+        ORDER BY s.name
+        """,
+        (controller.workday_id,),
+    ).fetchall()
+    if not rows:
+        return None
+
+    holder = QWidget()
+    row = QHBoxLayout(holder)
+    row.setContentsMargins(0, 4, 0, 4)
+    row.setSpacing(6)
+
+    title = QLabel("Legend:")
+    title.setProperty("muted", True)
+    row.addWidget(title)
+
+    for r in rows:
+        chip = QLabel(f"  {r['name']}  ")
+        chip.setStyleSheet(
+            f"background-color: {r['color_hex']}; color: #142028; "
+            f"padding: 2px 6px; border-radius: 3px; font-weight: bold;"
+        )
+        row.addWidget(chip)
+
+    # Conflict-pair hashmark chips (only if there's an actual conflict
+    # in the supplied pallets — keeps the legend tight when nothing on
+    # screen is conflicted).
+    if pallets:
+        seen_pairs: set[frozenset[str]] = set()
+        for pl in pallets:
+            if not pl.is_conflicted or not pl.conflict_partner_colors:
+                continue
+            for partner in pl.conflict_partner_colors[:2]:
+                pair = frozenset({pl.color, partner})
+                if pair in seen_pairs:
+                    continue
+                seen_pairs.add(pair)
+                # Resolve names for the two colors via the rows we just fetched.
+                color_to_name = {rr["color_hex"]: rr["name"] for rr in rows}
+                a = color_to_name.get(pl.color, "?")
+                b = color_to_name.get(partner, "?")
+                conflict_chip = QLabel(f"  conflict {a} / {b}  ")
+                # Use a CSS gradient to suggest the diagonal-stripe pattern
+                # used in the bay rendering. Falls back gracefully on Qt's
+                # subset of CSS.
+                conflict_chip.setStyleSheet(
+                    f"background: qlineargradient(x1:0,y1:0,x2:1,y2:1, "
+                    f"stop:0 {pl.color}, stop:0.5 {pl.color}, "
+                    f"stop:0.5 {partner}, stop:1 {partner}); "
+                    f"color: #142028; padding: 2px 6px; border-radius: 3px; "
+                    f"font-weight: bold; border: 1px dashed #ff3030;"
+                )
+                row.addWidget(conflict_chip)
+
+    row.addStretch(1)
+    return holder
 
 
 def _draw_conflict_stripes(p: QPainter, rect: QRect, partner_colors: list[str]) -> None:
@@ -427,6 +505,11 @@ class ZoneDetailDialog(QDialog):
             note.setWordWrap(True)
             root.addWidget(note)
 
+        # Color legend — destination swatches + any conflict pairs.
+        legend = build_workday_color_legend(self.controller, pallets=pallets)
+        if legend is not None:
+            root.addWidget(legend)
+
         # ── Move cargo to a different zone ────────────────────────
         # Only show when this zone has cargo to move
         if strip and not strip.is_empty:
@@ -439,14 +522,19 @@ class ZoneDetailDialog(QDialog):
         self._move_combo.addItem("(stay in this zone)", userData=None)
 
         all_strips = self.controller.get_zone_strips(stop_number=stop_number)
+        # Cache occupancy info so _apply_move can show the right prompt
+        # without re-querying.
+        self._target_summaries: dict[str, str] = {}
         for s in all_strips:
             if s.zone_label == self.zone_label:
                 continue
             if s.is_empty:
                 text = f"{s.zone_label}  (empty)"
+                self._target_summaries[s.zone_label] = ""
             else:
                 names = " + ".join(d.station_name for d in s.destinations)
-                text = f"{s.zone_label}  ({names} — will swap)"
+                text = f"{s.zone_label}  ({names})"
+                self._target_summaries[s.zone_label] = names
             self._move_combo.addItem(text, userData=s.zone_label)
         row.addWidget(self._move_combo, 1)
 
@@ -459,8 +547,47 @@ class ZoneDetailDialog(QDialog):
         target = self._move_combo.currentData()
         if not target:
             return
-        self.controller.move_zone_destination(self.zone_label, target)
-        self.accept()       # close the dialog so the user sees the updated bay
+
+        existing = self._target_summaries.get(target, "")
+        if not existing:
+            # Empty target — nothing to disambiguate, just relocate.
+            self.controller.move_zone_destination(self.zone_label, target)
+            self.accept()
+            return
+
+        # Target occupied: ask the user how to resolve.
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setWindowTitle("Target zone is occupied")
+        box.setText(
+            f"Zone {target} already has cargo for {existing}.\n\n"
+            f"How should this contract's cargo be moved into {target}?"
+        )
+        merge_btn = box.addButton("Merge", QMessageBox.ButtonRole.AcceptRole)
+        merge_btn.setToolTip(
+            f"Move this zone's cargo INTO {target} alongside the existing "
+            f"cargo. Both end up sharing the zone (mixed)."
+        )
+        swap_btn = box.addButton("Swap", QMessageBox.ButtonRole.AcceptRole)
+        swap_btn.setToolTip(
+            f"Exchange the contents of {self.zone_label} and {target}. "
+            f"Each zone keeps a single destination."
+        )
+        cancel_btn = box.addButton("Discard", QMessageBox.ButtonRole.RejectRole)
+        cancel_btn.setToolTip("Don't change anything; close this dialog.")
+        box.exec()
+
+        clicked = box.clickedButton()
+        if clicked is merge_btn:
+            self.controller.merge_zone_into(self.zone_label, target)
+            self.accept()
+        elif clicked is swap_btn:
+            self.controller.move_zone_destination(self.zone_label, target)
+            self.accept()
+        else:
+            # Discard: leave the dialog open so the user can pick another
+            # target without losing the rest of their context.
+            return
 
     def _fetch(self, stop_number: int | None):
         # Default to whichever stop has the most cargo onboard so the
