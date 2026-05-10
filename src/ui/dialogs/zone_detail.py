@@ -53,19 +53,77 @@ def _interior_label(bay_label: str) -> str:
     return "forward"
 
 
-def build_workday_color_legend(controller, pallets: list | None = None) -> QWidget | None:
-    """Build a horizontal legend of destination colors for the active workday.
+class _ConflictChip(QWidget):
+    """A chip drawn with diagonal stripes in two destination colors,
+    matching the BDiagPattern overlay used on conflict zones in the
+    bay canvas. QLabel + stylesheet can't actually render a hatch, so
+    this paints the chip directly."""
+
+    def __init__(self, color_a: str, color_b: str, label: str, parent=None):
+        super().__init__(parent)
+        self._color_a = color_a
+        self._color_b = color_b
+        self._label = label
+        self._font = QFont("Segoe UI", 9)
+        self._font.setBold(True)
+        # Size hint based on text width + horizontal padding.
+        from PySide6.QtGui import QFontMetrics
+        fm = QFontMetrics(self._font)
+        self._w = fm.horizontalAdvance(label) + 16
+        self._h = fm.height() + 6
+        self.setFixedSize(self._w, self._h)
+
+    def paintEvent(self, _e) -> None:  # noqa: N802
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        rect = self.rect().adjusted(0, 0, -1, -1)
+        # Base color
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(QColor(self._color_a)))
+        p.drawRoundedRect(rect, 3, 3)
+        # Diagonal-stripe overlay in partner color
+        partner = QColor(self._color_b)
+        partner.setAlpha(170)
+        p.setBrush(QBrush(partner, Qt.BrushStyle.BDiagPattern))
+        p.drawRoundedRect(rect, 3, 3)
+        # Red dashed outline to flag the chip as a conflict marker.
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.setPen(QPen(QColor("#ff3030"), 1, Qt.PenStyle.DashLine))
+        p.drawRoundedRect(rect, 3, 3)
+        # Label — use whichever foreground reads well against color_a.
+        text_color = (QColor("#ffffff")
+                      if QColor(self._color_a).lightness() < 140
+                      else QColor("#142028"))
+        p.setPen(QPen(text_color))
+        p.setFont(self._font)
+        p.drawText(rect, Qt.AlignmentFlag.AlignCenter, self._label)
+        p.end()
+
+
+def build_workday_color_legend(
+    controller,
+    pallets: list | None = None,
+    active_stations: set[str] | None = None,
+) -> QWidget | None:
+    """Build a horizontal legend of destination colors for the workday.
 
     Each chip shows the station's color block followed by its name. If
-    *pallets* is given and any are conflicted, an extra hashmark chip is
-    appended per conflict pair: the partner colors are striped together
-    and labelled "conflict <X> / <Y>" so the pilot can match the bay
-    rendering against the destinations they belong to.
+    *pallets* is given and any are conflicted, an extra striped chip is
+    appended per conflict pair: the partner colors are rendered as
+    diagonal stripes (matching the bay's conflict overlay) and labelled
+    "conflict <X> / <Y>" so the pilot can match the bay rendering
+    against the destinations they belong to.
 
-    Returns None when there's nothing to legend (e.g. brand-new workday
-    with no destinations yet).
+    *active_stations* filters the legend to a specific set of station
+    names — used by the Zone Detail popup so the legend lists only the
+    destinations whose cargo is in THAT zone, not every workday-wide
+    destination. The conflict chips and partner names still resolve
+    against the full workday-wide color map (so a striped chip can
+    reference a partner that lives in a different zone).
+
+    Returns None when there's nothing to legend.
     """
-    rows = controller.conn.execute(
+    all_rows = controller.conn.execute(
         """
         SELECT DISTINCT s.name, s.color_hex
         FROM stations s
@@ -77,7 +135,14 @@ def build_workday_color_legend(controller, pallets: list | None = None) -> QWidg
         """,
         (controller.workday_id,),
     ).fetchall()
-    if not rows:
+    if not all_rows:
+        return None
+
+    if active_stations is not None:
+        rows = [r for r in all_rows if r["name"] in active_stations]
+    else:
+        rows = all_rows
+    if not rows and not pallets:
         return None
 
     holder = QWidget()
@@ -97,11 +162,12 @@ def build_workday_color_legend(controller, pallets: list | None = None) -> QWidg
         )
         row.addWidget(chip)
 
-    # Conflict-pair hashmark chips (only if there's an actual conflict
-    # in the supplied pallets — keeps the legend tight when nothing on
-    # screen is conflicted).
     if pallets:
         seen_pairs: set[frozenset[str]] = set()
+        # Use the full workday color map for partner resolution — a
+        # conflict's partner might not have any cargo in this zone but
+        # we still want to spell out their name on the striped chip.
+        color_to_name = {rr["color_hex"]: rr["name"] for rr in all_rows}
         for pl in pallets:
             if not pl.is_conflicted or not pl.conflict_partner_colors:
                 continue
@@ -110,25 +176,62 @@ def build_workday_color_legend(controller, pallets: list | None = None) -> QWidg
                 if pair in seen_pairs:
                     continue
                 seen_pairs.add(pair)
-                # Resolve names for the two colors via the rows we just fetched.
-                color_to_name = {rr["color_hex"]: rr["name"] for rr in rows}
                 a = color_to_name.get(pl.color, "?")
                 b = color_to_name.get(partner, "?")
-                conflict_chip = QLabel(f"  conflict {a} / {b}  ")
-                # Use a CSS gradient to suggest the diagonal-stripe pattern
-                # used in the bay rendering. Falls back gracefully on Qt's
-                # subset of CSS.
-                conflict_chip.setStyleSheet(
-                    f"background: qlineargradient(x1:0,y1:0,x2:1,y2:1, "
-                    f"stop:0 {pl.color}, stop:0.5 {pl.color}, "
-                    f"stop:0.5 {partner}, stop:1 {partner}); "
-                    f"color: #142028; padding: 2px 6px; border-radius: 3px; "
-                    f"font-weight: bold; border: 1px dashed #ff3030;"
-                )
-                row.addWidget(conflict_chip)
+                row.addWidget(_ConflictChip(pl.color, partner, f"conflict {a} / {b}"))
 
     row.addStretch(1)
     return holder
+
+
+class LegendDialog(QDialog):
+    """Standalone popup showing the workday color legend.
+
+    Used by the main bay panel where the legend doesn't fit in the
+    horizontal space. Embedded versions (e.g. Zone Detail) use the
+    `build_workday_color_legend` helper directly.
+    """
+
+    def __init__(
+        self,
+        controller,
+        *,
+        pallets: list | None = None,
+        active_stations: set[str] | None = None,
+        title: str = "Color legend",
+        parent=None,
+    ):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setMinimumWidth(420)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(14, 12, 14, 12)
+        root.setSpacing(8)
+
+        legend = build_workday_color_legend(
+            controller, pallets=pallets, active_stations=active_stations,
+        )
+        if legend is None:
+            root.addWidget(QLabel("No destinations on this workday yet."))
+        else:
+            root.addWidget(legend)
+
+        # Brief explainer so the user knows what the striped chip means.
+        explainer = QLabel(
+            "Striped chips mark a conflict pair — pallets of those sizes "
+            "are visually identical between the two destinations on the "
+            "elevator, and the bay rendering uses the same diagonal "
+            "stripe to flag the affected zone."
+        )
+        explainer.setProperty("muted", True)
+        explainer.setWordWrap(True)
+        root.addWidget(explainer)
+
+        from PySide6.QtWidgets import QDialogButtonBox
+        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        bb.rejected.connect(self.reject)
+        bb.accepted.connect(self.accept)
+        root.addWidget(bb)
 
 
 def _draw_conflict_stripes(p: QPainter, rect: QRect, partner_colors: list[str]) -> None:
@@ -444,7 +547,7 @@ class ZoneDetailDialog(QDialog):
         root = QVBoxLayout(self)
         root.setSpacing(8)
 
-        # Header with title + close
+        # Header with title + Legend link + close
         header = QHBoxLayout()
         title = QLabel(f"Zone {zone_label} — detail")
         title.setProperty("heading", True)
@@ -455,6 +558,15 @@ class ZoneDetailDialog(QDialog):
         self.summary.setProperty("muted", True)
         header.addWidget(self.summary, 1)
 
+        legend_btn = QPushButton("Legend")
+        legend_btn.setProperty("flat", True)
+        legend_btn.setToolTip(
+            "Show color key for the destinations in this zone "
+            "(plus any conflict pairs that touch it)."
+        )
+        legend_btn.clicked.connect(self._open_legend)
+        header.addWidget(legend_btn)
+
         close_btn = QPushButton("✕")
         close_btn.setProperty("flat", True)
         close_btn.clicked.connect(self.reject)
@@ -463,6 +575,11 @@ class ZoneDetailDialog(QDialog):
 
         # Resolve zone metadata + pallets in this zone
         zone_meta, pallets, strip = self._fetch(stop_number)
+        # Keep the pallets around for _open_legend so the popup knows
+        # which destinations are actually IN this zone and which
+        # conflict pairs to highlight.
+        self._zone_pallets = pallets or []
+        self._zone_strip = strip
         if not zone_meta:
             root.addWidget(QLabel("Zone not found."))
             return
@@ -505,10 +622,6 @@ class ZoneDetailDialog(QDialog):
             note.setWordWrap(True)
             root.addWidget(note)
 
-        # Color legend — destination swatches + any conflict pairs.
-        legend = build_workday_color_legend(self.controller, pallets=pallets)
-        if legend is not None:
-            root.addWidget(legend)
 
         # ── Move cargo to a different zone ────────────────────────
         # Only show when this zone has cargo to move
@@ -588,6 +701,20 @@ class ZoneDetailDialog(QDialog):
             # Discard: leave the dialog open so the user can pick another
             # target without losing the rest of their context.
             return
+
+    def _open_legend(self) -> None:
+        # Only the destinations whose cargo is actually IN this zone.
+        active = {
+            d.station_name for d in (self._zone_strip.destinations
+                                     if self._zone_strip else [])
+        }
+        LegendDialog(
+            self.controller,
+            pallets=self._zone_pallets,
+            active_stations=active,
+            title=f"Legend — Zone {self.zone_label}",
+            parent=self,
+        ).exec()
 
     def _fetch(self, stop_number: int | None):
         # Default to whichever stop has the most cargo onboard so the
