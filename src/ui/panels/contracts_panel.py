@@ -13,6 +13,7 @@ from ..widgets.contract_card import ContractCard
 
 class ContractsPanel(QWidget):
     add_requested      = Signal()
+    paste_requested    = Signal()
     edit_requested     = Signal(int)   # contract_number
     remove_requested   = Signal(int)
     contract_selected  = Signal(int)
@@ -34,6 +35,13 @@ class ContractsPanel(QWidget):
         title.setProperty("heading", True)
         header.addWidget(title)
         header.addStretch(1)
+        paste_btn = QPushButton("Paste")
+        paste_btn.setToolTip(
+            "Paste free-form dictation; the parser turns it into one or "
+            "more contracts you can review before adding."
+        )
+        paste_btn.clicked.connect(self.paste_requested.emit)
+        header.addWidget(paste_btn)
         add_btn = QPushButton("+ Add")
         add_btn.clicked.connect(self.add_requested.emit)
         header.addWidget(add_btn)
