@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
 
 from ..app_controller import AppController, ToolError
 from .dialogs.add_contract import AddContractDialog
-from .dialogs.load_view import LoadViewModal
+from .dialogs.detailed_plan import DetailedPlanDialog
 from .dialogs.settings_dialog import SettingsDialog
 from .dialogs.zone_detail import ZoneDetailDialog
 from .panels.bay_canvas import BayCanvas
@@ -48,9 +48,12 @@ class MainWindow(QMainWindow):
         self.bay_canvas = BayCanvas(controller)
         self.route_panel = RoutePanel(controller)
 
-        panel_row.addWidget(self.contracts_panel)
-        panel_row.addWidget(self.bay_canvas, 2)
-        panel_row.addWidget(self.route_panel)
+        # The bay canvas has fixed-aspect content and stops growing past
+        # ~460 px wide anyway. Side panels are mostly text and benefit
+        # from extra width, so they get the stretch when the window grows.
+        panel_row.addWidget(self.contracts_panel, 2)   # stretch=2
+        panel_row.addWidget(self.bay_canvas, 0)        # stretch=0
+        panel_row.addWidget(self.route_panel, 2)       # stretch=2
         outer.addWidget(panels, 1)
 
         # Recompute banner (between panels and status bar)
@@ -62,10 +65,6 @@ class MainWindow(QMainWindow):
         self.status = StatusBarWidget()
         sb.addPermanentWidget(self.status, 1)
         self.setStatusBar(sb)
-
-        # Track the currently-open LoadViewModal so we never stack
-        # multiple instances when the user clicks "View Load" repeatedly.
-        self._load_view_modal: LoadViewModal | None = None
 
         # Wire signals
         self._wire_signals()
@@ -83,7 +82,7 @@ class MainWindow(QMainWindow):
 
         # Route panel
         self.route_panel.recompute_clicked.connect(self.controller.recompute)
-        self.route_panel.view_load_requested.connect(self._open_load_view)
+        self.route_panel.detailed_plan_requested.connect(self._open_detailed_plan)
 
         # Bay canvas
         self.bay_canvas.pallet_dropped.connect(self._on_pallet_moved)
@@ -155,18 +154,9 @@ class MainWindow(QMainWindow):
             except ToolError as e:
                 QMessageBox.warning(self, "Remove failed", str(e))
 
-    def _open_load_view(self, stop_number: int) -> None:
-        # Singleton: close any prior LoadViewModal before opening a new one
-        if self._load_view_modal is not None:
-            try:
-                self._load_view_modal.close()
-            except RuntimeError:
-                pass
-            self._load_view_modal = None
-        dlg = LoadViewModal(self.controller, stop_number, parent=self)
-        dlg.destroyed.connect(lambda *_: setattr(self, "_load_view_modal", None))
-        self._load_view_modal = dlg
-        dlg.show()
+    def _open_detailed_plan(self) -> None:
+        dlg = DetailedPlanDialog(self.controller, parent=self)
+        dlg.exec()
 
     def _open_settings(self) -> None:
         dlg = SettingsDialog(self.controller, parent=self)

@@ -10,7 +10,10 @@ the controller emits Qt signals to refresh the UI.
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
+import sys
+import traceback
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -24,6 +27,27 @@ from .planner.route import RouteStop
 from .palletizer_color import assign_destination_colors
 from .settings import AppSettings, get_api_key
 from .undo import UndoStack
+
+
+# Debug log — written next to the .exe / repo root so the user can share it
+def _log_path() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).parent / "cargo_manager.log"
+    return Path(__file__).resolve().parents[1] / "cargo_manager.log"
+
+
+_log = logging.getLogger("cargo_manager")
+if not _log.handlers:
+    try:
+        _handler = logging.FileHandler(_log_path(), mode="w", encoding="utf-8")
+        _handler.setFormatter(
+            logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+        )
+        _log.addHandler(_handler)
+        _log.setLevel(logging.INFO)
+        _log.info("cargo_manager log started")
+    except Exception:
+        pass
 
 
 # ── Zone strip / pallet rect data for BayCanvas ──────────────────────────
@@ -102,12 +126,15 @@ class RecomputeThread(QThread):
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA foreign_keys = ON")
             try:
+                _log.info("RecomputeThread.run() begin (workday=%s)", self.workday_id)
                 result = run_recompute(self.workday_id, conn)
+                _log.info("RecomputeThread.run() success — emitting result")
                 self.finished_with_result.emit(result)
             finally:
                 conn.close()
         except Exception as e:
-            self.failed.emit(str(e))
+            _log.error("RecomputeThread.run() failed:\n%s", traceback.format_exc())
+            self.failed.emit(f"{type(e).__name__}: {e}")
 
 
 # ── Tool errors ──────────────────────────────────────────────────────────
@@ -141,10 +168,11 @@ class AppController(QObject):
 
         self.workday_id: int | None = None
         self._last_result: RecomputeResult | None = None
-        self._recompute_thread: RecomputeThread | None = None
+        self._recomputing: bool = False
         self._current_stop_index = 0   # 0 = before first stop completed
 
         self.api_key: str | None = get_api_key()
+        _log.info("AppController initialised. db_path=%s", db_path)
 
     # ── workday lifecycle ────────────────────────────────────────────────
 
@@ -456,45 +484,47 @@ class AppController(QObject):
 
     def recompute(self) -> None:
         """Spawn a RecomputeThread to run the planner off the UI thread."""
+        _log.info("recompute() called; flag=%s workday=%s",
+                  self._recomputing, self.workday_id)
         self._require_workday()
-        # Robust check: a deleted-but-still-referenced QThread can return
-        # garbage from isRunning(), so guard with hasattr+try.
-        prev = self._recompute_thread
-        if prev is not None:
-            try:
-                still_running = prev.isRunning()
-            except RuntimeError:
-                still_running = False     # underlying C++ object gone
-            if still_running:
-                return
+        if self._recomputing:
+            _log.warning("recompute() ignored — another recompute is already running")
+            return
+        self._recomputing = True
         self.recompute_started.emit()
         # Commit pending state before spawning a thread that opens its own conn
         self.conn.commit()
         thread = RecomputeThread(self.db_path, self.workday_id)
         thread.finished_with_result.connect(self._on_recompute_done)
         thread.failed.connect(self._on_recompute_failed)
-        thread.finished.connect(self._clear_recompute_thread)
+        thread.finished.connect(self._clear_recomputing_flag)
         thread.finished.connect(thread.deleteLater)
-        self._recompute_thread = thread
         thread.start()
+        _log.info("RecomputeThread started")
 
-    def _clear_recompute_thread(self) -> None:
-        """Drop the reference once the thread finishes so the next
-        recompute() call is unblocked."""
-        self._recompute_thread = None
+    def _clear_recomputing_flag(self) -> None:
+        self._recomputing = False
+        _log.info("recompute flag cleared")
 
     def _on_recompute_done(self, result: RecomputeResult) -> None:
-        self._last_result = result
-        # Auto-assign colors to any new destinations
-        if self.workday_id:
-            assign_destination_colors(self.workday_id, self.conn)
-        self.plan_dirty_changed.emit(False)
-        self.contracts_changed.emit()
-        self.route_changed.emit()
-        self._emit_progress()
-        self.recompute_done.emit(result)
+        try:
+            _log.info("recompute done — %d stops, %d conflict groups",
+                      len(result.route_stops), len(result.conflict_groups))
+            self._last_result = result
+            if self.workday_id:
+                assign_destination_colors(self.workday_id, self.conn)
+            self.plan_dirty_changed.emit(False)
+            self.contracts_changed.emit()
+            self.route_changed.emit()
+            self._emit_progress()
+            self.recompute_done.emit(result)
+        except Exception:
+            _log.error("Exception in _on_recompute_done:\n%s",
+                       traceback.format_exc())
+            self.recompute_failed.emit("Internal error after recompute — see log.")
 
     def _on_recompute_failed(self, message: str) -> None:
+        _log.error("recompute failed: %s", message)
         self.recompute_failed.emit(message)
 
     def get_last_result(self) -> RecomputeResult | None:
@@ -1041,26 +1071,33 @@ def _place_in_grid(
     zone_w: int, zone_l: int,
     stack_limit: int,
 ) -> tuple[int, int] | None:
-    """First-fit placement scanning row-by-row.
+    """First-fit placement scanning row-by-row, requiring uniform support.
 
-    Tries the lowest available cell whose w×l footprint can hold *h* more
-    units of height without exceeding *stack_limit*. Returns (x, y) or None.
+    A pallet sits on a flat surface, so every cell in its footprint must
+    share the SAME current height before placement. This prevents the
+    "small pallet at floor + bigger pallet on top" tilt that the user
+    flagged (e.g. a 4 SCU pallet cannot rest half on a 2 SCU pallet and
+    half on the bare floor).
+
+    Returns (x, y) of the placement or None if the pallet does not fit.
     """
     for y in range(zone_l - l + 1):
         for x in range(zone_w - w + 1):
-            ok = True
+            # Collect heights under the proposed footprint
+            heights = [
+                grid[x + dx][y + dy]
+                for dx in range(w)
+                for dy in range(l)
+            ]
+            if len(set(heights)) != 1:
+                continue                 # uneven surface, skip
+            z = heights[0]
+            if z + h > stack_limit:
+                continue                 # exceeds zone height
             for dx in range(w):
                 for dy in range(l):
-                    if grid[x + dx][y + dy] + h > stack_limit:
-                        ok = False
-                        break
-                if not ok:
-                    break
-            if ok:
-                for dx in range(w):
-                    for dy in range(l):
-                        grid[x + dx][y + dy] += h
-                return (x, y)
+                    grid[x + dx][y + dy] = z + h
+            return (x, y)
     return None
 
 

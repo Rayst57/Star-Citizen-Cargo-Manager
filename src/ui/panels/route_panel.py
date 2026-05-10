@@ -11,14 +11,15 @@ from ..widgets.stop_card import StopCard
 
 
 class RoutePanel(QWidget):
-    recompute_clicked     = Signal()
-    view_load_requested   = Signal(int)
+    recompute_clicked        = Signal()
+    detailed_plan_requested  = Signal()
 
     def __init__(self, controller, parent=None):
         super().__init__(parent)
         self.controller = controller
-        self.setMinimumWidth(320)
-        self.setMaximumWidth(440)
+        # Side panels grow with window width; lower minimum so they
+        # collapse cleanly on small displays.
+        self.setMinimumWidth(280)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(6, 6, 6, 6)
@@ -30,6 +31,12 @@ class RoutePanel(QWidget):
         title.setProperty("heading", True)
         header.addWidget(title)
         header.addStretch(1)
+        self.detail_btn = QPushButton("Detailed Plan")
+        self.detail_btn.setToolTip(
+            "Open the full per-stop plan in a single window"
+        )
+        self.detail_btn.clicked.connect(self.detailed_plan_requested.emit)
+        header.addWidget(self.detail_btn)
         self.recompute_btn = QPushButton("↻ Recompute")
         self.recompute_btn.clicked.connect(self.recompute_clicked.emit)
         header.addWidget(self.recompute_btn)
@@ -133,7 +140,6 @@ class RoutePanel(QWidget):
                 conflict_note=conflict_note,
                 is_current=(idx == cur_idx),
             )
-            card.view_load_requested.connect(self.view_load_requested.emit)
             self.list_layout.insertWidget(self.list_layout.count() - 1, card)
 
     def _delivery_names(self, cargo_line_ids: list[int]) -> dict[int, str]:
