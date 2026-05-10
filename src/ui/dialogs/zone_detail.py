@@ -17,8 +17,8 @@ planner so they are first off when the zone is unloaded.
 
 from __future__ import annotations
 
-from PySide6.QtCore import QPoint, QRect, Qt
-from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPen
+from PySide6.QtCore import QPoint, QRect, Qt, QTimer, Signal
+from PySide6.QtGui import QBrush, QColor, QFont, QMouseEvent, QPainter, QPen
 from PySide6.QtWidgets import (
     QComboBox, QDialog, QHBoxLayout, QLabel, QMessageBox, QPushButton,
     QSizePolicy, QVBoxLayout, QWidget,
@@ -266,12 +266,51 @@ def _draw_conflict_stripes(p: QPainter, rect: QRect, partner_colors: list[str]) 
 class _TopDownView(QWidget):
     """Top-down view of a single zone (width × length)."""
 
+    pallet_hovered = Signal(object)   # PalletRect or None (no hover)
+
     def __init__(self, zone_meta: dict, pallets: list, parent=None):
         super().__init__(parent)
         self.zone_meta = zone_meta
         self.pallets = pallets
         self.setMinimumSize(160, 280)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        # mouseMoveEvent fires without a button held only when tracking
+        # is enabled — needed for hover-to-inspect.
+        self.setMouseTracking(True)
+        # (QRect on screen, PalletRect) — repopulated on every paint so
+        # mouseMoveEvent can hit-test against the same rectangles the
+        # user is looking at.
+        self._hit_rects: list[tuple[QRect, object]] = []
+        # cargo_line_id of the currently-highlighted pallet, or None.
+        # The highlighted one gets a bright cyan ring on the next paint.
+        self._selected_cl_id: int | None = None
+        self._last_hover_cl_id: int | None = None
+
+    def set_selected(self, cargo_line_id: int | None) -> None:
+        if self._selected_cl_id == cargo_line_id:
+            return
+        self._selected_cl_id = cargo_line_id
+        self.update()
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        pos = event.position().toPoint()
+        # Iterate in reverse so the topmost-painted pallet wins on
+        # overlap (top-down stacks share the same X/Y).
+        hit_pl = None
+        for r, pl in reversed(self._hit_rects):
+            if r.contains(pos):
+                hit_pl = pl
+                break
+        new_id = hit_pl.cargo_line_id if hit_pl is not None else None
+        if new_id != self._last_hover_cl_id:
+            self._last_hover_cl_id = new_id
+            self.pallet_hovered.emit(hit_pl)
+
+    def leaveEvent(self, _event) -> None:  # noqa: N802
+        # Clear the highlight when the cursor leaves the widget entirely.
+        if self._last_hover_cl_id is not None:
+            self._last_hover_cl_id = None
+            self.pallet_hovered.emit(None)
 
     def paintEvent(self, _event) -> None:  # noqa: N802
         p = QPainter(self)
@@ -347,6 +386,7 @@ class _TopDownView(QWidget):
 
         # Pallets — only floor footprint (z=0 layer). For stacked pallets,
         # only the bottom one is drawn here; the side view shows the stack.
+        self._hit_rects = []
         already = set()
         for pl in self.pallets:
             local_x = pl.cell_x - self.zone_meta["cube_offset_x"]
@@ -362,6 +402,7 @@ class _TopDownView(QWidget):
                       screen_y + 1,
                       pl.cell_w * cell - 2,
                       pl.cell_l * cell - 2)
+            self._hit_rects.append((r, pl))
             color = QColor(pl.color)
             p.setBrush(QBrush(color))
             p.setPen(QPen(color.darker(140), 1))
@@ -373,6 +414,10 @@ class _TopDownView(QWidget):
             f2 = QFont("Segoe UI", max(7, cell - 8))
             p.setFont(f2)
             p.drawText(r, Qt.AlignmentFlag.AlignCenter, str(pl.pallet_size))
+            if pl.cargo_line_id == self._selected_cl_id:
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.setPen(QPen(QColor("#ffd45e"), 3))
+                p.drawRect(r.adjusted(-1, -1, 1, 1))
 
         # Ramp + interior labels follow the rear-view convention:
         # ship-forward (interior side) is always at the TOP of the
@@ -415,12 +460,41 @@ class _SideView(QWidget):
     of the bay, toward the cockpit.
     """
 
+    pallet_hovered = Signal(object)   # PalletRect or None
+
     def __init__(self, zone_meta: dict, pallets: list, parent=None):
         super().__init__(parent)
         self.zone_meta = zone_meta
         self.pallets = pallets
         self.setMinimumSize(280, 160)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.setMouseTracking(True)
+        self._hit_rects: list[tuple[QRect, object]] = []
+        self._selected_cl_id: int | None = None
+        self._last_hover_cl_id: int | None = None
+
+    def set_selected(self, cargo_line_id: int | None) -> None:
+        if self._selected_cl_id == cargo_line_id:
+            return
+        self._selected_cl_id = cargo_line_id
+        self.update()
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        pos = event.position().toPoint()
+        hit_pl = None
+        for r, pl in reversed(self._hit_rects):
+            if r.contains(pos):
+                hit_pl = pl
+                break
+        new_id = hit_pl.cargo_line_id if hit_pl is not None else None
+        if new_id != self._last_hover_cl_id:
+            self._last_hover_cl_id = new_id
+            self.pallet_hovered.emit(hit_pl)
+
+    def leaveEvent(self, _event) -> None:  # noqa: N802
+        if self._last_hover_cl_id is not None:
+            self._last_hover_cl_id = None
+            self.pallet_hovered.emit(None)
 
     def paintEvent(self, _event) -> None:  # noqa: N802
         p = QPainter(self)
@@ -497,6 +571,7 @@ class _SideView(QWidget):
         # cumulative stack-order; this prevents two side-by-side pallets
         # at the same Y from being rendered as if they were vertically
         # stacked.
+        self._hit_rects = []
         for pl in sorted(self.pallets,
                          key=lambda p: (p.cell_y, p.cell_z, p.cell_x)):
             local_y = pl.cell_y - self.zone_meta["cube_offset_y"]
@@ -508,6 +583,7 @@ class _SideView(QWidget):
             w_px = pl.cell_l * cell
             h_px = pl.cell_h * cell
             r = QRect(screen_x + 1, screen_y + 1, w_px - 2, h_px - 2)
+            self._hit_rects.append((r, pl))
             color = QColor(pl.color)
             p.setBrush(QBrush(color))
             p.setPen(QPen(color.darker(140), 1))
@@ -519,6 +595,10 @@ class _SideView(QWidget):
             f2 = QFont("Segoe UI", max(7, cell - 8))
             p.setFont(f2)
             p.drawText(r, Qt.AlignmentFlag.AlignCenter, str(pl.pallet_size))
+            if pl.cargo_line_id == self._selected_cl_id:
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.setPen(QPen(QColor("#ffd45e"), 3))
+                p.drawRect(r.adjusted(-1, -1, 1, 1))
 
         # Direction labels
         p.setPen(QPen(QColor("#5be4ff")))
@@ -597,9 +677,46 @@ class ZoneDetailDialog(QDialog):
         views.setSpacing(12)
         self.top_view = _TopDownView(zone_meta, pallets)
         self.side_view = _SideView(zone_meta, pallets)
+        # Hover a pallet in either view → both views highlight it and
+        # the pallet-info label below the views fills in. Hovering off
+        # any pallet clears the highlight.
+        self.top_view.pallet_hovered.connect(self._on_pallet_hovered)
+        self.side_view.pallet_hovered.connect(self._on_pallet_hovered)
         views.addWidget(self.top_view, 2)
         views.addWidget(self.side_view, 3)
         root.addLayout(views, 1)
+
+        # Pallet-info status line — updates on hover. For a conflict
+        # pallet the destination flashes between this contract's
+        # destination and the partner destination(s) so the pilot can
+        # see what could-be-mistaken-for-what at the elevator.
+        self.pallet_info = QLabel(
+            "Mouse over a pallet to see its destination + commodity."
+        )
+        self.pallet_info.setProperty("muted", True)
+        self.pallet_info.setWordWrap(True)
+        self.pallet_info.setStyleSheet(
+            "color: #5be4ff; padding: 4px 8px; background-color: #0c1620; "
+            "border: 1px solid #1f3242; border-radius: 3px;"
+        )
+        root.addWidget(self.pallet_info)
+
+        # Workday color→station name map, used to translate a conflict
+        # pallet's partner_colors into the destination names the label
+        # should flash between.
+        self._color_to_name: dict[str, str] = {
+            r["color_hex"]: r["name"]
+            for r in self.controller.conn.execute(
+                "SELECT name, color_hex FROM stations "
+                "WHERE color_hex IS NOT NULL"
+            ).fetchall()
+        }
+        # Hover/flash state for conflict pallets.
+        self._hovered_pallet = None
+        self._flash_on = True
+        self._flash_timer = QTimer(self)
+        self._flash_timer.setInterval(550)
+        self._flash_timer.timeout.connect(self._tick_flash)
 
         # Capacity bar text
         if strip:
@@ -701,6 +818,67 @@ class ZoneDetailDialog(QDialog):
             # Discard: leave the dialog open so the user can pick another
             # target without losing the rest of their context.
             return
+
+    def _on_pallet_hovered(self, pallet) -> None:
+        """Update the pallet-info label and highlight the hover target
+        in BOTH views (so hovering the top-down also rings the matching
+        pallet on the side view, and vice versa). Pass None to clear.
+
+        For a conflict pallet we start a flash timer that alternates
+        the destination between this contract's destination and the
+        partner destination(s) — see _tick_flash.
+        """
+        if pallet is None:
+            self._hovered_pallet = None
+            self._flash_timer.stop()
+            self.top_view.set_selected(None)
+            self.side_view.set_selected(None)
+            self.pallet_info.setText(
+                "Mouse over a pallet to see its destination + commodity."
+            )
+            return
+
+        self._hovered_pallet = pallet
+        self._flash_on = True
+        self.top_view.set_selected(pallet.cargo_line_id)
+        self.side_view.set_selected(pallet.cargo_line_id)
+        # Conflict pallets flash between the partner destinations.
+        if pallet.is_conflicted and pallet.conflict_partner_colors:
+            self._flash_timer.start()
+        else:
+            self._flash_timer.stop()
+        self._render_hover_label()
+
+    def _tick_flash(self) -> None:
+        self._flash_on = not self._flash_on
+        self._render_hover_label()
+
+    def _render_hover_label(self) -> None:
+        pallet = self._hovered_pallet
+        if pallet is None:
+            return
+        commodity = pallet.commodity_name
+        if not pallet.is_conflicted or not pallet.conflict_partner_colors:
+            self.pallet_info.setText(
+                f"{pallet.delivery_station_name}  —  {commodity}"
+            )
+            return
+        # Conflict: alternate the destination cell between this dest
+        # and the first partner. (For multi-partner groups, partners[1+]
+        # are listed alongside in the steady portion.)
+        partners = [
+            self._color_to_name.get(c, "?")
+            for c in pallet.conflict_partner_colors
+        ]
+        partner_summary = " / ".join(partners) if partners else "?"
+        if self._flash_on:
+            shown_dest = pallet.delivery_station_name
+        else:
+            shown_dest = partners[0] if partners else pallet.delivery_station_name
+        self.pallet_info.setText(
+            f"⚠ {shown_dest}  —  {commodity}  "
+            f"(conflicts with {partner_summary})"
+        )
 
     def _open_legend(self) -> None:
         # Only the destinations whose cargo is actually IN this zone.
