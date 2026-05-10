@@ -184,20 +184,12 @@ class MainWindow(QMainWindow):
         dlg.exec()
 
     def _on_recompute_done(self, _result) -> None:
-        # Each refresh is wrapped so that a single panel hiccup can't
-        # cascade into the controller's catch-all and pop a "Recompute
-        # failed" dialog. Any error is logged to cargo_manager.log.
-        import traceback as _tb
-        for fn, name in (
-            (self.bay_canvas.refresh, "bay_canvas"),
-            (self.route_panel.refresh, "route_panel"),
-            (self.contracts_panel.refresh, "contracts_panel"),
-        ):
-            try:
-                fn()
-            except Exception:
-                from ..app_controller import _log
-                _log.error("Refresh of %s failed:\n%s", name, _tb.format_exc())
+        # The controller already emits contracts_changed / route_changed
+        # which are connected to each panel's refresh slot, so the panels
+        # rebuild on their own. Nothing else needed here — kept as a hook
+        # for future "after compute" UI work (e.g. auto-jumping to the
+        # first conflict stop).
+        pass
 
     def _on_recompute_failed(self, msg: str) -> None:
         QMessageBox.warning(self, "Recompute failed", msg)
