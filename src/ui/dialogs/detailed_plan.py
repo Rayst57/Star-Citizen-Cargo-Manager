@@ -189,48 +189,51 @@ class DetailedPlanDialog(QDialog):
         h.setWordWrap(True)
         layout.addWidget(h)
 
-        # Unload section — pallet-level breakdown with ambiguity markers
+        # Conflict warning banner. If THIS stop loads or unloads cargo
+        # that's part of a conflict group, the pilot has to track each
+        # pallet carefully (the elevator can't tell ambiguous sizes
+        # apart). Flagging the stop loudly helps avoid mistakes.
+        stop_conflict_groups = [
+            g for g in result.conflict_groups
+            if any(cl in stop_cl_ids for cl in g.cargo_line_ids)
+        ]
+        if stop_conflict_groups:
+            warn = QLabel(
+                "<span style='color:#ff3030;font-weight:bold;'>⚠ WARNING:</span>"
+                "  this stop touches conflict cargo — track every "
+                "pallet at the elevator (see Conflict notes below)."
+            )
+            warn.setTextFormat(Qt.TextFormat.RichText)
+            warn.setWordWrap(True)
+            warn.setStyleSheet("background-color: #2a0d0d; padding: 4px 8px; "
+                               "border: 1px solid #ff3030; border-radius: 3px;")
+            layout.addWidget(warn)
+
+        # Unload section — grouped by zone so the pilot has a single
+        # action per zone instead of one row per cargo line.
         if stop.unloads:
             layout.addWidget(self._section_label("Unload"))
-            for ref in stop.unloads:
-                zone = cl_to_zone.get(ref.cargo_line_id, "?")
-                lbl = QLabel(
-                    f"  {zone} → {ref.scu_amount} SCU {ref.commodity_name}"
-                    f"  [Contract {ref.contract_number}]"
-                )
-                lbl.setWordWrap(True)
-                lbl.setStyleSheet("font-weight: bold;")
-                layout.addWidget(lbl)
-                self._add_pallet_breakdown(layout, ref.cargo_line_id, action="deliver")
-
+            self._render_zone_grouped(
+                layout, stop.unloads, cl_to_zone, cl_to_dest, action="deliver",
+            )
         else:
             layout.addWidget(self._muted("Unload: none"))
 
-        # Load section — pallet-level breakdown with ambiguity markers
+        # Load section — same zone-grouped layout. All cargo lines that
+        # land in the same zone (e.g. Contract 2's two AD-bound lines
+        # both going to F2) are shown under a single zone header.
         if stop.loads:
             layout.addWidget(self._section_label("Load"))
-            for ref in stop.loads:
-                zone = cl_to_zone.get(ref.cargo_line_id, "?")
-                dest = cl_to_dest.get(ref.cargo_line_id, "?")
-                lbl = QLabel(
-                    f"  {zone} → {ref.scu_amount} SCU {ref.commodity_name} "
-                    f"→ {dest}  [Contract {ref.contract_number}]"
-                )
-                lbl.setWordWrap(True)
-                lbl.setStyleSheet("font-weight: bold;")
-                layout.addWidget(lbl)
-                self._add_pallet_breakdown(layout, ref.cargo_line_id, action="load")
+            self._render_zone_grouped(
+                layout, stop.loads, cl_to_zone, cl_to_dest, action="load",
+            )
         else:
             layout.addWidget(self._muted("Load: none"))
 
         # Conflict notes (which group this stop touches)
-        relevant_groups = [
-            g for g in result.conflict_groups
-            if any(cl in stop_cl_ids for cl in g.cargo_line_ids)
-        ]
-        if relevant_groups:
+        if stop_conflict_groups:
             layout.addWidget(self._section_label("Conflict notes"))
-            for g in relevant_groups:
+            for g in stop_conflict_groups:
                 names = " / ".join(d.delivery_station_name for d in g.destinations)
                 amb = " + ".join(f"1×{s}" for s in g.ambiguous_sizes)
                 lbl = QLabel(
@@ -260,6 +263,62 @@ class DetailedPlanDialog(QDialog):
             layout.addWidget(self._muted("Onboard after this stop: empty"))
 
         return card
+
+    def _render_zone_grouped(
+        self,
+        layout: QVBoxLayout,
+        refs: list,
+        cl_to_zone: dict[int, str],
+        cl_to_dest: dict[int, str],
+        *,
+        action: str,
+    ) -> None:
+        """Render load/unload entries grouped by zone — one header per
+        zone, all the cargo lines going into/coming out of that zone
+        listed under it. So Contract 2's two AD-bound lines that both
+        land in F2 read as a single F2 action.
+        """
+        # Preserve route order within each zone (stable_sort).
+        from collections import OrderedDict
+        by_zone: "OrderedDict[str, list]" = OrderedDict()
+        for ref in refs:
+            zone = cl_to_zone.get(ref.cargo_line_id, "?")
+            by_zone.setdefault(zone, []).append(ref)
+
+        for zone, zone_refs in by_zone.items():
+            total_scu = sum(r.scu_amount for r in zone_refs)
+            dests = []
+            for r in zone_refs:
+                d = cl_to_dest.get(r.cargo_line_id, "?")
+                if d not in dests:
+                    dests.append(d)
+            dest_str = " + ".join(dests)
+            header = QLabel(
+                f"  {zone}  →  {dest_str}  ({total_scu} SCU total)"
+            )
+            header.setWordWrap(True)
+            header.setStyleSheet("font-weight: bold; color: #5be4ff;")
+            layout.addWidget(header)
+
+            for ref in zone_refs:
+                d = cl_to_dest.get(ref.cargo_line_id, "?")
+                # When the zone header already names the destination,
+                # the per-line summary can drop the dest to read tighter.
+                if action == "load":
+                    line = QLabel(
+                        f"      {ref.scu_amount} SCU {ref.commodity_name}"
+                        f"  [Contract {ref.contract_number}]"
+                    )
+                else:
+                    line = QLabel(
+                        f"      {ref.scu_amount} SCU {ref.commodity_name}"
+                        f"  [Contract {ref.contract_number}]"
+                    )
+                line.setWordWrap(True)
+                layout.addWidget(line)
+                self._add_pallet_breakdown(
+                    layout, ref.cargo_line_id, action=action,
+                )
 
     def _add_pallet_breakdown(
         self,
