@@ -181,7 +181,7 @@ def build_zone_plan(
         """
         SELECT cl.id, cl.contract_id, cl.scu_amount, cl.commodity_id,
                cl.delivery_station_id,
-               ct.max_pallet_size, ct.pickup_station_id
+               ct.max_pallet_size, ct.pickup_station_id, ct.contract_number
         FROM cargo_lines cl
         JOIN contracts ct ON ct.id = cl.contract_id
         WHERE ct.workday_id = ?
@@ -290,6 +290,150 @@ def build_zone_plan(
             r["primary_zone_label"], set()
         ).add(r["delivery_station_id"])
 
+    # ── Consolidation pre-pass ─────────────────────────────────────────
+    # Hybrid model: by default each destination keeps its own zone (the
+    # strict "partners never share" rule). But when a single contract
+    # has 3+ destinations all carrying conflict-flagged cargo (e.g.
+    # Contract 2 with AD/SF Food + AD/BG Ice), the conflict has to be
+    # resolved at every stop. Co-locating the conflict pallets into ONE
+    # "consolidation zone" lets the pilot touch a single zone per
+    # Contract 2 stop, deliver that station's portion, leave the rest.
+    #
+    # IMPORTANT: only the conflict-FLAGGED pallets go into the
+    # consolidation zone. Unique-shape stacks (e.g. a 1×2 SCU Ice pallet
+    # that no other destination has at this size) stay with the
+    # destination's regular zone — there's no ambiguity for those, so
+    # there's no benefit to putting them in the shared zone.
+    cl_to_ambig_sizes: dict[int, set[int]] = {}
+    for grp in conflict_groups:
+        sz = set(grp.ambiguous_sizes)
+        for cl_id in grp.cargo_line_ids:
+            cl_to_ambig_sizes[cl_id] = sz
+
+    contract_to_rows: dict[int, list] = {}
+    for r in rows:
+        contract_to_rows.setdefault(r["contract_id"], []).append(r)
+
+    # cl_id → number of SCU left for the per-destination loop after
+    # the conflict portion has been consolidated. If absent, the cargo
+    # line is unmodified.
+    cl_unique_scu: dict[int, int] = {}
+    consolidation_zone_labels: set[str] = set()
+    for cid, crows in sorted(
+        contract_to_rows.items(),
+        key=lambda x: -sum(r["scu_amount"] for r in x[1]),
+    ):
+        conflict_dests = {
+            r["delivery_station_id"] for r in crows
+            if r["id"] in conflicted_ids
+        }
+        if len(conflict_dests) < 3:
+            continue   # Model A default
+
+        # Split each cargo line into (conflict-pallets, unique-pallets).
+        per_cl_split: dict[int, tuple[list[int], list[int]]] = {}
+        conflict_total = 0
+        for r in crows:
+            ambig = cl_to_ambig_sizes.get(r["id"], set())
+            pallets = palletize(r["scu_amount"], r["max_pallet_size"])
+            conflict_pallets = [p for p in pallets if p in ambig]
+            unique_pallets = [p for p in pallets if p not in ambig]
+            per_cl_split[r["id"]] = (conflict_pallets, unique_pallets)
+            conflict_total += sum(conflict_pallets)
+
+        if conflict_total == 0:
+            continue   # contract has 3+ "conflict destinations" but none
+                       # of the actual pallets are flagged ambiguous
+
+        target = _claim_fresh_zone(zones, conflict_total, excluded_zones=set())
+        if target is None:
+            _log.info(
+                "consolidation: contract %d (%d SCU conflict portion, "
+                "dests=%s) — no fresh zone fits, falling back to "
+                "default per-destination allocation",
+                crows[0]["contract_number"], conflict_total,
+                sorted(conflict_dests),
+            )
+            continue
+
+        all_dests = sorted(conflict_dests)
+        contract_num = crows[0]["contract_number"]
+        _log.info(
+            "consolidation: contract %d → %d SCU of conflict pallets "
+            "into zone %s (dests=%s). Unique pallets stay with each "
+            "destination's regular zone.",
+            contract_num, conflict_total, target.zone_label, all_dests,
+        )
+        consolidation_zone_labels.add(target.zone_label)
+        for r in crows:
+            conflict_pallets, unique_pallets = per_cl_split[r["id"]]
+            cl_unique_scu[r["id"]] = sum(unique_pallets)
+            if not conflict_pallets:
+                continue
+            summary = palletize_summary(sorted(conflict_pallets, reverse=True))
+            note = (
+                f"CONSOLIDATED — Contract {contract_num} conflict portion "
+                f"only. Shared with destinations {all_dests}; the pilot "
+                f"resolves the conflict at delivery. Unique-shape pallets "
+                f"are in this contract's other zone_assignments rows."
+            )
+            conn.execute(
+                """
+                INSERT INTO zone_assignments
+                    (workday_id, cargo_line_id, primary_zone_label,
+                     pallet_breakdown, is_manual_override, notes)
+                VALUES (?, ?, ?, ?, 0, ?)
+                """,
+                (workday_id, r["id"], target.zone_label, summary, note),
+            )
+            target.remaining_scu -= sum(conflict_pallets)
+            target.occupants.add(r["delivery_station_id"])
+            dest_zones.setdefault(r["delivery_station_id"], set()).add(
+                target.zone_label
+            )
+            gid = cl_to_group.get(r["id"])
+            if gid is not None:
+                conflict_group_zones.setdefault(gid, set()).add(target.zone_label)
+                conflict_group_stations.setdefault(gid, {}).setdefault(
+                    target.zone_label, set()
+                ).add(r["delivery_station_id"])
+
+    # Reflect cl_unique_scu in by_destination so the per-destination
+    # loop only sees the unique portion of each consolidated cargo
+    # line. Cargo lines that were fully consolidated (zero unique
+    # pallets) get dropped from by_destination entirely.
+    if cl_unique_scu:
+        for did in list(by_destination.keys()):
+            new_cargo = []
+            for c in by_destination[did]:
+                cl_id = c["cargo_line_id"]
+                if cl_id in cl_unique_scu:
+                    unique = cl_unique_scu[cl_id]
+                    if unique == 0:
+                        continue
+                    new_cargo.append({
+                        **c,
+                        "scu_amount": unique,
+                        # Unique-shape pallets aren't conflict pallets
+                        # themselves — they're distinguishable, so the
+                        # per-destination loop treats them like ordinary
+                        # cargo.
+                        "is_conflicted": False,
+                        "group_id": None,
+                    })
+                else:
+                    new_cargo.append(c)
+            if new_cargo:
+                by_destination[did] = new_cargo
+            else:
+                del by_destination[did]
+        ordered_dests = sorted(
+            by_destination.keys(),
+            key=lambda did: (-_dest_total_scu(did),
+                             delivery_priority.get(did, 9999)),
+        )
+
+
     _log.info(
         "zone_assignment: %d destinations (size-descending order):",
         len(ordered_dests),
@@ -309,19 +453,28 @@ def build_zone_plan(
         is_dest_conflicted = any(c["is_conflicted"] for c in cargo)
         dest_name = station_names.get(did, str(did))
 
-        # Build sibling-zone exclusion set. Strict rule: every zone a
-        # conflict partner has ANY cargo in is off-limits — not just the
-        # zones where the partner's same-group cargo lives. Without this,
-        # PT could land in R4 with Seraphim simply because Seraphim's
-        # Lively-Pathway-Aluminum specifically went to R3 — the partners
-        # would still share R4 and the pilot would still have a hard
-        # time at the elevator.
+        # Build sibling-zone exclusion set. Two rules:
+        #
+        # 1. Strict partner exclusion — every zone a conflict partner
+        #    has ANY cargo in is off-limits. (Otherwise PT could land
+        #    in R4 with Seraphim simply because Seraphim's
+        #    Lively-Pathway-Aluminum specifically went to R3 — the
+        #    partners would still share R4 and the pilot would still
+        #    have a hard time at the elevator.)
+        # 2. Consolidation zones are off-limits to ANY destination not
+        #    already in them. A consolidation zone is dedicated to one
+        #    contract's deconfliction; piling extra destinations on
+        #    top would mean unrelated cargo gets mixed into the same
+        #    zone the pilot is using for conflict resolution.
         excluded_zones: set[str] = set()
         excluded_reason: dict[str, list[int]] = {}  # zone → [partner_did(s)]
         for partner_did in partners_by_dest.get(did, set()):
             for zone_label in dest_zones.get(partner_did, set()):
                 excluded_zones.add(zone_label)
                 excluded_reason.setdefault(zone_label, []).append(partner_did)
+        for zone_label in consolidation_zone_labels:
+            if zone_label not in dest_zones.get(did, set()):
+                excluded_zones.add(zone_label)
 
         # First-fit decreasing — biggest cargo lines claim zones first so
         # small ones top off leftover space instead of opening fresh zones.
