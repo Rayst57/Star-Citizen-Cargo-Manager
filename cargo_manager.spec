@@ -4,20 +4,37 @@
 # Produces:      dist/CargoManager/CargoManager.exe   (one-folder bundle)
 # See:           docs/packaging.md
 
+from PyInstaller.utils.hooks import collect_all
+
 block_cipher = None
+
+# Pull EVERYTHING PySide6 (and friends) needs in: binaries (Qt DLLs),
+# datas (qt.conf / plugins / translations), and hiddenimports (every
+# PySide6.QtFoo submodule). Without this, the frozen .exe can fail at
+# startup with:  ModuleNotFoundError: No module named 'PySide6'
+pyside6_datas,   pyside6_binaries,   pyside6_hidden   = collect_all("PySide6")
+shiboken6_datas, shiboken6_binaries, shiboken6_hidden = collect_all("shiboken6")
+openai_datas,    openai_binaries,    openai_hidden    = collect_all("openai")
 
 a = Analysis(
     ["run.py"],
     pathex=[],
-    binaries=[],
+    binaries=[
+        *pyside6_binaries,
+        *shiboken6_binaries,
+        *openai_binaries,
+    ],
     datas=[
         ("data",  "data"),       # schema.sql + seed JSONs + scu_boxes.json + ships.json
         ("theme", "theme"),      # colors.json
+        *pyside6_datas,
+        *shiboken6_datas,
+        *openai_datas,
     ],
     hiddenimports=[
-        "PySide6.QtSvg",
-        "sounddevice",
-        "pvporcupine",
+        *pyside6_hidden,
+        *shiboken6_hidden,
+        *openai_hidden,
         "keyring.backends.Windows",
         "pkg_resources.py2_warn",
     ],
