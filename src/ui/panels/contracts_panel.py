@@ -20,8 +20,9 @@ class ContractsPanel(QWidget):
     def __init__(self, controller, parent=None):
         super().__init__(parent)
         self.controller = controller
-        self.setMinimumWidth(300)
-        self.setMaximumWidth(420)
+        # Side panels grow with the window; no max width — they're text
+        # heavy and benefit from extra horizontal space when available.
+        self.setMinimumWidth(280)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(6, 6, 6, 6)

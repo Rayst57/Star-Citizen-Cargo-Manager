@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
-from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout,
-)
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout
 
 
 class StopCard(QFrame):
-    view_load_requested = Signal(int)   # stop_number
+    """Compact card representing one route stop. No popup; per-stop
+    detail lives in the combined DetailedPlanDialog (one popup for all
+    stops, opened from the Route panel header)."""
 
     def __init__(
         self,
@@ -40,19 +39,12 @@ class StopCard(QFrame):
         header.addWidget(n_lbl)
 
         st = QLabel(station_name)
-        header.addWidget(st)
+        st.setWordWrap(True)
+        header.addWidget(st, 1)
 
         ac = QLabel(f"— {action}")
         ac.setProperty("muted", True)
         header.addWidget(ac)
-        header.addStretch(1)
-
-        view_btn = QPushButton("↗")
-        view_btn.setProperty("flat", True)
-        view_btn.setToolTip("View load — full bay snapshot at this stop")
-        view_btn.setFixedWidth(28)
-        view_btn.clicked.connect(lambda: self.view_load_requested.emit(stop_number))
-        header.addWidget(view_btn)
 
         root.addLayout(header)
 

@@ -560,6 +560,11 @@ class BayCanvas(QWidget):
     def __init__(self, controller, parent=None):
         super().__init__(parent)
         self.controller = controller
+        # The bay's content has a fixed footprint (6+8 = 14 cells wide
+        # at most 28 px each, plus margins). Cap the panel width so the
+        # side panels absorb extra horizontal space when the window grows.
+        self.setMinimumWidth(460)
+        self.setMaximumWidth(560)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(6, 6, 6, 6)
@@ -568,6 +573,7 @@ class BayCanvas(QWidget):
         # Hint
         hint = QLabel("Click a zone for the detailed top + side view.")
         hint.setProperty("muted", True)
+        hint.setWordWrap(True)
         root.addWidget(hint)
 
         # Zone strips viewport
