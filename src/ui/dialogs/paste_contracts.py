@@ -26,17 +26,35 @@ from ...voice.parse_contracts import parse_contracts_text
 
 
 class _ParseThread(QThread):
+    """Worker that runs the OpenAI call. Receives plain values only —
+    no SQLite connection is touched here, since SQLite refuses
+    connections opened on a different thread."""
+
     parsed = Signal(list)        # list[dict] of add_contract args
     failed = Signal(str)
 
-    def __init__(self, controller, text: str):
+    def __init__(
+        self,
+        api_key: str,
+        model: str,
+        stations: list[str],
+        commodities: list[str],
+        text: str,
+    ):
         super().__init__()
-        self.controller = controller
+        self.api_key = api_key
+        self.model = model
+        self.stations = stations
+        self.commodities = commodities
         self.text = text
 
     def run(self) -> None:
         try:
-            contracts = parse_contracts_text(self.controller, self.text)
+            contracts = parse_contracts_text(
+                self.api_key, self.model,
+                self.stations, self.commodities,
+                self.text,
+            )
             self.parsed.emit(contracts)
         except Exception as e:
             self.failed.emit(f"{type(e).__name__}: {e}")
@@ -140,12 +158,38 @@ class PasteContractsDialog(QDialog):
         if self._thread and self._thread.isRunning():
             return
 
+        if not self.controller.api_key:
+            self.status_label.setText(
+                "OpenAI API key not set. Open Settings → OpenAI to add one."
+            )
+            return
+
+        # Extract station + commodity names HERE on the main thread so the
+        # worker doesn't need to touch the SQLite connection (cross-thread
+        # use is forbidden by default).
+        stations = [
+            r["name"] for r in self.controller.conn.execute(
+                "SELECT name FROM stations "
+                "WHERE is_active = 1 AND is_gateway = 0 "
+                "ORDER BY sort_order"
+            ).fetchall()
+        ]
+        commodities = [
+            r["name"] for r in self.controller.conn.execute(
+                "SELECT name FROM commodities WHERE is_active = 1 ORDER BY name"
+            ).fetchall()
+        ]
+
         self.parse_btn.setEnabled(False)
         self.apply_btn.setEnabled(False)
         self.status_label.setText("Parsing…")
         self._clear_preview()
 
-        self._thread = _ParseThread(self.controller, text)
+        self._thread = _ParseThread(
+            self.controller.api_key,
+            self.controller.settings.get("model"),
+            stations, commodities, text,
+        )
         self._thread.parsed.connect(self._on_parsed)
         self._thread.failed.connect(self._on_parse_failed)
         self._thread.finished.connect(self._thread.deleteLater)

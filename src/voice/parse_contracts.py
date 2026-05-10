@@ -10,6 +10,10 @@ invent destinations.
 
 The output is reviewed in the dialog before any contracts are added —
 this module only PARSES; it never mutates state.
+
+Pure function: takes raw values (api_key, model, station/commodity
+name lists, and the text) so it is safe to call from a worker thread
+without crossing SQLite connections.
 """
 
 from __future__ import annotations
@@ -38,7 +42,8 @@ Ice", "tungsten ore" → "Tungsten" are fine):
 {commodities}
 
 VALID PALLET SIZES: 1, 2, 4, 8, 16, 24, 32. Default max_pallet_size to 8
-if not stated.
+if not stated. If the user says "max pallet size N" once, apply N to
+every contract that follows in the same dictation unless overridden.
 
 RULES
 - Be conservative — when a phrase is ambiguous, pick the closest match
@@ -52,39 +57,43 @@ RULES
 """
 
 
-def parse_contracts_text(controller, text: str) -> list[dict]:
+def parse_contracts_text(
+    api_key: str,
+    model: str,
+    stations: list[str],
+    commodities: list[str],
+    text: str,
+) -> list[dict]:
     """Parse free-form dictation into a list of add_contract argument dicts.
 
-    Returns an empty list if no contracts are recognised. Raises
-    RuntimeError on configuration errors (missing API key, network
-    failure) — the dialog surfaces those to the user.
+    Args:
+        api_key:     OpenAI API key.
+        model:       OpenAI chat model (e.g. "gpt-4o").
+        stations:    Canonical station names available in the DB.
+        commodities: Canonical commodity names available in the DB.
+        text:        Free-form dictation to parse.
+
+    Returns:
+        A (possibly empty) list of dicts shaped like add_contract args:
+        {pickup_station, max_pallet_size, deliveries: [{destination,
+        commodity, scu}, ...]}.
+
+    Raises:
+        RuntimeError: if the OpenAI client can't be imported.
+        Any exception from the OpenAI client is propagated to the caller.
     """
     text = text.strip()
     if not text:
         return []
-
-    if not controller.api_key:
-        raise RuntimeError(
-            "OpenAI API key not set. Open Settings → OpenAI to add one."
-        )
 
     try:
         from openai import OpenAI
     except ImportError as e:
         raise RuntimeError(f"openai package not installed: {e}") from e
 
-    stations = controller.conn.execute(
-        "SELECT name FROM stations "
-        "WHERE is_active = 1 AND is_gateway = 0 "
-        "ORDER BY sort_order"
-    ).fetchall()
-    commodities = controller.conn.execute(
-        "SELECT name FROM commodities WHERE is_active = 1 ORDER BY name"
-    ).fetchall()
-
     system = PARSE_SYSTEM_PROMPT.format(
-        stations="\n".join(f"  - {s['name']}" for s in stations),
-        commodities="\n".join(f"  - {c['name']}" for c in commodities),
+        stations="\n".join(f"  - {s}" for s in stations),
+        commodities="\n".join(f"  - {c}" for c in commodities),
     )
 
     add_contract_tool = next(
@@ -92,9 +101,9 @@ def parse_contracts_text(controller, text: str) -> list[dict]:
         if t["function"]["name"] == "add_contract"
     )
 
-    client = OpenAI(api_key=controller.api_key)
+    client = OpenAI(api_key=api_key)
     resp = client.chat.completions.create(
-        model=controller.settings.get("model"),
+        model=model,
         messages=[
             {"role": "system", "content": system},
             {"role": "user", "content": text},
