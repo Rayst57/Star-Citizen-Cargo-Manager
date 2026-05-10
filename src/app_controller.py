@@ -633,7 +633,6 @@ class AppController(QObject):
             zw = zone["width_units"]
             zl = zone["length_units"]
             zh = zone["scu_capacity"] // (zw * zl) if zw * zl else 4
-            grid = zone_grids.setdefault(zone_label, [[0] * zl for _ in range(zw)])
 
             # Build a flat list of (entry, size) pairs across all cargo
             # lines in this zone; we'll partition into large/small below.
@@ -643,36 +642,33 @@ class AppController(QObject):
                 for size in sizes:
                     placements.append((entry, size))
 
-            # Split + sort: large pallets descending (largest deepest).
-            # Small pallets ALSO descending so the largest-floored small
-            # (e.g. 4 SCU) lands first at the ramp and smaller ones (2, 1)
-            # stack on top — keeps every small pallet inside the bay even
-            # in tight zones, and matches the unload workflow (lift the
-            # tiny ambiguous ones off the top first).
+            # Large pallets always go from the far end, biggest first.
             large_first = sorted(
                 [p for p in placements if p[1] in LARGE_SIZES],
                 key=lambda p: -p[1],
             )
-            small_first = sorted(
-                [p for p in placements if p[1] not in LARGE_SIZES],
-                key=lambda p: -p[1],
+            small_pool = [p for p in placements if p[1] not in LARGE_SIZES]
+
+            # Try smalls SMALLEST-first (best layout when there's room —
+            # 1 SCU at the door, 4 SCU flat behind it, no awkward stacks).
+            # If anything in that pass overflows, retry with LARGEST-first
+            # (stacks 2 on 4, 1 on 2 — fits but uglier).
+            placement_result, grid = _try_place_zone(
+                zw, zl, zh,
+                large_first,
+                sorted(small_pool, key=lambda p: p[1]),       # ASCENDING
+                boxes,
             )
-
-            for (entry, size), from_far in (
-                [(p, True) for p in large_first]
-                + [(p, False) for p in small_first]
-            ):
-                box = boxes.get(size, {"width": 1, "length": 1, "height": 1})
-                w, l, h = box["width"], box["length"], box["height"]
-                if w > zw and box.get("rotatable") and l <= zw:
-                    w, l = l, w
-                placed = _place_in_grid(
-                    grid, w, l, h, zw, zl, zh, from_far_end=from_far
+            if placement_result is None:
+                placement_result, grid = _try_place_zone(
+                    zw, zl, zh,
+                    large_first,
+                    sorted(small_pool, key=lambda p: -p[1]),  # DESCENDING fallback
+                    boxes,
                 )
-                if placed is None:
-                    placed = (max(0, zw - w), max(0, zl - l))
-                cell_x, cell_y = placed
+            zone_grids[zone_label] = grid
 
+            for (entry, size, w, l, h, cell_x, cell_y) in placement_result or []:
                 color = color_map.get(entry.delivery_station_name, "#888888")
                 amb_sizes, partner_colors = cl_conflict_info.get(
                     entry.cargo_line_id, (set(), [])
@@ -1153,6 +1149,46 @@ def _load_box_footprints() -> dict[int, dict]:
     return {b["scu"]: b for b in data["boxes"]}
 
 
+def _try_place_zone(
+    zone_w: int,
+    zone_l: int,
+    zone_h: int,
+    large_first: list,            # [(entry, size), ...] biggest first
+    smalls_in_order: list,        # [(entry, size), ...] caller-chosen order
+    boxes: dict,
+) -> tuple[list, list[list[int]]] | tuple[None, list[list[int]]]:
+    """Run a single placement pass with the given small-pallet ordering.
+
+    Returns (placements, grid) on success, or (None, grid) if any pallet
+    failed to find a uniform-support landing spot. The caller can then
+    retry with a different ordering before falling back to overflow.
+
+    placements is a list of tuples: (entry, size, w, l, h, cell_x, cell_y).
+    """
+    grid = [[0] * zone_l for _ in range(zone_w)]
+    placements: list = []
+
+    def _place(entry, size, *, from_far: bool) -> bool:
+        box = boxes.get(size, {"width": 1, "length": 1, "height": 1})
+        w, l, h = box["width"], box["length"], box["height"]
+        if w > zone_w and box.get("rotatable") and l <= zone_w:
+            w, l = l, w
+        spot = _place_in_grid(grid, w, l, h, zone_w, zone_l, zone_h,
+                              from_far_end=from_far)
+        if spot is None:
+            return False
+        placements.append((entry, size, w, l, h, spot[0], spot[1]))
+        return True
+
+    for entry, size in large_first:
+        if not _place(entry, size, from_far=True):
+            return None, grid
+    for entry, size in smalls_in_order:
+        if not _place(entry, size, from_far=False):
+            return None, grid
+    return placements, grid
+
+
 def _place_in_grid(
     grid: list[list[int]],
     w: int, l: int, h: int,
@@ -1161,21 +1197,20 @@ def _place_in_grid(
     *,
     from_far_end: bool = False,
 ) -> tuple[int, int] | None:
-    """First-fit placement scanning row-by-row, requiring uniform support.
+    """Best-fit placement requiring uniform support.
 
-    A pallet sits on a flat surface, so every cell in its footprint must
-    share the SAME current height before placement.
-
-    *from_far_end* flips the Y scan direction: when True the scan starts
-    at the FORWARD end (high Y, far from the ramp) so large pallets land
-    deep first and stack toward the door. When False, scan starts at the
-    ramp end (Y=0) so small pallets land closest to the door.
+    Every cell in the pallet's footprint must share the SAME current
+    height before placement (so the pallet sits flat). Among all valid
+    spots, we PREFER:
+      1. Lowest z — fill the floor before stacking. Prevents two 1 SCU
+         pallets from landing on top of each other at (0,0) when (1,0)
+         is still empty floor.
+      2. The y-direction asked for via *from_far_end* — low y near the
+         ramp for smalls, high y at the forward end for larges.
+      3. Lowest x — deterministic tiebreak.
     """
-    if from_far_end:
-        y_iter = range(zone_l - l, -1, -1)
-    else:
-        y_iter = range(zone_l - l + 1)
-    for y in y_iter:
+    candidates: list[tuple[int, int, int, int]] = []  # (z, y_rank, x, y)
+    for y in range(zone_l - l + 1):
         for x in range(zone_w - w + 1):
             heights = [
                 grid[x + dx][y + dy]
@@ -1187,11 +1222,19 @@ def _place_in_grid(
             z = heights[0]
             if z + h > stack_limit:
                 continue
-            for dx in range(w):
-                for dy in range(l):
-                    grid[x + dx][y + dy] = z + h
-            return (x, y)
-    return None
+            y_rank = -y if from_far_end else y
+            candidates.append((z, y_rank, x, y))
+
+    if not candidates:
+        return None
+
+    candidates.sort()
+    _, _, x, y = candidates[0]
+    z = grid[x][y]
+    for dx in range(w):
+        for dy in range(l):
+            grid[x + dx][y + dy] = z + h
+    return (x, y)
 
 
 def _parse_breakdown(text: str | None) -> list[int]:
