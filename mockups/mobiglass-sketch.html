@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Cargo Manager — Mobiglass Sketch</title>
+<style>
+  :root {
+    --bg-deep:        #050a12;
+    --bg-window:      #0a141e;
+    --panel-bg:       rgba(14, 28, 42, 0.78);
+    --panel-bg-inner: rgba(6, 14, 22, 0.85);
+    --header-strip:   rgba(28, 52, 72, 0.85);
+    --cyan:           #5be4ff;
+    --cyan-dim:       #26b6d4;
+    --cyan-glow:      rgba(91, 228, 255, 0.45);
+    --orange:         #ff8a3c;
+    --green:          #7bbf3f;
+    --red:            #ff3030;
+    --magenta:        #c95dd6;
+    --text:           #cfe7f5;
+    --text-mute:      #7e96a8;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    height: 100%;
+    background:
+      radial-gradient(circle at 30% 20%, #0e1f30 0%, var(--bg-deep) 60%),
+      var(--bg-deep);
+    color: var(--text);
+    font-family: "Segoe UI", "Inter", sans-serif;
+    font-size: 13px;
+    overflow: hidden;
+  }
+
+  /* Faint scanline atmosphere */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background-image: repeating-linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent 2px,
+      rgba(91, 228, 255, 0.02) 2px,
+      rgba(91, 228, 255, 0.02) 3px
+    );
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .app {
+    position: relative;
+    z-index: 2;
+    display: grid;
+    grid-template-rows: 44px 1fr;
+    height: 100%;
+  }
+
+  /* ── Top bar ──────────────────────────────────────────────── */
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding: 0 18px;
+    border-bottom: 1px solid var(--cyan-dim);
+    background: linear-gradient(to bottom,
+      rgba(20, 38, 54, 0.9), rgba(10, 20, 30, 0.6));
+    box-shadow: 0 1px 12px var(--cyan-glow);
+  }
+  .topbar .brand {
+    color: var(--cyan);
+    font-weight: 700;
+    letter-spacing: 2px;
+    font-size: 14px;
+  }
+  .topbar .crumb { color: var(--text-mute); }
+  .topbar .crumb b { color: var(--text); font-weight: 600; }
+  .topbar .grow { flex: 1; }
+  .topbar .btn {
+    color: var(--cyan);
+    border: 1px solid var(--cyan-dim);
+    background: rgba(20, 40, 55, 0.55);
+    padding: 5px 12px;
+    border-radius: 2px;
+    font-size: 12px;
+    letter-spacing: 1px;
+    cursor: pointer;
+  }
+  .topbar .btn:hover {
+    box-shadow: 0 0 12px var(--cyan-glow);
+    border-color: var(--cyan);
+  }
+
+  /* ── Main 3-column layout ────────────────────────────────── */
+  .main {
+    display: grid;
+    grid-template-columns: 320px 1fr 320px;
+    gap: 12px;
+    padding: 12px;
+    overflow: hidden;
+  }
+
+  /* ── Panel skeleton (the Mobiglass card) ──────────────────── */
+  .panel {
+    position: relative;
+    background: var(--panel-bg);
+    border: 1px solid var(--cyan-dim);
+    border-radius: 2px;
+    box-shadow:
+      0 0 18px var(--cyan-glow),
+      inset 0 0 24px rgba(91, 228, 255, 0.05);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  /* Decorative cut-corner accent (Mobiglass motif) */
+  .panel::before {
+    content: "";
+    position: absolute;
+    top: -1px; right: -1px;
+    width: 18px; height: 18px;
+    border-top: 2px solid var(--cyan);
+    border-right: 2px solid var(--cyan);
+    border-top-right-radius: 2px;
+    box-shadow: 0 -2px 8px var(--cyan-glow);
+  }
+  .panel::after {
+    content: "";
+    position: absolute;
+    bottom: -1px; left: -1px;
+    width: 18px; height: 18px;
+    border-bottom: 2px solid var(--cyan);
+    border-left: 2px solid var(--cyan);
+    border-bottom-left-radius: 2px;
+    box-shadow: 0 2px 8px var(--cyan-glow);
+  }
+
+  .panel-header {
+    padding: 8px 12px 8px 12px;
+    background: var(--header-strip);
+    border-bottom: 1px solid var(--cyan-dim);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: var(--cyan);
+    text-shadow: 0 0 8px var(--cyan-glow);
+  }
+  .panel-header .actions {
+    margin-left: auto;
+    display: flex;
+    gap: 6px;
+  }
+  .panel-header .pill {
+    font-size: 11px;
+    letter-spacing: 1px;
+    color: var(--cyan);
+    background: rgba(20, 40, 55, 0.7);
+    border: 1px solid var(--cyan-dim);
+    padding: 2px 8px;
+    border-radius: 2px;
+    cursor: pointer;
+  }
+  .panel-header .pill:hover {
+    border-color: var(--cyan);
+    box-shadow: 0 0 8px var(--cyan-glow);
+  }
+
+  .panel-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+  }
+
+  /* ── Contract cards ───────────────────────────────────────── */
+  .contract {
+    background: var(--panel-bg-inner);
+    border: 1px solid rgba(91, 228, 255, 0.18);
+    border-left: 3px solid var(--cyan);
+    padding: 8px 10px;
+    margin-bottom: 8px;
+    border-radius: 2px;
+  }
+  .contract.conflict {
+    border-left-color: var(--orange);
+    box-shadow: 0 0 12px rgba(255, 138, 60, 0.18);
+  }
+  .contract h4 {
+    font-size: 12px;
+    color: var(--cyan);
+    letter-spacing: 1px;
+    margin-bottom: 4px;
+    display: flex;
+    justify-content: space-between;
+  }
+  .contract h4 .tag {
+    color: var(--text-mute);
+    font-weight: 400;
+    font-size: 11px;
+  }
+  .contract .line {
+    color: var(--text-mute);
+    font-size: 11px;
+    padding-left: 8px;
+    line-height: 1.55;
+  }
+  .contract .line b { color: var(--text); font-weight: 500; }
+
+  .scu-bar {
+    margin: 10px 4px 0;
+    height: 6px;
+    background: rgba(91, 228, 255, 0.08);
+    border: 1px solid rgba(91, 228, 255, 0.2);
+    border-radius: 1px;
+    overflow: hidden;
+  }
+  .scu-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--cyan-dim), var(--cyan));
+    width: 68%;
+    box-shadow: 0 0 8px var(--cyan-glow);
+  }
+  .scu-text {
+    text-align: center;
+    color: var(--text-mute);
+    font-size: 11px;
+    margin-top: 4px;
+    letter-spacing: 1px;
+  }
+
+  /* ── Bay diagram ──────────────────────────────────────────── */
+  .bay-wrap {
+    display: flex;
+    gap: 40px;
+    justify-content: center;
+    align-items: stretch;
+    padding: 24px 12px 32px;
+    flex: 1;
+  }
+  .bay {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+  .bay .ramp {
+    color: var(--orange);
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-shadow: 0 0 6px rgba(255, 138, 60, 0.5);
+  }
+  .bay-grid {
+    display: grid;
+    gap: 2px;
+    background: var(--panel-bg-inner);
+    border: 1px solid var(--cyan-dim);
+    padding: 2px;
+    box-shadow: inset 0 0 16px rgba(91, 228, 255, 0.08);
+  }
+  .bay.f { grid-template-rows: auto auto; }
+  .bay.f .bay-grid {
+    grid-template-columns: repeat(3, 28px);
+    grid-template-rows: repeat(9, 22px);
+  }
+  .bay.r .bay-grid {
+    grid-template-columns: repeat(4, 28px);
+    grid-template-rows: repeat(15, 22px);
+  }
+  .bay-labels {
+    display: grid;
+    gap: 2px;
+    padding: 0 2px;
+    color: var(--cyan);
+    font-size: 11px;
+    letter-spacing: 1px;
+    font-weight: 600;
+  }
+  .bay.f .bay-labels { grid-template-columns: repeat(3, 28px); }
+  .bay.r .bay-labels { grid-template-columns: repeat(4, 28px); }
+  .bay-labels span {
+    text-align: center;
+    padding: 4px 0;
+    border-bottom: 1px solid rgba(91, 228, 255, 0.2);
+  }
+
+  .cell {
+    border-radius: 1px;
+    position: relative;
+  }
+  .cell.empty { background: rgba(38, 74, 92, 0.18); border: 1px dashed rgba(91, 228, 255, 0.18); }
+  .cell.amb { background: rgba(255, 138, 60, 0.85); box-shadow: 0 0 8px rgba(255, 138, 60, 0.4); }
+  .cell.baij  { background: rgba(229, 90, 92, 0.85);  box-shadow: 0 0 8px rgba(229, 90, 92, 0.35); }
+  .cell.seraph { background: rgba(255, 196, 76, 0.88); box-shadow: 0 0 8px rgba(255, 196, 76, 0.35); }
+  .cell.everus { background: rgba(170, 92, 226, 0.85); box-shadow: 0 0 8px rgba(170, 92, 226, 0.35); }
+  .cell.bg    { background: rgba(96, 197, 232, 0.85); box-shadow: 0 0 8px rgba(96, 197, 232, 0.35); }
+  .cell.sf    { background: rgba(123, 191, 63, 0.85); box-shadow: 0 0 8px rgba(123, 191, 63, 0.35); }
+  .cell.pt    { background: rgba(207, 113, 174, 0.85); box-shadow: 0 0 8px rgba(207, 113, 174, 0.35); }
+
+  /* Conflict diagonal stripe overlay */
+  .cell.conflict::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: repeating-linear-gradient(
+      45deg,
+      rgba(255, 48, 48, 0.55) 0,
+      rgba(255, 48, 48, 0.55) 3px,
+      transparent 3px,
+      transparent 6px
+    );
+    border: 1.5px dashed rgba(255, 48, 48, 0.8);
+  }
+
+  /* ── Route list ──────────────────────────────────────────── */
+  .stop {
+    background: var(--panel-bg-inner);
+    border: 1px solid rgba(91, 228, 255, 0.18);
+    border-left: 3px solid var(--cyan-dim);
+    padding: 6px 10px;
+    margin-bottom: 6px;
+    font-size: 12px;
+  }
+  .stop.current {
+    border-left-color: var(--cyan);
+    box-shadow: 0 0 10px var(--cyan-glow);
+  }
+  .stop.warning {
+    border-left-color: var(--red);
+    background: linear-gradient(to right,
+      rgba(255, 48, 48, 0.10), var(--panel-bg-inner));
+    box-shadow: 0 0 10px rgba(255, 48, 48, 0.25);
+  }
+  .stop h5 {
+    color: var(--cyan);
+    font-size: 11px;
+    letter-spacing: 1px;
+    margin-bottom: 2px;
+    display: flex;
+    justify-content: space-between;
+  }
+  .stop h5 .badge {
+    color: var(--text-mute);
+    font-weight: 400;
+    font-size: 10px;
+  }
+  .stop.warning h5 .badge {
+    color: var(--red);
+    font-weight: 700;
+    text-shadow: 0 0 4px rgba(255, 48, 48, 0.5);
+  }
+  .stop .info {
+    color: var(--text-mute);
+    font-size: 11px;
+    line-height: 1.4;
+  }
+  .stop .info b { color: var(--text); font-weight: 500; }
+
+  /* Color legend strip */
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 14px;
+    border-top: 1px solid var(--cyan-dim);
+    background: rgba(8, 16, 24, 0.6);
+    font-size: 10px;
+    letter-spacing: 1px;
+  }
+  .chip {
+    padding: 3px 9px;
+    border-radius: 2px;
+    color: #142028;
+    font-weight: 700;
+  }
+  .chip.baij { background: rgba(229, 90, 92, 0.95); }
+  .chip.seraph { background: rgba(255, 196, 76, 0.95); }
+  .chip.everus { background: rgba(170, 92, 226, 0.95); color: #fff; }
+  .chip.bg { background: rgba(96, 197, 232, 0.95); }
+  .chip.sf { background: rgba(123, 191, 63, 0.95); }
+  .chip.pt { background: rgba(207, 113, 174, 0.95); }
+  .chip.conflict {
+    background: linear-gradient(45deg,
+      rgba(255, 196, 76, 0.95) 0 50%,
+      rgba(96, 197, 232, 0.95) 50% 100%);
+    border: 1px dashed var(--red);
+    color: #142028;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Top bar -->
+  <div class="topbar">
+    <div class="brand">◆ STAR CITIZEN CARGO MANAGER</div>
+    <div class="crumb">WORKDAY · <b>Seraphim Station</b> · Round Robin · 10 contracts</div>
+    <div class="grow"></div>
+    <div class="btn">↻  RECOMPUTE</div>
+    <div class="btn">LEGEND</div>
+    <div class="btn">SETTINGS</div>
+  </div>
+
+  <!-- Three columns -->
+  <div class="main">
+
+    <!-- Contracts panel -->
+    <div class="panel">
+      <div class="panel-header">
+        CONTRACTS
+        <div class="actions">
+          <div class="pill">+ ADD</div>
+          <div class="pill">PASTE</div>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="contract">
+          <h4>#1 Wide Forest <span class="tag">max 8 SCU</span></h4>
+          <div class="line">→ 31 SCU <b>Corundum</b> → Everus Harbor</div>
+          <div class="line">→ 34 SCU <b>Tungsten</b> → Baijini Point</div>
+          <div class="line">→ 16 SCU <b>Aluminum</b> → Everus Harbor</div>
+          <div class="line">→ 17 SCU <b>Aluminum</b> → Baijini Point</div>
+        </div>
+        <div class="contract conflict">
+          <h4>#2 Seraphim Station <span class="tag">max 4 SCU  ⚠ conflict</span></h4>
+          <div class="line">→  5 SCU <b>Processed Food</b> → Ambitious Dream</div>
+          <div class="line">→  4 SCU <b>Pressurized Ice</b> → Beautiful Glen</div>
+          <div class="line">→  7 SCU <b>Processed Food</b> → Shallow Fields</div>
+          <div class="line">→  7 SCU <b>Pressurized Ice</b> → Ambitious Dream</div>
+        </div>
+        <div class="contract">
+          <h4>#3 Everus Harbor <span class="tag">max 8 SCU</span></h4>
+          <div class="line">→ 49 SCU <b>General Cargo</b> → Baijini Point</div>
+          <div class="line">→ 40 SCU <b>General Cargo</b> → Seraphim Station</div>
+        </div>
+        <div class="contract conflict">
+          <h4>#5 Yellow Core <span class="tag">max 8 SCU  ⚠ conflict</span></h4>
+          <div class="line">→ 25 SCU <b>Tungsten</b> → Baijini Point</div>
+          <div class="line">→ 23 SCU <b>Tungsten</b> → Seraphim Station</div>
+          <div class="line">→ 20 SCU <b>Aluminum</b> → Baijini Point</div>
+          <div class="line">→ 21 SCU <b>Aluminum</b> → Seraphim Station</div>
+        </div>
+      </div>
+      <div class="scu-bar"><div class="scu-fill"></div></div>
+      <div class="scu-text">474 / 696 SCU · 68% loaded</div>
+    </div>
+
+    <!-- Bay panel -->
+    <div class="panel">
+      <div class="panel-header">
+        BAY STATE
+        <div class="actions">
+          <div class="pill">▾ DEPARTURE 5: Yellow Core</div>
+          <div class="pill">DETAILED PLAN</div>
+        </div>
+      </div>
+      <div class="panel-body" style="display: flex; flex-direction: column;">
+        <div class="bay-wrap">
+          <!-- F-bay (nose ramp at top) -->
+          <div class="bay f">
+            <div class="ramp">▲ nose ramp</div>
+            <div class="bay-grid">
+              <!-- 9 rows × 3 cols. Patterns simulate a partial fill. -->
+              <div class="cell everus"></div><div class="cell empty"></div><div class="cell empty"></div>
+              <div class="cell everus"></div><div class="cell everus"></div><div class="cell empty"></div>
+              <div class="cell everus"></div><div class="cell everus"></div><div class="cell empty"></div>
+              <div class="cell everus"></div><div class="cell everus"></div><div class="cell empty"></div>
+              <div class="cell everus"></div><div class="cell everus"></div><div class="cell empty"></div>
+              <div class="cell amb conflict"></div><div class="cell amb conflict"></div><div class="cell empty"></div>
+              <div class="cell amb conflict"></div><div class="cell amb conflict"></div><div class="cell empty"></div>
+              <div class="cell amb conflict"></div><div class="cell amb conflict"></div><div class="cell empty"></div>
+              <div class="cell amb conflict"></div><div class="cell amb conflict"></div><div class="cell empty"></div>
+            </div>
+            <div class="bay-labels">
+              <span>F1</span><span>F2</span><span>F3</span>
+            </div>
+          </div>
+
+          <!-- R-bay (rear ramp at bottom) -->
+          <div class="bay r">
+            <div class="bay-labels">
+              <span>R1</span><span>R2</span><span>R3</span><span>R4</span>
+            </div>
+            <div class="bay-grid">
+              <!-- 15 rows × 4 cols -->
+              <div class="cell baij"></div><div class="cell baij"></div><div class="cell seraph"></div><div class="cell seraph"></div>
+              <div class="cell baij"></div><div class="cell baij"></div><div class="cell seraph"></div><div class="cell seraph"></div>
+              <div class="cell baij"></div><div class="cell baij"></div><div class="cell seraph"></div><div class="cell seraph"></div>
+              <div class="cell baij"></div><div class="cell baij"></div><div class="cell seraph"></div><div class="cell seraph"></div>
+              <div class="cell baij"></div><div class="cell baij"></div><div class="cell seraph"></div><div class="cell seraph"></div>
+              <div class="cell baij"></div><div class="cell baij"></div><div class="cell seraph"></div><div class="cell seraph"></div>
+              <div class="cell baij conflict"></div><div class="cell baij conflict"></div><div class="cell seraph conflict"></div><div class="cell seraph conflict"></div>
+              <div class="cell baij conflict"></div><div class="cell baij conflict"></div><div class="cell seraph conflict"></div><div class="cell seraph conflict"></div>
+              <div class="cell baij conflict"></div><div class="cell baij conflict"></div><div class="cell seraph conflict"></div><div class="cell seraph conflict"></div>
+              <div class="cell baij"></div><div class="cell baij"></div><div class="cell empty"></div><div class="cell empty"></div>
+              <div class="cell baij"></div><div class="cell baij"></div><div class="cell empty"></div><div class="cell empty"></div>
+              <div class="cell baij"></div><div class="cell baij"></div><div class="cell empty"></div><div class="cell empty"></div>
+              <div class="cell baij"></div><div class="cell baij"></div><div class="cell empty"></div><div class="cell empty"></div>
+              <div class="cell baij"></div><div class="cell baij"></div><div class="cell empty"></div><div class="cell empty"></div>
+              <div class="cell baij"></div><div class="cell baij"></div><div class="cell empty"></div><div class="cell empty"></div>
+            </div>
+            <div class="ramp">▼ rear ramp</div>
+          </div>
+        </div>
+        <div class="legend">
+          <span style="color:var(--text-mute); margin-right:6px;">LEGEND:</span>
+          <span class="chip baij">Baijini</span>
+          <span class="chip seraph">Seraphim</span>
+          <span class="chip everus">Everus</span>
+          <span class="chip bg">Beautiful Glen</span>
+          <span class="chip sf">Shallow Fields</span>
+          <span class="chip pt">Port Tressler</span>
+          <span class="chip conflict">conflict Seraphim / Baijini</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Route panel -->
+    <div class="panel">
+      <div class="panel-header">
+        ROUTE
+        <div class="actions">
+          <div class="pill">↻ RECOMPUTE</div>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="stop">
+          <h5>Stop 1 — Seraphim Station <span class="badge">DEPART</span></h5>
+          <div class="info">Load <b>5</b> · Unload <b>0</b></div>
+        </div>
+        <div class="stop">
+          <h5>Stop 2 — Ambitious Dream <span class="badge">ARRIVE</span></h5>
+          <div class="info">Load <b>6</b> · Unload <b>3</b></div>
+        </div>
+        <div class="stop">
+          <h5>Stop 3 — Beautiful Glen <span class="badge">UNLOAD</span></h5>
+          <div class="info">Load <b>0</b> · Unload <b>1</b></div>
+        </div>
+        <div class="stop warning">
+          <h5>Stop 4 — Shallow Fields <span class="badge">⚠ CONFLICT</span></h5>
+          <div class="info">Load <b>2</b> · Unload <b>1</b> · Group 1 deconfliction</div>
+        </div>
+        <div class="stop current">
+          <h5>Stop 5 — Yellow Core <span class="badge">LOAD · YOU ARE HERE</span></h5>
+          <div class="info">Load <b>4</b> · Unload <b>0</b></div>
+        </div>
+        <div class="stop">
+          <h5>Stop 6 — Everus Harbor <span class="badge">ARRIVE</span></h5>
+          <div class="info">Load <b>2</b> · Unload <b>0</b></div>
+        </div>
+        <div class="stop warning">
+          <h5>Stop 7 — Baijini Point <span class="badge">⚠ CONFLICT</span></h5>
+          <div class="info">Load <b>0</b> · Unload <b>5</b> · Groups 3/4/5 deconfliction</div>
+        </div>
+        <div class="stop">
+          <h5>Stop 8 — Wide Forest <span class="badge">LOAD</span></h5>
+          <div class="info">Load <b>4</b> · Unload <b>0</b></div>
+        </div>
+        <div class="stop">
+          <h5>Stop 14 — Seraphim Station <span class="badge">FINAL</span></h5>
+          <div class="info">Load <b>0</b> · Unload <b>11</b></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>
