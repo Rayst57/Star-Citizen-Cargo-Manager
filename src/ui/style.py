@@ -1,10 +1,16 @@
 """
 Loads theme/colors.json and produces the QSS stylesheet for the app.
 
-The current palette evokes Star Citizen's mobiglass UI: a deep
-near-black background, cyan accents reminiscent of holographic
-displays, amber for warnings and call-outs, and thin glowing borders
-on interactive surfaces.
+Mobiglass v2: a soft dark backdrop with translucent charcoal-blue
+panels (22 px rounded), pill-shaped "field" containers (14 px rounded)
+inside panels for high-contrast readable content, and bright cyan
+corner-taper accents (drawn by `MobiglassCornerOverlay`, not QSS,
+since stylesheets can't do radial alpha masks).
+
+Style anchors:
+    QWidget#mainPanel        — the three big columns (Contracts / Bay / Route)
+    QFrame#card              — content blocks inside panels (pill fields)
+    QLabel[heading=true]     — section headers with cyan glow
 """
 
 from __future__ import annotations
@@ -26,6 +32,9 @@ def load_colors() -> dict[str, str]:
 def build_qss(colors: dict[str, str]) -> str:
     bg     = colors["background"]
     surf   = colors.get("surface", bg)
+    field  = colors.get("field", surf)
+    field_strong = colors.get("field_strong", field)
+    header_strip = colors.get("header_strip", surf)
     pri    = colors["primary"]
     pri_on = colors["primary_on"]
     accent = colors["accent"]
@@ -35,11 +44,17 @@ def build_qss(colors: dict[str, str]) -> str:
     muted  = colors["text_muted"]
     border = colors.get("border", "#264a5c")
     amber  = colors.get("secondary_accent", "#ff8a3c")
+    danger = colors.get("danger", "#ff3030")
 
     return f"""
     /* ── Base ─────────────────────────────────────────────────── */
-    QMainWindow, QDialog, QWidget {{
+    QMainWindow, QDialog {{
         background-color: {bg};
+        color: {text};
+        font-family: 'Segoe UI', sans-serif;
+        font-size: 13px;
+    }}
+    QWidget {{
         color: {text};
         font-family: 'Segoe UI', sans-serif;
         font-size: 13px;
@@ -55,30 +70,54 @@ def build_qss(colors: dict[str, str]) -> str:
         font-size: 14px;
         font-weight: bold;
         color: {accent_bright};
-        letter-spacing: 0.5px;
+        letter-spacing: 1.5px;
+    }}
+
+    /* ── Main panels (Contracts / Bay / Route columns) ───────── */
+    /* The three columns are translucent charcoal-blue cards with
+       22 px rounded corners. The corner-taper cyan accents are
+       drawn by MobiglassCornerOverlay on top — they are NOT part
+       of this stylesheet. */
+    QWidget#mainPanel {{
+        background-color: {surf};
+        border-radius: 22px;
+    }}
+
+    /* ── Inner cards / fields (pill containers) ──────────────── */
+    /* The reference mockup calls these "fields" — contract rows,
+       stop cards, SCU summary, etc. They sit inside panels and
+       hold the actual readable content. */
+    QFrame#card {{
+        background-color: {field};
+        border: 1px solid rgba(91, 228, 255, 0.18);
+        border-radius: 14px;
+    }}
+    QFrame#card[conflict="true"] {{
+        background-color: rgba(60, 32, 14, 0.92);
+        border: 1px solid {amber};
     }}
 
     /* ── Buttons ─────────────────────────────────────────────── */
     QPushButton {{
-        background-color: transparent;
+        background-color: {field};
         color: {accent_bright};
-        border: 1px solid {accent};
-        border-radius: 2px;
+        border: 1px solid rgba(91, 228, 255, 0.4);
+        border-radius: 999px;
         padding: 6px 14px;
         font-weight: 500;
         letter-spacing: 0.4px;
     }}
     QPushButton:hover {{
-        background-color: {pri};
-        color: {pri_on};
+        background-color: {field_strong};
         border-color: {accent_bright};
+        color: {accent_bright};
     }}
     QPushButton:pressed {{
         background-color: {accent};
         color: {acc_on};
     }}
     QPushButton:disabled {{
-        background-color: transparent;
+        background-color: {field};
         color: {muted};
         border-color: {border};
     }}
@@ -93,17 +132,6 @@ def build_qss(colors: dict[str, str]) -> str:
         background: transparent;
     }}
 
-    /* ── Cards / panels ──────────────────────────────────────── */
-    QFrame#card {{
-        background-color: {surf};
-        border: 1px solid {border};
-        border-radius: 2px;
-    }}
-    QFrame#card[conflict="true"] {{
-        background-color: {surf};
-        border: 1px solid {amber};
-    }}
-
     /* ── Recompute banner ────────────────────────────────────── */
     QFrame#recompute_banner {{
         background-color: {bg};
@@ -116,21 +144,22 @@ def build_qss(colors: dict[str, str]) -> str:
     }}
 
     /* ── Inputs ──────────────────────────────────────────────── */
-    QComboBox, QLineEdit, QSpinBox, QDoubleSpinBox {{
-        background-color: {bg};
+    QComboBox, QLineEdit, QSpinBox, QDoubleSpinBox, QTextEdit, QPlainTextEdit {{
+        background-color: {field};
         color: {text};
-        border: 1px solid {border};
-        border-radius: 2px;
-        padding: 4px 8px;
+        border: 1px solid rgba(91, 228, 255, 0.18);
+        border-radius: 12px;
+        padding: 4px 10px;
         selection-background-color: {pri};
         selection-color: {pri_on};
     }}
-    QComboBox:focus, QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {{
+    QComboBox:focus, QLineEdit:focus, QSpinBox:focus,
+    QDoubleSpinBox:focus, QTextEdit:focus, QPlainTextEdit:focus {{
         border-color: {accent};
     }}
     QComboBox::drop-down {{
         border: none;
-        width: 16px;
+        width: 18px;
     }}
     QComboBox QAbstractItemView {{
         background-color: {surf};
@@ -138,6 +167,7 @@ def build_qss(colors: dict[str, str]) -> str:
         border: 1px solid {accent};
         selection-background-color: {pri};
         selection-color: {pri_on};
+        border-radius: 8px;
     }}
 
     QCheckBox {{
@@ -148,8 +178,8 @@ def build_qss(colors: dict[str, str]) -> str:
         width: 14px;
         height: 14px;
         border: 1px solid {border};
-        background: {bg};
-        border-radius: 1px;
+        background: {field_strong};
+        border-radius: 3px;
     }}
     QCheckBox::indicator:checked {{
         background: {accent};
@@ -159,9 +189,13 @@ def build_qss(colors: dict[str, str]) -> str:
     /* ── Scroll area / scrollbars ────────────────────────────── */
     QScrollArea {{
         border: none;
+        background: transparent;
+    }}
+    QScrollArea > QWidget > QWidget {{
+        background: transparent;
     }}
     QScrollBar:vertical {{
-        background: {bg};
+        background: transparent;
         width: 8px;
         margin: 0;
     }}
@@ -178,7 +212,7 @@ def build_qss(colors: dict[str, str]) -> str:
         height: 0;
     }}
     QScrollBar:horizontal {{
-        background: {bg};
+        background: transparent;
         height: 8px;
     }}
     QScrollBar::handle:horizontal {{
@@ -198,14 +232,17 @@ def build_qss(colors: dict[str, str]) -> str:
     QTabWidget::pane {{
         border: 1px solid {border};
         background: {surf};
+        border-radius: 14px;
     }}
     QTabBar::tab {{
-        background: {bg};
+        background: {field};
         color: {muted};
         border: 1px solid {border};
         border-bottom: none;
-        padding: 6px 14px;
+        padding: 6px 16px;
         margin-right: 2px;
+        border-top-left-radius: 10px;
+        border-top-right-radius: 10px;
     }}
     QTabBar::tab:selected {{
         color: {accent_bright};
@@ -223,6 +260,7 @@ def build_qss(colors: dict[str, str]) -> str:
         color: {accent_bright};
         border: 1px solid {accent};
         padding: 4px 8px;
+        border-radius: 6px;
     }}
     """
 

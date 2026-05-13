@@ -21,6 +21,7 @@ from .dialogs.zone_detail import ZoneDetailDialog
 from .panels.bay_canvas import BayCanvas
 from .panels.contracts_panel import ContractsPanel
 from .panels.route_panel import RoutePanel
+from .widgets.mobiglass_corners import MobiglassCornerOverlay
 from .widgets.recompute_banner import RecomputeBanner
 from .widgets.status_bar import StatusBarWidget
 
@@ -42,12 +43,23 @@ class MainWindow(QMainWindow):
         # Three-panel row
         panels = QWidget()
         panel_row = QHBoxLayout(panels)
-        panel_row.setContentsMargins(4, 4, 4, 4)
-        panel_row.setSpacing(4)
+        # Generous gutters so the soft dark backdrop reads through between
+        # the three translucent Mobiglass panels.
+        panel_row.setContentsMargins(10, 10, 10, 10)
+        panel_row.setSpacing(14)
 
         self.contracts_panel = ContractsPanel(controller)
         self.bay_canvas = BayCanvas(controller)
         self.route_panel = RoutePanel(controller)
+
+        # Mobiglass styling: object name drives the QSS rule for the
+        # translucent charcoal-blue panel background, and the overlay
+        # paints the cyan corner-taper accents on top. QWidget subclasses
+        # need WA_StyledBackground for the stylesheet background to paint.
+        for panel in (self.contracts_panel, self.bay_canvas, self.route_panel):
+            panel.setObjectName("mainPanel")
+            panel.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+            MobiglassCornerOverlay(panel)
 
         # The bay canvas has fixed-aspect content and stops growing past
         # ~460 px wide anyway. Side panels are mostly text and benefit
