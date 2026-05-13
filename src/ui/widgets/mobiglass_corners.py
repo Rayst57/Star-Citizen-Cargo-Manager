@@ -2,14 +2,13 @@
 MobiglassCornerOverlay — paints the four cyan corner-taper accents
 over a parent widget, matching the mockup at mockups/mobiglass-sketch.html.
 
-QSS can't do `mask-image: radial-gradient(...)`, so the taper is
-done in QPainter:
-
-    1. Render each corner as an L-shape stroke into a temporary
-       QPixmap.
-    2. Apply a radial alpha gradient with CompositionMode_DestinationIn
-       so the stroke is fully opaque near the corner and fades to
-       transparent further along each leg.
+QSS can't do `mask-image: radial-gradient(...)`, so the taper is done
+in QPainter. The trick: stroke each L-shape with a pen whose brush is
+a QRadialGradient centered on the corner anchor. The stroke is fully
+opaque close to the corner and fades to fully transparent further
+along each leg — same effect as the HTML mockup's radial mask, but
+without any compositing pass (which was producing aliased hard-ended
+strokes on the previous QPixmap-based implementation).
 
 The overlay sizes to its parent via an event filter and is set
 WA_TransparentForMouseEvents so it doesn't block clicks on the
@@ -24,7 +23,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QEvent, QObject, QRectF, Qt
 from PySide6.QtGui import (
-    QBrush, QColor, QPainter, QPainterPath, QPen, QPixmap, QRadialGradient,
+    QBrush, QColor, QPainter, QPainterPath, QPen, QRadialGradient,
 )
 from PySide6.QtWidgets import QWidget
 
@@ -62,105 +61,101 @@ class MobiglassCornerOverlay(QWidget):
     # ── painting ───────────────────────────────────────────────────────
 
     def paintEvent(self, _event) -> None:  # noqa: N802
-        # Each corner gets its own pre-rendered pixmap so the
-        # radial-gradient alpha mask works cleanly via DestinationIn.
         w, h = self.width(), self.height()
         if w < 4 or h < 4:
             return
 
         # Shrink the corner footprint for short containers (e.g. the
-        # top bar) so the fade completes within the container height
-        # instead of bleeding past — same trick the mockup pulls for
+        # top bar) so the fade completes within the container instead
+        # of bleeding past — same trick the mockup pulls for
         # `.topbar .corner`.
         max_dim = min(w, h)
         size = min(self.CORNER_SIZE, max_dim)
-        # Scale the fade thresholds in proportion to the corner size.
         scale = size / self.CORNER_SIZE
         solid_r = self.SOLID_RADIUS * scale
         fade_r = self.FADE_RADIUS * scale
         radius = min(self.CORNER_RADIUS, size / 2)
+        offset = self.STROKE_WIDTH / 2
 
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        for which in ("tl", "tr", "bl", "br"):
-            pix = self._render_corner(size, radius, solid_r, fade_r, which)
-            if which == "tl":
-                p.drawPixmap(0, 0, pix)
-            elif which == "tr":
-                p.drawPixmap(w - size, 0, pix)
-            elif which == "bl":
-                p.drawPixmap(0, h - size, pix)
-            else:
-                p.drawPixmap(w - size, h - size, pix)
-        p.end()
-
-    def _render_corner(
-        self,
-        size: int,
-        radius: float,
-        solid_r: float,
-        fade_r: float,
-        which: str,
-    ) -> QPixmap:
-        pix = QPixmap(size, size)
-        pix.fill(Qt.GlobalColor.transparent)
-        p = QPainter(pix)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-
-        # 1. Stroke the L-shape that hugs the rounded corner. Each
-        #    corner picks two legs + one quarter arc.
-        pen = QPen(self._color, self.STROKE_WIDTH, Qt.PenStyle.SolidLine,
-                   Qt.PenCapStyle.FlatCap, Qt.PenJoinStyle.MiterJoin)
-        p.setPen(pen)
         p.setBrush(Qt.BrushStyle.NoBrush)
 
-        path = QPainterPath()
-        offset = self.STROKE_WIDTH / 2     # so the stroke stays inside the pix
-        if which == "tl":
-            # leg down ←→ arc ←→ leg right
-            path.moveTo(offset, size)
-            path.lineTo(offset, radius)
-            path.arcTo(QRectF(offset, offset, 2 * radius, 2 * radius), 180, 90)
-            path.lineTo(size, offset)
-            grad_center = (0.0, 0.0)
-        elif which == "tr":
-            path.moveTo(0, offset)
-            path.lineTo(size - radius, offset)
-            path.arcTo(QRectF(size - 2 * radius - offset, offset,
-                              2 * radius, 2 * radius), 90, -90)
-            path.lineTo(size - offset, size)
-            grad_center = (float(size), 0.0)
-        elif which == "bl":
-            path.moveTo(offset, 0)
-            path.lineTo(offset, size - radius)
-            path.arcTo(QRectF(offset, size - 2 * radius - offset,
-                              2 * radius, 2 * radius), 180, -90)
-            path.lineTo(size, size - offset)
-            grad_center = (0.0, float(size))
-        else:   # br
-            path.moveTo(size, offset)
-            path.lineTo(size - radius, size - offset)
-            # easier as two lines + arc:
-            path = QPainterPath()
-            path.moveTo(size - offset, 0)
-            path.lineTo(size - offset, size - radius)
-            path.arcTo(QRectF(size - 2 * radius - offset,
-                              size - 2 * radius - offset,
-                              2 * radius, 2 * radius), 0, -90)
-            path.lineTo(0, size - offset)
-            grad_center = (float(size), float(size))
-        p.drawPath(path)
+        for cx, cy, path in (
+            (0.0,      0.0,      self._tl_path(size, radius, offset)),
+            (float(w), 0.0,      self._tr_path(w, size, radius, offset)),
+            (0.0,      float(h), self._bl_path(h, size, radius, offset)),
+            (float(w), float(h), self._br_path(w, h, size, radius, offset)),
+        ):
+            p.setPen(self._gradient_pen(cx, cy, solid_r, fade_r))
+            p.drawPath(path)
 
-        # 2. Apply a radial-gradient alpha mask so the stroke fades
-        #    out as it moves away from the corner. DestinationIn keeps
-        #    only the parts of what's already drawn where this gradient
-        #    has alpha.
-        p.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
-        grad = QRadialGradient(grad_center[0], grad_center[1], fade_r)
-        grad.setColorAt(0.0, QColor(0, 0, 0, 255))
-        grad.setColorAt(min(1.0, solid_r / fade_r), QColor(0, 0, 0, 255))
-        grad.setColorAt(1.0, QColor(0, 0, 0, 0))
-        p.fillRect(0, 0, size, size, QBrush(grad))
         p.end()
 
-        return pix
+    def _gradient_pen(
+        self,
+        cx: float,
+        cy: float,
+        solid_r: float,
+        fade_r: float,
+    ) -> QPen:
+        # Cyan close to the corner, alpha 0 by `fade_r` away — sampled
+        # per-pixel by the pen as it strokes the L-shape, so the line
+        # itself fades out naturally without any masking pass.
+        transparent = QColor(self._color)
+        transparent.setAlpha(0)
+        grad = QRadialGradient(cx, cy, fade_r)
+        grad.setColorAt(0.0, self._color)
+        grad.setColorAt(min(1.0, solid_r / fade_r), self._color)
+        grad.setColorAt(1.0, transparent)
+        return QPen(QBrush(grad), self.STROKE_WIDTH, Qt.PenStyle.SolidLine,
+                    Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+
+    # ── Corner paths (Qt angle convention: 0°=3 o'clock, +ve sweep=CCW) ──
+
+    def _tl_path(
+        self, size: float, radius: float, offset: float,
+    ) -> QPainterPath:
+        # Anchor at (0, 0). 9 o'clock → 12 o'clock, CW (sweep -90).
+        path = QPainterPath()
+        path.moveTo(offset, size)
+        path.lineTo(offset, radius + offset)
+        path.arcTo(QRectF(offset, offset, 2 * radius, 2 * radius), 180, -90)
+        path.lineTo(size, offset)
+        return path
+
+    def _tr_path(
+        self, w: int, size: float, radius: float, offset: float,
+    ) -> QPainterPath:
+        # Anchor at (w, 0). 12 o'clock → 3 o'clock, CW (sweep -90).
+        path = QPainterPath()
+        path.moveTo(w - size, offset)
+        path.lineTo(w - radius - offset, offset)
+        path.arcTo(QRectF(w - 2 * radius - offset, offset,
+                          2 * radius, 2 * radius), 90, -90)
+        path.lineTo(w - offset, size)
+        return path
+
+    def _bl_path(
+        self, h: int, size: float, radius: float, offset: float,
+    ) -> QPainterPath:
+        # Anchor at (0, h). 9 o'clock → 6 o'clock, CCW (sweep +90).
+        path = QPainterPath()
+        path.moveTo(offset, h - size)
+        path.lineTo(offset, h - radius - offset)
+        path.arcTo(QRectF(offset, h - 2 * radius - offset,
+                          2 * radius, 2 * radius), 180, 90)
+        path.lineTo(size, h - offset)
+        return path
+
+    def _br_path(
+        self, w: int, h: int, size: float, radius: float, offset: float,
+    ) -> QPainterPath:
+        # Anchor at (w, h). 3 o'clock → 6 o'clock, CW (sweep -90).
+        path = QPainterPath()
+        path.moveTo(w - offset, h - size)
+        path.lineTo(w - offset, h - radius - offset)
+        path.arcTo(QRectF(w - 2 * radius - offset, h - 2 * radius - offset,
+                          2 * radius, 2 * radius), 0, -90)
+        path.lineTo(w - size, h - offset)
+        return path
