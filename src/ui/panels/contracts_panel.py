@@ -26,8 +26,10 @@ class ContractsPanel(QWidget):
         self.setMinimumWidth(280)
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(6, 6, 6, 6)
-        root.setSpacing(6)
+        # Inset content past the 22 px rounded corners so headers and
+        # buttons don't poke into the cut-out area.
+        root.setContentsMargins(18, 22, 18, 18)
+        root.setSpacing(8)
 
         # Header
         header = QHBoxLayout()

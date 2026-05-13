@@ -111,12 +111,17 @@ def build_qss(colors: dict[str, str]) -> str:
     }}
 
     /* ── Buttons ─────────────────────────────────────────────── */
+    /* Pill buttons. Qt clamps border-radius to half the widget's
+       shorter dimension, so we set both an explicit min-height and a
+       border-radius equal to half of that height — guarantees a true
+       semicircular cap regardless of the contained text length. */
     QPushButton {{
         background-color: {field};
         color: {accent_bright};
         border: 1px solid rgba(91, 228, 255, 0.4);
-        border-radius: 999px;
-        padding: 6px 14px;
+        border-radius: 15px;
+        padding: 4px 18px;
+        min-height: 22px;
         font-weight: 500;
         letter-spacing: 0.4px;
     }}
