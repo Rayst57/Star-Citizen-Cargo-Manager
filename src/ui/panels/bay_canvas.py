@@ -648,8 +648,10 @@ class BayCanvas(QWidget):
         self.setMaximumWidth(560)
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(6, 6, 6, 6)
-        root.setSpacing(4)
+        # Inset past the 22 px rounded corners so the stop selector
+        # and zone strips don't poke into the cut-out area.
+        root.setContentsMargins(18, 22, 18, 18)
+        root.setSpacing(6)
 
         # Stop selector — the bay state changes at every stop (load /
         # unload), so the user picks which moment to inspect.

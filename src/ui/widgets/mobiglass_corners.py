@@ -66,9 +66,11 @@ class MobiglassCornerOverlay(QWidget):
             return
 
         # Shrink the corner footprint for short containers (e.g. the
-        # top bar) so the fade completes within the container instead
+        # topbar) so the fade completes within the container instead
         # of bleeding past — same trick the mockup pulls for
-        # `.topbar .corner`.
+        # `.topbar .corner`. The arc radius is kept at the panel's
+        # actual border-radius so the overlay's curve aligns with the
+        # rounded background.
         max_dim = min(w, h)
         size = min(self.CORNER_SIZE, max_dim)
         scale = size / self.CORNER_SIZE
@@ -79,6 +81,13 @@ class MobiglassCornerOverlay(QWidget):
 
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        # Clip everything to the parent's rounded silhouette so any
+        # stroke that drifts past the rounded corner gets cut off
+        # cleanly instead of trailing into the cut-out area.
+        clip = QPainterPath()
+        clip.addRoundedRect(QRectF(0, 0, w, h),
+                            self.CORNER_RADIUS, self.CORNER_RADIUS)
+        p.setClipPath(clip)
         p.setBrush(Qt.BrushStyle.NoBrush)
 
         for cx, cy, path in (
