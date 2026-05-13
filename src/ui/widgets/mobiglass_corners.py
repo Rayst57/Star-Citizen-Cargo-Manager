@@ -25,7 +25,7 @@ from PySide6.QtCore import QEvent, QObject, QRectF, Qt
 from PySide6.QtGui import (
     QBrush, QColor, QPainter, QPainterPath, QPen, QRadialGradient,
 )
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QApplication, QDialog, QWidget
 
 
 class MobiglassCornerOverlay(QWidget):
@@ -159,3 +159,25 @@ class MobiglassCornerOverlay(QWidget):
                           2 * radius, 2 * radius), 0, -90)
         path.lineTo(w - size, h - offset)
         return path
+
+
+class _DialogDecorator(QObject):
+    """App-wide event filter that installs a MobiglassCornerOverlay on
+    every QDialog the first time it's shown.
+
+    Beats sprinkling a one-liner into nine dialog __init__s, and picks
+    up future dialogs for free."""
+
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:  # noqa: N802
+        if event.type() == QEvent.Type.Show and isinstance(obj, QDialog):
+            if obj.findChild(MobiglassCornerOverlay) is None:
+                MobiglassCornerOverlay(obj)
+        return False
+
+
+def install_dialog_decorator(app: QApplication) -> _DialogDecorator:
+    """Wire up the app-wide auto-decorator. Returns the filter so the
+    caller can hold a strong reference (Qt won't keep it alive itself)."""
+    decorator = _DialogDecorator(app)
+    app.installEventFilter(decorator)
+    return decorator

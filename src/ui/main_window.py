@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QHBoxLayout, QMainWindow, QMessageBox, QStatusBar, QVBoxLayout, QWidget,
+    QHBoxLayout, QLabel, QMainWindow, QMessageBox, QStatusBar,
+    QVBoxLayout, QWidget,
 )
 
 from ..app_controller import AppController, ToolError
@@ -40,12 +41,24 @@ class MainWindow(QMainWindow):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
 
+        # Mobiglass content area (topbar + 3-panel row). The recompute
+        # banner and status bar sit OUTSIDE this margined region so they
+        # span the full window width.
+        content = QWidget()
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(10, 10, 10, 10)
+        content_layout.setSpacing(12)
+
+        # Topbar — Mobiglass-styled brand strip with its own corner taper.
+        self.topbar = self._build_topbar()
+        content_layout.addWidget(self.topbar)
+
         # Three-panel row
         panels = QWidget()
         panel_row = QHBoxLayout(panels)
-        # Generous gutters so the soft dark backdrop reads through between
-        # the three translucent Mobiglass panels.
-        panel_row.setContentsMargins(10, 10, 10, 10)
+        # Generous gutter between the three translucent panels so the
+        # soft dark backdrop reads through.
+        panel_row.setContentsMargins(0, 0, 0, 0)
         panel_row.setSpacing(14)
 
         self.contracts_panel = ContractsPanel(controller)
@@ -67,9 +80,12 @@ class MainWindow(QMainWindow):
         panel_row.addWidget(self.contracts_panel, 2)   # stretch=2
         panel_row.addWidget(self.bay_canvas, 0)        # stretch=0
         panel_row.addWidget(self.route_panel, 2)       # stretch=2
-        outer.addWidget(panels, 1)
+        content_layout.addWidget(panels, 1)
 
-        # Recompute banner (between panels and status bar)
+        outer.addWidget(content, 1)
+
+        # Recompute banner (between panels and status bar) — spans the
+        # full window width, outside the Mobiglass content gutter.
         self.banner = RecomputeBanner()
         outer.addWidget(self.banner)
 
@@ -122,6 +138,29 @@ class MainWindow(QMainWindow):
         self.controller.scu_usage.connect(self.status.set_scu)
         self.controller.mic_state_changed.connect(self.status.set_mic)
         self.controller.api_health_changed.connect(self.status.set_api_health)
+
+    # ── topbar ─────────────────────────────────────────────────────────
+
+    def _build_topbar(self) -> QWidget:
+        """Mobiglass title strip — brand on the left, corner-taper
+        accents on all four corners. Matches `.topbar` from the
+        HTML mockup."""
+        bar = QWidget()
+        bar.setObjectName("mainPanel")
+        bar.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        bar.setFixedHeight(48)
+
+        row = QHBoxLayout(bar)
+        row.setContentsMargins(22, 0, 22, 0)
+        row.setSpacing(18)
+
+        brand = QLabel("◆ STAR CITIZEN CARGO MANAGER")
+        brand.setProperty("brand", True)
+        row.addWidget(brand)
+        row.addStretch(1)
+
+        MobiglassCornerOverlay(bar)
+        return bar
 
     # ── handlers ───────────────────────────────────────────────────────
 
