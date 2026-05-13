@@ -137,61 +137,106 @@
     overflow: hidden;
   }
 
-  /* Bright corner accents — small L-shapes that hug the rounded
-     corners. The ONLY structural "border" on a panel. Selectors are
-     generic so the same accent works on the top bar as well. */
+  /* Corner accents — a smooth glowing curve at each rounded corner
+     that TAPERS to nothing as it travels along the edge. No L-bracket
+     ends, no caps. Each corner span draws a quarter-frame (two
+     legs + the corner curve) and a radial mask fades the legs as
+     they move away from the corner point. */
   .corner {
     position: absolute;
-    width: 34px;
-    height: 34px;
+    width: 90px;
+    height: 90px;
     pointer-events: none;
-    box-shadow: 0 0 8px rgba(91, 228, 255, 0.45);
   }
   .corner.tl {
     top: 0; left: 0;
     border-top: 3px solid var(--cyan-corner);
     border-left: 3px solid var(--cyan-corner);
     border-top-left-radius: var(--r-panel);
+    -webkit-mask-image: radial-gradient(
+      circle at top left,
+      #000 0,
+      #000 32px,
+      transparent 88px
+    );
+    mask-image: radial-gradient(
+      circle at top left,
+      #000 0,
+      #000 32px,
+      transparent 88px
+    );
   }
   .corner.tr {
     top: 0; right: 0;
     border-top: 3px solid var(--cyan-corner);
     border-right: 3px solid var(--cyan-corner);
     border-top-right-radius: var(--r-panel);
+    -webkit-mask-image: radial-gradient(
+      circle at top right,
+      #000 0,
+      #000 32px,
+      transparent 88px
+    );
+    mask-image: radial-gradient(
+      circle at top right,
+      #000 0,
+      #000 32px,
+      transparent 88px
+    );
   }
   .corner.bl {
     bottom: 0; left: 0;
     border-bottom: 3px solid var(--cyan-corner);
     border-left: 3px solid var(--cyan-corner);
     border-bottom-left-radius: var(--r-panel);
+    -webkit-mask-image: radial-gradient(
+      circle at bottom left,
+      #000 0,
+      #000 32px,
+      transparent 88px
+    );
+    mask-image: radial-gradient(
+      circle at bottom left,
+      #000 0,
+      #000 32px,
+      transparent 88px
+    );
   }
   .corner.br {
     bottom: 0; right: 0;
     border-bottom: 3px solid var(--cyan-corner);
     border-right: 3px solid var(--cyan-corner);
     border-bottom-right-radius: var(--r-panel);
+    -webkit-mask-image: radial-gradient(
+      circle at bottom right,
+      #000 0,
+      #000 32px,
+      transparent 88px
+    );
+    mask-image: radial-gradient(
+      circle at bottom right,
+      #000 0,
+      #000 32px,
+      transparent 88px
+    );
   }
-  /* End-caps ("tape" the open ends of each bracket leg). ::before
-     caps the horizontal-leg end, ::after caps the vertical-leg end. */
-  .corner.tl::before, .corner.tr::before,
-  .corner.bl::before, .corner.br::before,
-  .corner.tl::after,  .corner.tr::after,
-  .corner.bl::after,  .corner.br::after {
+  /* Soft cyan bloom emanating from the corner curve itself, sitting
+     just inside the mask so it survives the fade. */
+  .corner::before {
     content: "";
     position: absolute;
-    background: var(--cyan-corner);
-    box-shadow: 0 0 6px rgba(91, 228, 255, 0.5);
+    inset: 0;
+    background: radial-gradient(
+      circle at var(--cx, top left),
+      rgba(123, 239, 255, 0.35) 0,
+      rgba(123, 239, 255, 0.18) 14px,
+      transparent 36px
+    );
   }
-  /* Horizontal leg ends (tick is vertical). */
-  .corner.tl::before { top: -3px;  right:  -3px; width: 3px; height: 10px; }
-  .corner.tr::before { top: -3px;  left:   -3px; width: 3px; height: 10px; }
-  .corner.bl::before { bottom: -3px; right: -3px; width: 3px; height: 10px; }
-  .corner.br::before { bottom: -3px; left:  -3px; width: 3px; height: 10px; }
-  /* Vertical leg ends (tick is horizontal). */
-  .corner.tl::after  { bottom: -3px; left:  -3px; width: 10px; height: 3px; }
-  .corner.tr::after  { bottom: -3px; right: -3px; width: 10px; height: 3px; }
-  .corner.bl::after  { top: -3px;    left:  -3px; width: 10px; height: 3px; }
-  .corner.br::after  { top: -3px;    right: -3px; width: 10px; height: 3px; }
+  .corner.tl::before { --cx: top left; }
+  .corner.tr::before { --cx: top right; }
+  .corner.bl::before { --cx: bottom left; }
+  .corner.br::before { --cx: bottom right; }
 
   .panel-header {
     padding: 12px 18px;
