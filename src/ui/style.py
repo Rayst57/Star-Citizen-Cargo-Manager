@@ -77,6 +77,12 @@ def build_qss(colors: dict[str, str]) -> str:
         color: {accent_bright};
         letter-spacing: 1.5px;
     }}
+    QLabel[brand="true"] {{
+        color: {accent_bright};
+        font-weight: bold;
+        font-size: 14px;
+        letter-spacing: 2.5px;
+    }}
 
     /* ── Main panels (Contracts / Bay / Route columns) ───────── */
     /* Translucent charcoal-blue cards with 22 px rounded corners.

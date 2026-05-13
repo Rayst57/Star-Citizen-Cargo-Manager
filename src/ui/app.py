@@ -15,6 +15,7 @@ from ..app_controller import AppController
 from ..db.init_db import DEFAULT_DB_PATH, initialize_database
 from .main_window import MainWindow
 from .style import apply_stylesheet
+from .widgets.mobiglass_corners import install_dialog_decorator
 from .workday_screen import WorkdayScreen
 
 
@@ -29,6 +30,10 @@ def launch() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("Star Citizen Cargo Manager")
     apply_stylesheet(app)
+    # Auto-paint Mobiglass corner accents on every QDialog (workday
+    # picker, settings, paste contracts, etc.) so the theme is
+    # consistent across all windows.
+    _dialog_filter = install_dialog_decorator(app)  # noqa: F841 — kept alive
 
     db_path = _resolve_db_path()
     conn = initialize_database(db_path)
