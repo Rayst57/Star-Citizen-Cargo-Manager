@@ -2,35 +2,33 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Cargo Manager — Mobiglass Sketch v2</title>
+<title>Cargo Manager — Mobiglass Sketch v3</title>
 <style>
   :root {
-    /* Backdrop — what shows in the GAPS between windows.
-       Designed to read as ~50% transparent (atmospheric depth). */
-    --bg-deep:        #04080d;
-    --bg-window-tint: #0a1320;
+    /* Backdrop — soft and dark; just barely there. */
+    --bg-deep:        #02050a;
+    --bg-window-tint: #060a12;
 
-    /* Window/panel base — charcoal blue. */
-    --panel:          #181b23;
-    --panel-soft:     rgba(24, 27, 35, 0.82);
+    /* Panel — charcoal blue, more translucent now. */
+    --panel:          rgba(24, 27, 35, 0.62);
 
-    /* Inside panels: text fields get their own pill at ~95% opacity. */
+    /* Inside panels: text fields still ~95% opacity for readability. */
     --field:          rgba(20, 22, 30, 0.95);
     --field-strong:   rgba(14, 16, 22, 0.96);
 
-    --header-strip:   rgba(36, 48, 66, 0.85);
+    --header-strip:   rgba(36, 48, 66, 0.65);
 
     --cyan:           #5be4ff;
     --cyan-dim:       #26b6d4;
-    --cyan-glow:      rgba(91, 228, 255, 0.42);
+    --cyan-corner:    #7befff;             /* slightly brighter for corners */
     --orange:         #ff8a3c;
     --green:          #7bbf3f;
     --red:            #ff3030;
     --text:           #cfe7f5;
     --text-mute:      #7e96a8;
 
-    --r-panel: 22px;     /* outer panel rounding (~5 char widths) */
-    --r-field: 14px;     /* inner pill / text-field rounding */
+    --r-panel: 22px;
+    --r-field: 14px;
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -43,13 +41,11 @@
     overflow: hidden;
   }
 
-  /* Body background — this is what shows in the gap BETWEEN panels.
-     Layered radial + linear gradients create the "looking through
-     a window into space" depth, plus a faint scanline texture. */
+  /* Body background — DARKER and SOFTER. Just a hint of depth, no
+     bright radial blooms. */
   body {
     background:
-      radial-gradient(circle at 25% 18%, rgba(40, 70, 100, 0.22) 0%, transparent 45%),
-      radial-gradient(circle at 80% 90%, rgba(60, 30, 90, 0.18) 0%, transparent 40%),
+      radial-gradient(circle at 30% 25%, rgba(20, 32, 48, 0.35) 0%, transparent 55%),
       linear-gradient(to bottom right, var(--bg-window-tint), var(--bg-deep));
   }
   body::before {
@@ -60,9 +56,9 @@
       repeating-linear-gradient(
         to bottom,
         transparent 0,
-        transparent 2px,
-        rgba(91, 228, 255, 0.025) 2px,
-        rgba(91, 228, 255, 0.025) 3px
+        transparent 3px,
+        rgba(91, 228, 255, 0.012) 3px,
+        rgba(91, 228, 255, 0.012) 4px
       );
     pointer-events: none;
     z-index: 1;
@@ -74,28 +70,28 @@
     display: grid;
     grid-template-rows: 52px 1fr;
     height: 100%;
-    padding: 12px;
-    gap: 14px;
+    padding: 14px;
+    gap: 18px;
   }
 
   /* ── Top bar ──────────────────────────────────────────────── */
   .topbar {
+    position: relative;
     display: flex;
     align-items: center;
     gap: 18px;
     padding: 0 22px;
-    background: var(--panel-soft);
-    border: 1px solid rgba(91, 228, 255, 0.35);
+    background: var(--panel);
     border-radius: var(--r-panel);
-    box-shadow: 0 0 22px var(--cyan-glow), inset 0 0 30px rgba(91, 228, 255, 0.04);
-    backdrop-filter: blur(6px);     /* simulated; chrome only */
+    /* No border around the full bar, just a soft dark drop shadow. */
+    box-shadow: 0 6px 22px rgba(0, 0, 0, 0.55);
   }
   .topbar .brand {
     color: var(--cyan);
     font-weight: 700;
     letter-spacing: 2.5px;
     font-size: 14px;
-    text-shadow: 0 0 8px var(--cyan-glow);
+    text-shadow: 0 0 8px rgba(91, 228, 255, 0.35);
   }
   .topbar .crumb {
     color: var(--text-mute);
@@ -108,7 +104,6 @@
   .topbar .grow { flex: 1; }
   .topbar .btn {
     color: var(--cyan);
-    border: 1px solid rgba(91, 228, 255, 0.4);
     background: var(--field);
     padding: 7px 16px;
     border-radius: 999px;
@@ -117,51 +112,88 @@
     cursor: pointer;
   }
   .topbar .btn:hover {
-    box-shadow: 0 0 12px var(--cyan-glow);
-    border-color: var(--cyan);
+    box-shadow: 0 0 10px rgba(91, 228, 255, 0.4);
   }
 
-  /* ── Main 3-column layout. Wider gaps so the "transparent
-        between" body background is more visible. ───────────── */
+  /* ── Main 3-column layout. ───────────────────────────────── */
   .main {
     display: grid;
     grid-template-columns: 320px 1fr 340px;
-    gap: 18px;       /* the breathing room — body bg shows here */
+    gap: 18px;
     overflow: hidden;
   }
 
-  /* ── Panel skeleton — a rounded charcoal-blue card. ─────── */
+  /* ── Panel — translucent charcoal card. ─────────────────── */
   .panel {
     position: relative;
-    background: var(--panel-soft);
-    border: 1px solid rgba(91, 228, 255, 0.35);
+    background: var(--panel);
     border-radius: var(--r-panel);
+    /* NO full border. Soft dark shadow only — no cyan glow. */
     box-shadow:
-      0 0 24px var(--cyan-glow),
-      0 8px 28px rgba(0, 0, 0, 0.55),
-      inset 0 0 30px rgba(91, 228, 255, 0.03);
+      0 8px 24px rgba(0, 0, 0, 0.6),
+      inset 0 0 32px rgba(0, 0, 0, 0.25);
     display: flex;
     flex-direction: column;
     overflow: hidden;
   }
 
+  /* Bright corner accents — small L-shapes that hug the panel's
+     rounded corners. The ONLY structural "border" on a panel. */
+  .panel .corner {
+    position: absolute;
+    width: 26px;
+    height: 26px;
+    pointer-events: none;
+    box-shadow: 0 0 10px rgba(91, 228, 255, 0.45);
+  }
+  .panel .corner.tl {
+    top: 0; left: 0;
+    border-top: 2px solid var(--cyan-corner);
+    border-left: 2px solid var(--cyan-corner);
+    border-top-left-radius: var(--r-panel);
+  }
+  .panel .corner.tr {
+    top: 0; right: 0;
+    border-top: 2px solid var(--cyan-corner);
+    border-right: 2px solid var(--cyan-corner);
+    border-top-right-radius: var(--r-panel);
+  }
+  .panel .corner.bl {
+    bottom: 0; left: 0;
+    border-bottom: 2px solid var(--cyan-corner);
+    border-left: 2px solid var(--cyan-corner);
+    border-bottom-left-radius: var(--r-panel);
+  }
+  .panel .corner.br {
+    bottom: 0; right: 0;
+    border-bottom: 2px solid var(--cyan-corner);
+    border-right: 2px solid var(--cyan-corner);
+    border-bottom-right-radius: var(--r-panel);
+  }
+
   .panel-header {
     padding: 12px 18px;
     background: linear-gradient(to bottom,
-      var(--header-strip), rgba(28, 38, 52, 0.45));
-    border-bottom: 1px solid rgba(91, 228, 255, 0.25);
+      var(--header-strip), transparent);
     display: flex;
     align-items: center;
     gap: 10px;
     font-weight: 700;
     letter-spacing: 2.5px;
     color: var(--cyan);
-    text-shadow: 0 0 8px var(--cyan-glow);
+    text-shadow: 0 0 6px rgba(91, 228, 255, 0.3);
+    /* Soft separator line, no hard border. */
+    background-image:
+      linear-gradient(to bottom, var(--header-strip), transparent),
+      linear-gradient(to right, transparent, rgba(91, 228, 255, 0.25) 12%,
+                     rgba(91, 228, 255, 0.25) 88%, transparent);
+    background-size: 100% 100%, 100% 1px;
+    background-position: top, bottom;
+    background-repeat: no-repeat;
   }
   .panel-header .icon {
     width: 22px; height: 22px;
     border-radius: 6px;
-    border: 1px solid rgba(91, 228, 255, 0.5);
     background: var(--field);
     display: grid; place-items: center;
     color: var(--cyan);
@@ -172,33 +204,28 @@
     display: flex;
     gap: 6px;
   }
-  /* Small rounded arrow-button motif (matches the reference image). */
   .panel-header .corner-btn {
     width: 28px; height: 28px;
     border-radius: 8px;
-    border: 1px solid rgba(91, 228, 255, 0.5);
     background: var(--field);
     color: var(--cyan);
     display: grid; place-items: center;
     cursor: pointer;
   }
   .panel-header .corner-btn:hover {
-    border-color: var(--cyan);
-    box-shadow: 0 0 10px var(--cyan-glow);
+    box-shadow: 0 0 8px rgba(91, 228, 255, 0.4);
   }
   .panel-header .pill {
     font-size: 11px;
     letter-spacing: 1px;
     color: var(--cyan);
     background: var(--field);
-    border: 1px solid rgba(91, 228, 255, 0.4);
     padding: 5px 12px;
     border-radius: 999px;
     cursor: pointer;
   }
   .panel-header .pill:hover {
-    border-color: var(--cyan);
-    box-shadow: 0 0 10px var(--cyan-glow);
+    box-shadow: 0 0 8px rgba(91, 228, 255, 0.4);
   }
 
   .panel-body {
@@ -210,8 +237,8 @@
     gap: 10px;
   }
 
-  /* ── Inner "field" pills — high-contrast rounded blocks
-        for actual readable content. ~95% opacity. ─────────── */
+  /* ── Inner "field" pills — kept as-is, this is the readable
+        content layer. ────────────────────────────────────── */
   .field {
     background: var(--field);
     border: 1px solid rgba(91, 228, 255, 0.18);
@@ -230,10 +257,9 @@
   }
   .field.current {
     border-color: var(--cyan);
-    box-shadow: 0 0 14px var(--cyan-glow);
+    box-shadow: 0 0 14px rgba(91, 228, 255, 0.4);
   }
 
-  /* Contract row content */
   .field h4 {
     font-size: 12px;
     color: var(--cyan);
@@ -260,7 +286,6 @@
     margin: 4px 0 0;
     height: 6px;
     background: rgba(91, 228, 255, 0.08);
-    border: 1px solid rgba(91, 228, 255, 0.2);
     border-radius: 999px;
     overflow: hidden;
   }
@@ -268,7 +293,6 @@
     height: 100%;
     background: linear-gradient(90deg, var(--cyan-dim), var(--cyan));
     width: 68%;
-    box-shadow: 0 0 10px var(--cyan-glow);
   }
   .scu-text {
     text-align: center;
@@ -303,10 +327,8 @@
     display: grid;
     gap: 2px;
     background: var(--field-strong);
-    border: 1px solid rgba(91, 228, 255, 0.35);
     padding: 4px;
     border-radius: 12px;
-    box-shadow: inset 0 0 20px rgba(91, 228, 255, 0.06);
   }
   .bay.f .bay-grid {
     grid-template-columns: repeat(3, 30px);
@@ -327,17 +349,14 @@
   }
   .bay.f .bay-labels { grid-template-columns: repeat(3, 30px); }
   .bay.r .bay-labels { grid-template-columns: repeat(4, 30px); }
-  .bay-labels span {
-    text-align: center;
-    padding: 4px 0;
-  }
+  .bay-labels span { text-align: center; padding: 4px 0; }
 
   .cell { border-radius: 2px; position: relative; }
-  .cell.empty { background: rgba(38, 74, 92, 0.18); border: 1px dashed rgba(91, 228, 255, 0.15); }
-  .cell.amb    { background: rgba(255, 138, 60, 0.85); box-shadow: 0 0 8px rgba(255, 138, 60, 0.4); }
-  .cell.baij   { background: rgba(229, 90, 92, 0.85);  box-shadow: 0 0 8px rgba(229, 90, 92, 0.35); }
-  .cell.seraph { background: rgba(255, 196, 76, 0.88); box-shadow: 0 0 8px rgba(255, 196, 76, 0.35); }
-  .cell.everus { background: rgba(170, 92, 226, 0.85); box-shadow: 0 0 8px rgba(170, 92, 226, 0.35); }
+  .cell.empty { background: rgba(38, 74, 92, 0.18); }
+  .cell.amb    { background: rgba(255, 138, 60, 0.85); box-shadow: 0 0 6px rgba(255, 138, 60, 0.3); }
+  .cell.baij   { background: rgba(229, 90, 92, 0.85);  box-shadow: 0 0 6px rgba(229, 90, 92, 0.25); }
+  .cell.seraph { background: rgba(255, 196, 76, 0.88); box-shadow: 0 0 6px rgba(255, 196, 76, 0.25); }
+  .cell.everus { background: rgba(170, 92, 226, 0.85); box-shadow: 0 0 6px rgba(170, 92, 226, 0.25); }
   .cell.bg     { background: rgba(96, 197, 232, 0.85); }
   .cell.sf     { background: rgba(123, 191, 63, 0.85); }
   .cell.pt     { background: rgba(207, 113, 174, 0.85); }
@@ -356,7 +375,7 @@
     border-radius: 2px;
   }
 
-  /* ── Route stop cards (using the pill-field style) ──────── */
+  /* ── Route stop cards ─────────────────────────────────────── */
   .field h5 {
     color: var(--cyan);
     font-size: 12px;
@@ -393,7 +412,7 @@
   }
   .field .info b { color: var(--text); font-weight: 500; }
 
-  /* Color legend strip */
+  /* ── Color legend strip ───────────────────────────────────── */
   .legend {
     display: flex;
     flex-wrap: wrap;
@@ -401,7 +420,6 @@
     padding: 10px 16px;
     margin: 0 14px 14px;
     background: var(--field);
-    border: 1px solid rgba(91, 228, 255, 0.18);
     border-radius: var(--r-field);
     font-size: 10px;
     letter-spacing: 1px;
@@ -427,11 +445,9 @@
     color: #142028;
   }
 
-  /* SCU summary footer inside contracts panel */
   .scu-summary {
     margin: 0 14px 14px;
     background: var(--field);
-    border: 1px solid rgba(91, 228, 255, 0.18);
     border-radius: var(--r-field);
     padding: 12px 16px;
   }
@@ -448,6 +464,10 @@
     <div class="btn">↻  RECOMPUTE</div>
     <div class="btn">LEGEND</div>
     <div class="btn">SETTINGS</div>
+    <span class="corner tl"></span>
+    <span class="corner tr"></span>
+    <span class="corner bl"></span>
+    <span class="corner br"></span>
   </div>
 
   <!-- Three columns -->
@@ -455,6 +475,10 @@
 
     <!-- Contracts panel -->
     <div class="panel">
+      <span class="corner tl"></span>
+      <span class="corner tr"></span>
+      <span class="corner bl"></span>
+      <span class="corner br"></span>
       <div class="panel-header">
         <div class="icon">📋</div>
         CONTRACTS
@@ -500,6 +524,10 @@
 
     <!-- Bay panel -->
     <div class="panel">
+      <span class="corner tl"></span>
+      <span class="corner tr"></span>
+      <span class="corner bl"></span>
+      <span class="corner br"></span>
       <div class="panel-header">
         <div class="icon">🛰</div>
         BAY STATE
@@ -511,7 +539,6 @@
       </div>
       <div class="panel-body" style="padding-bottom: 0;">
         <div class="bay-wrap">
-          <!-- F-bay (nose ramp at top) -->
           <div class="bay f">
             <div class="ramp">▲ nose ramp</div>
             <div class="bay-grid">
@@ -528,7 +555,6 @@
             <div class="bay-labels"><span>F1</span><span>F2</span><span>F3</span></div>
           </div>
 
-          <!-- R-bay (rear ramp at bottom) -->
           <div class="bay r">
             <div class="bay-labels"><span>R1</span><span>R2</span><span>R3</span><span>R4</span></div>
             <div class="bay-grid">
@@ -566,6 +592,10 @@
 
     <!-- Route panel -->
     <div class="panel">
+      <span class="corner tl"></span>
+      <span class="corner tr"></span>
+      <span class="corner bl"></span>
+      <span class="corner br"></span>
       <div class="panel-header">
         <div class="icon">⏱</div>
         ROUTE
