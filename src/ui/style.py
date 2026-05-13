@@ -48,8 +48,13 @@ def build_qss(colors: dict[str, str]) -> str:
 
     return f"""
     /* ── Base ─────────────────────────────────────────────────── */
+    /* Soft dark linear gradient backdrop; panels paint with rgba()
+       over this so the gradient reads through and gives the
+       "translucent over a holographic surface" Mobiglass feel. */
     QMainWindow, QDialog {{
-        background-color: {bg};
+        background: qlineargradient(
+            x1:0, y1:0, x2:1, y2:1,
+            stop:0 #060a12, stop:1 #02050a);
         color: {text};
         font-family: 'Segoe UI', sans-serif;
         font-size: 13px;
@@ -74,12 +79,14 @@ def build_qss(colors: dict[str, str]) -> str:
     }}
 
     /* ── Main panels (Contracts / Bay / Route columns) ───────── */
-    /* The three columns are translucent charcoal-blue cards with
-       22 px rounded corners. The corner-taper cyan accents are
+    /* Translucent charcoal-blue cards with 22 px rounded corners.
+       Alpha 158/255 ≈ 0.62 — matches the HTML mockup's
+       rgba(24, 27, 35, 0.62), so the soft dark backdrop reads
+       through between panels. The corner-taper cyan accents are
        drawn by MobiglassCornerOverlay on top — they are NOT part
        of this stylesheet. */
     QWidget#mainPanel {{
-        background-color: {surf};
+        background-color: rgba(24, 27, 35, 158);
         border-radius: 22px;
     }}
 
