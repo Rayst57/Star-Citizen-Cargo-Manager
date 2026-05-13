@@ -137,39 +137,61 @@
     overflow: hidden;
   }
 
-  /* Bright corner accents — small L-shapes that hug the panel's
-     rounded corners. The ONLY structural "border" on a panel. */
-  .panel .corner {
+  /* Bright corner accents — small L-shapes that hug the rounded
+     corners. The ONLY structural "border" on a panel. Selectors are
+     generic so the same accent works on the top bar as well. */
+  .corner {
     position: absolute;
-    width: 26px;
-    height: 26px;
+    width: 34px;
+    height: 34px;
     pointer-events: none;
-    box-shadow: 0 0 10px rgba(91, 228, 255, 0.45);
+    box-shadow: 0 0 8px rgba(91, 228, 255, 0.45);
   }
-  .panel .corner.tl {
+  .corner.tl {
     top: 0; left: 0;
-    border-top: 2px solid var(--cyan-corner);
-    border-left: 2px solid var(--cyan-corner);
+    border-top: 3px solid var(--cyan-corner);
+    border-left: 3px solid var(--cyan-corner);
     border-top-left-radius: var(--r-panel);
   }
-  .panel .corner.tr {
+  .corner.tr {
     top: 0; right: 0;
-    border-top: 2px solid var(--cyan-corner);
-    border-right: 2px solid var(--cyan-corner);
+    border-top: 3px solid var(--cyan-corner);
+    border-right: 3px solid var(--cyan-corner);
     border-top-right-radius: var(--r-panel);
   }
-  .panel .corner.bl {
+  .corner.bl {
     bottom: 0; left: 0;
-    border-bottom: 2px solid var(--cyan-corner);
-    border-left: 2px solid var(--cyan-corner);
+    border-bottom: 3px solid var(--cyan-corner);
+    border-left: 3px solid var(--cyan-corner);
     border-bottom-left-radius: var(--r-panel);
   }
-  .panel .corner.br {
+  .corner.br {
     bottom: 0; right: 0;
-    border-bottom: 2px solid var(--cyan-corner);
-    border-right: 2px solid var(--cyan-corner);
+    border-bottom: 3px solid var(--cyan-corner);
+    border-right: 3px solid var(--cyan-corner);
     border-bottom-right-radius: var(--r-panel);
   }
+  /* End-caps ("tape" the open ends of each bracket leg). ::before
+     caps the horizontal-leg end, ::after caps the vertical-leg end. */
+  .corner.tl::before, .corner.tr::before,
+  .corner.bl::before, .corner.br::before,
+  .corner.tl::after,  .corner.tr::after,
+  .corner.bl::after,  .corner.br::after {
+    content: "";
+    position: absolute;
+    background: var(--cyan-corner);
+    box-shadow: 0 0 6px rgba(91, 228, 255, 0.5);
+  }
+  /* Horizontal leg ends (tick is vertical). */
+  .corner.tl::before { top: -3px;  right:  -3px; width: 3px; height: 10px; }
+  .corner.tr::before { top: -3px;  left:   -3px; width: 3px; height: 10px; }
+  .corner.bl::before { bottom: -3px; right: -3px; width: 3px; height: 10px; }
+  .corner.br::before { bottom: -3px; left:  -3px; width: 3px; height: 10px; }
+  /* Vertical leg ends (tick is horizontal). */
+  .corner.tl::after  { bottom: -3px; left:  -3px; width: 10px; height: 3px; }
+  .corner.tr::after  { bottom: -3px; right: -3px; width: 10px; height: 3px; }
+  .corner.bl::after  { top: -3px;    left:  -3px; width: 10px; height: 3px; }
+  .corner.br::after  { top: -3px;    right: -3px; width: 10px; height: 3px; }
 
   .panel-header {
     padding: 12px 18px;
@@ -485,7 +507,6 @@
         <div class="actions">
           <div class="pill">+ ADD</div>
           <div class="pill">PASTE</div>
-          <div class="corner-btn">↗</div>
         </div>
       </div>
       <div class="panel-body">
@@ -534,7 +555,6 @@
         <div class="actions">
           <div class="pill">▾ DEPARTURE 5: Yellow Core</div>
           <div class="pill">DETAILED PLAN</div>
-          <div class="corner-btn">↗</div>
         </div>
       </div>
       <div class="panel-body" style="padding-bottom: 0;">
@@ -601,7 +621,6 @@
         ROUTE
         <div class="actions">
           <div class="pill">↻ RECOMPUTE</div>
-          <div class="corner-btn">↗</div>
         </div>
       </div>
       <div class="panel-body">
