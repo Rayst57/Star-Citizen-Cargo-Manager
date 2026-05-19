@@ -2682,6 +2682,15 @@
     {
       "system": "Stanton",
       "name": "Riker Memorial Spaceport",
+      "parent_body": "ArcCorp",
+      "station_type": "spaceport",
+      "is_gateway": 0,
+      "sort_order": 10015,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Teasa Spaceport",
       "parent_body": "Hurston",
       "station_type": "spaceport",
       "is_gateway": 0,
@@ -2690,20 +2699,11 @@
     },
     {
       "system": "Stanton",
-      "name": "Teasa Spaceport",
+      "name": "August Dunlow Spaceport",
       "parent_body": "Crusader",
       "station_type": "spaceport",
       "is_gateway": 0,
       "sort_order": 6015,
-      "aliases": []
-    },
-    {
-      "system": "Stanton",
-      "name": "August Dunlow Spaceport",
-      "parent_body": "ArcCorp",
-      "station_type": "spaceport",
-      "is_gateway": 0,
-      "sort_order": 10015,
       "aliases": []
     },
     {
