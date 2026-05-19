@@ -1,0 +1,24 @@
+{
+  "_meta": {
+    "purpose": "MISC Starlancer MAX ship + zone definitions.",
+    "axis_convention": "Width = port-to-starboard (X). Length = ramp-end to forward (Y). Height = floor up (Z). All units are 1.25 m cubes; scu_capacity = width x length x height.",
+    "ramp_note": "The Starlancer MAX loads via the rear; both bays use ramp_side='low_y' with ship_forward_y='high' so the rear/entry end renders at the bottom of the diagram.",
+    "adjacency_note": "left_zone_label / right_zone_label list zones that are physically open to each other so a wide load can span them. No zones on the Starlancer MAX connect laterally — every column is walled/walkway-separated — so all adjacency fields are null.",
+    "layout_note": "Forward bay = two columns F1/F2 (2 x 16 x 2 = 64 SCU each). Rear bay = side columns R1/R2 (2 x 8 x 3 = 48 SCU each) flanking the central Rear Bulk zone RB (2 x 8 x 2 = 32 SCU).",
+    "rb_note": "RB (Rear Bulk) is the vehicle-bay floor used for bulk cargo. It is given the HIGHEST unload_priority so the planner only fills it as a last-ditch overflow zone, after F1/F2/R1/R2.",
+    "totals": "Ship total = F1 64 + F2 64 + R1 48 + R2 48 + RB 32 = 256 SCU."
+  },
+  "ship": {
+    "name": "Starlancer MAX",
+    "manufacturer": "MISC",
+    "total_scu": 256,
+    "is_active": 1
+  },
+  "zones": [
+    { "zone_label": "F1", "bay_label": "forward", "width_units": 2, "length_units": 16, "height_units": 2, "cube_offset_x": 0, "cube_offset_y": 0, "scu_capacity": 64, "load_order": 1, "unload_priority": 3, "left_zone_label": null, "right_zone_label": null, "ramp_side": "low_y", "ship_forward_y": "high", "notes": "Forward bay, port column. 2 x 16 x 2 = 64 SCU." },
+    { "zone_label": "F2", "bay_label": "forward", "width_units": 2, "length_units": 16, "height_units": 2, "cube_offset_x": 2, "cube_offset_y": 0, "scu_capacity": 64, "load_order": 2, "unload_priority": 4, "left_zone_label": null, "right_zone_label": null, "ramp_side": "low_y", "ship_forward_y": "high", "notes": "Forward bay, starboard column. 2 x 16 x 2 = 64 SCU." },
+    { "zone_label": "R1", "bay_label": "rear", "width_units": 2, "length_units": 8, "height_units": 3, "cube_offset_x": 0, "cube_offset_y": 0, "scu_capacity": 48, "load_order": 3, "unload_priority": 1, "left_zone_label": null, "right_zone_label": null, "ramp_side": "low_y", "ship_forward_y": "high", "notes": "Rear bay, port column. 2 x 8 x 3 = 48 SCU." },
+    { "zone_label": "RB", "bay_label": "rear", "width_units": 2, "length_units": 8, "height_units": 2, "cube_offset_x": 2, "cube_offset_y": 0, "scu_capacity": 32, "load_order": 4, "unload_priority": 5, "left_zone_label": null, "right_zone_label": null, "ramp_side": "low_y", "ship_forward_y": "high", "notes": "Rear Bulk — vehicle-bay floor used for bulk cargo. 2 x 8 x 2 = 32 SCU. Highest unload_priority so the planner treats it as a last-ditch overflow zone." },
+    { "zone_label": "R2", "bay_label": "rear", "width_units": 2, "length_units": 8, "height_units": 3, "cube_offset_x": 4, "cube_offset_y": 0, "scu_capacity": 48, "load_order": 5, "unload_priority": 2, "left_zone_label": null, "right_zone_label": null, "ramp_side": "low_y", "ship_forward_y": "high", "notes": "Rear bay, starboard column. 2 x 8 x 3 = 48 SCU." }
+  ]
+}

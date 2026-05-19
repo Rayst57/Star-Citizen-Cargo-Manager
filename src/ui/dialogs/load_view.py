@@ -47,6 +47,7 @@ class LoadViewModal(QDialog):
 
         # Read-only bay viewport
         self.viewport = BayCanvasViewport(controller, interactive=False)
+        self.viewport.set_bay_layout(controller.get_bay_layout())
         root.addWidget(self.viewport, 1)
 
         # Navigation

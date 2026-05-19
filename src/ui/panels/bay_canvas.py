@@ -1,21 +1,27 @@
 """
-BayCanvas — top-down C2 Hercules visualization (zone-strip overview).
+BayCanvas — top-down cargo-bay visualization (zone-strip overview).
 
-The main window uses a zone-strip rendering: each F1/F2/F3 and R1-R4
-column shows the destination color (dominant) for the cargo it carries,
-with an SCU progress fill indicating how full it is. Mixed-destination
-zones flash with two-tone diagonal stripes until the user clicks the
-zone — the click opens a `ZoneDetailDialog` showing the granular
-top-down + side view of that single zone.
+The main window uses a zone-strip rendering: each zone column shows the
+destination color (dominant) for the cargo it carries, with an SCU
+progress fill indicating how full it is. Mixed-destination zones flash
+with two-tone diagonal stripes until the user clicks the zone — the
+click opens a `ZoneDetailDialog` showing the granular top-down + side
+view of that single zone.
 
 LoadViewModal (per-stop modal) keeps the original individual-pallet
 rendering — see `BayCanvasViewport` in this module which is also used
 there with `interactive=False`.
 
+Bay layout is fully data-driven: the controller hands over a list of
+`BayLayout` objects (one per cargo bay) describing each bay's cell
+dimensions, zone columns, and ramp position. This lets the canvas draw
+any ship — a two-bay C2 Hercules or a single-bay Starlancer MAX — with
+no hardcoded geometry.
+
 Rendering convention: rear-view, top-down — ship-forward is always at
-the TOP of the screen, mirroring standard aircraft diagrams. For each
-bay, ZoneStrip / PalletRect carry a `ship_forward_y` field telling us
-which local-Y direction points toward the ship's nose:
+the TOP of the screen, mirroring standard aircraft diagrams. Each bay's
+`ship_forward_y` field tells us which local-Y direction points toward
+the ship's nose:
   'high' → high local-Y is forward → render normally (Y=0 at the
             bottom of the bay rectangle, matching the C2 R-bay).
   'low'  → low local-Y is forward → render flipped (Y=0 at the top of
@@ -34,12 +40,6 @@ from PySide6.QtWidgets import (
     QComboBox, QHBoxLayout, QLabel, QPushButton, QSizePolicy,
     QVBoxLayout, QWidget,
 )
-
-
-# Forward bay: 6 cells wide × 9 cells deep
-# Rear bay:    8 cells wide × 15 cells deep
-FORWARD_W, FORWARD_L = 6, 9
-REAR_W, REAR_L = 8, 15
 
 
 def _local_y_to_screen_y(
@@ -63,6 +63,46 @@ def _local_y_to_screen_y(
     return bay_top_y + local_y * cell_px
 
 
+def _compute_bay_layout(
+    widget_w: int, widget_h: int, bays: list,
+) -> tuple[int, dict[str, QPoint]]:
+    """Lay the ship's bays out left-to-right, centered in the widget.
+
+    Returns the chosen cell size in pixels and a {bay_label: origin}
+    map. Shared by both viewports so the per-pallet and zone-strip
+    views always agree on geometry.
+    """
+    margin = 16
+    gap = 30
+    label_height = 42      # gap above the bay so zone labels never
+                           # collide with the bay outline
+    ramp_height = 22
+    if not bays:
+        return 14, {}
+
+    n = len(bays)
+    avail_w = max(0, widget_w - 2 * margin - gap * (n - 1))
+    avail_h = max(0, widget_h - label_height - ramp_height - 2 * margin)
+    total_w_cells = sum(b.width_cells for b in bays)
+    max_l_cells = max(b.length_cells for b in bays)
+
+    cell_by_w = avail_w // total_w_cells if total_w_cells else 0
+    cell_by_h = avail_h // max_l_cells if max_l_cells else 0
+    cell_px = max(6, min(cell_by_w, cell_by_h, 28))
+
+    used_w = total_w_cells * cell_px + gap * (n - 1)
+    x = (widget_w - used_w) // 2
+    used_h = max_l_cells * cell_px + label_height + ramp_height
+    # Clamp y so labels never get clipped at the top edge.
+    y = max(label_height, (widget_h - used_h) // 2 + label_height)
+
+    origins: dict[str, QPoint] = {}
+    for b in bays:
+        origins[b.bay_label] = QPoint(x, y)
+        x += b.width_cells * cell_px + gap
+    return cell_px, origins
+
+
 # ── per-pallet viewport (used by LoadViewModal) ──────────────────────────
 
 class BayCanvasViewport(QWidget):
@@ -83,15 +123,27 @@ class BayCanvasViewport(QWidget):
         self.setMouseTracking(True)
 
         self._pallet_rects: list = []
+        self._bays: list = []
+        self._bay_by_label: dict = {}
+        self._zone_to_bay: dict[str, str] = {}
+        self._bay_origins: dict[str, QPoint] = {}
         self._cell_px = 14
-        self._fwd_origin = QPoint(20, 30)
-        self._rear_origin = QPoint(20, 30)
 
         self._drag_id: int | None = None
         self._drag_pos: QPoint | None = None
         self._hover_zone: str | None = None
 
         self.setStyleSheet("background-color: #070b10;")
+
+    def set_bay_layout(self, bays: list) -> None:
+        self._bays = list(bays)
+        self._bay_by_label = {b.bay_label: b for b in self._bays}
+        self._zone_to_bay = {
+            z.zone_label: b.bay_label
+            for b in self._bays for z in b.zones
+        }
+        self._compute_layout()
+        self.update()
 
     def set_pallet_rects(self, rects: list) -> None:
         self._pallet_rects = list(rects)
@@ -100,46 +152,37 @@ class BayCanvasViewport(QWidget):
     # ── geometry ────────────────────────────────────────────────────────
 
     def _compute_layout(self) -> None:
-        margin = 16
-        gap = 30
-        label_height = 42
-        ramp_height = 22
-
-        avail_w = max(0, self.width() - 2 * margin - gap)
-        avail_h = max(0, self.height() - label_height - ramp_height - 2 * margin)
-
-        total_w_cells = FORWARD_W + REAR_W
-        max_l_cells = max(FORWARD_L, REAR_L)
-
-        cell_by_w = avail_w // total_w_cells if total_w_cells else 0
-        cell_by_h = avail_h // max_l_cells if max_l_cells else 0
-        self._cell_px = max(6, min(cell_by_w, cell_by_h, 28))
-
-        used_w = total_w_cells * self._cell_px + gap
-        x_origin = (self.width() - used_w) // 2
-
-        used_h = max_l_cells * self._cell_px + label_height + ramp_height
-        y_origin = max(label_height, (self.height() - used_h) // 2 + label_height)
-
-        self._fwd_origin = QPoint(x_origin, y_origin)
-        self._rear_origin = QPoint(
-            x_origin + FORWARD_W * self._cell_px + gap,
-            y_origin,
+        self._cell_px, self._bay_origins = _compute_bay_layout(
+            self.width(), self.height(), self._bays,
         )
 
-    def _bay_rect(self, bay: str) -> QRect:
+    def _bay_rect(self, bay_label: str) -> QRect:
         cp = self._cell_px
-        if bay == "forward":
-            o = self._fwd_origin
-            return QRect(o.x(), o.y(), FORWARD_W * cp, FORWARD_L * cp)
-        else:
-            o = self._rear_origin
-            return QRect(o.x(), o.y(), REAR_W * cp, REAR_L * cp)
+        o = self._bay_origins.get(bay_label)
+        b = self._bay_by_label.get(bay_label)
+        if o is None or b is None:
+            return QRect()
+        return QRect(o.x(), o.y(), b.width_cells * cp, b.length_cells * cp)
+
+    def _zone_rect(self, zone_label: str) -> QRect:
+        cp = self._cell_px
+        bay_label = self._zone_to_bay.get(zone_label)
+        b = self._bay_by_label.get(bay_label)
+        o = self._bay_origins.get(bay_label)
+        if b is None or o is None:
+            return QRect()
+        for z in b.zones:
+            if z.zone_label == zone_label:
+                return QRect(o.x() + z.cube_offset_x * cp, o.y(),
+                             z.width_units * cp, b.length_cells * cp)
+        return QRect()
 
     def _hit_test(self, pos: QPoint):
         cp = self._cell_px
         for r in self._pallet_rects:
-            o = self._fwd_origin if r.bay == "forward" else self._rear_origin
+            o = self._bay_origins.get(r.bay)
+            if o is None:
+                continue
             rect = QRect(o.x() + r.cell_x * cp, o.y() + r.cell_y * cp,
                          r.cell_w * cp, r.cell_l * cp)
             if rect.contains(pos):
@@ -147,17 +190,10 @@ class BayCanvasViewport(QWidget):
         return None
 
     def _zone_at(self, pos: QPoint) -> str | None:
-        cp = self._cell_px
-        for bay, label, x_off, w in (
-            ("forward", "F1", 0, 2), ("forward", "F2", 2, 2), ("forward", "F3", 4, 2),
-            ("rear",    "R1", 0, 2), ("rear",    "R2", 2, 2),
-            ("rear",    "R3", 4, 2), ("rear",    "R4", 6, 2),
-        ):
-            o = self._fwd_origin if bay == "forward" else self._rear_origin
-            length = FORWARD_L if bay == "forward" else REAR_L
-            rect = QRect(o.x() + x_off * cp, o.y(), w * cp, length * cp)
-            if rect.contains(pos):
-                return label
+        for b in self._bays:
+            for z in b.zones:
+                if self._zone_rect(z.zone_label).contains(pos):
+                    return z.zone_label
         return None
 
     # ── events ──────────────────────────────────────────────────────────
@@ -191,8 +227,8 @@ class BayCanvasViewport(QWidget):
                 (r for r in self._pallet_rects if r.cargo_line_id == self._drag_id),
                 None,
             )
-            target_bay = "forward" if self._hover_zone.startswith("F") else "rear"
-            if source and source.bay == target_bay:
+            target_bay = self._zone_to_bay.get(self._hover_zone)
+            if source and target_bay and source.bay == target_bay:
                 self.pallet_dropped.emit(self._drag_id, self._hover_zone)
         self._drag_id = None
         self._drag_pos = None
@@ -206,19 +242,21 @@ class BayCanvasViewport(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
 
-        self._draw_bay(p, "forward")
-        self._draw_bay(p, "rear")
+        for b in self._bays:
+            self._draw_bay(p, b.bay_label)
         self._draw_zone_dividers(p)
         self._draw_zone_labels(p)
         self._draw_pallets(p)
-        self._draw_ramp_arrow(p)
+        self._draw_ramp_arrows(p)
         if self._drag_pos and self._drag_id is not None:
             self._draw_drag_preview(p)
 
         p.end()
 
-    def _draw_bay(self, p: QPainter, bay: str) -> None:
-        rect = self._bay_rect(bay)
+    def _draw_bay(self, p: QPainter, bay_label: str) -> None:
+        rect = self._bay_rect(bay_label)
+        if rect.isNull():
+            return
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QBrush(QColor("#142028")))
         p.drawRect(rect)
@@ -228,38 +266,39 @@ class BayCanvasViewport(QWidget):
 
     def _draw_zone_dividers(self, p: QPainter) -> None:
         cp = self._cell_px
-        pen = QPen(QColor("#264a5c"), 1, Qt.PenStyle.DotLine)
-        p.setPen(pen)
-        o = self._fwd_origin
-        for cx in (2, 4):
-            x = o.x() + cx * cp
-            p.drawLine(x, o.y(), x, o.y() + FORWARD_L * cp)
-        o = self._rear_origin
-        for cx in (2, 4, 6):
-            x = o.x() + cx * cp
-            p.drawLine(x, o.y(), x, o.y() + REAR_L * cp)
+        p.setPen(QPen(QColor("#264a5c"), 1, Qt.PenStyle.DotLine))
+        for b in self._bays:
+            o = self._bay_origins.get(b.bay_label)
+            if o is None:
+                continue
+            for z in b.zones:
+                if z.cube_offset_x == 0:
+                    continue
+                x = o.x() + z.cube_offset_x * cp
+                p.drawLine(x, o.y(), x, o.y() + b.length_cells * cp)
 
     def _draw_zone_labels(self, p: QPainter) -> None:
-        # Column labels go on the END OPPOSITE THE RAMP. For the C2 the
-        # F-bay's nose ramp is at the top of the bay rect, so F1/F2/F3
-        # labels go at the BOTTOM. R-bay's rear ramp is at the bottom,
-        # so R1-R4 labels go at the TOP (current behaviour).
+        # Column labels go on the END OPPOSITE THE RAMP so the ramp
+        # arrow has clearance.
         cp = self._cell_px
         font_pt = max(8, min(cp - 6, 12))
         font = QFont("Segoe UI", font_pt)
         font.setBold(True)
         p.setFont(font)
         p.setPen(QPen(QColor("#5be4ff")))
-        for label, x_off in (("F1", 0), ("F2", 2), ("F3", 4)):
-            o = self._fwd_origin
-            rect = QRect(o.x() + x_off * cp,
-                         o.y() + FORWARD_L * cp + 4,
-                         2 * cp, 24)
-            p.drawText(rect, Qt.AlignmentFlag.AlignCenter, label)
-        for label, x_off in (("R1", 0), ("R2", 2), ("R3", 4), ("R4", 6)):
-            o = self._rear_origin
-            rect = QRect(o.x() + x_off * cp, o.y() - 40, 2 * cp, 24)
-            p.drawText(rect, Qt.AlignmentFlag.AlignCenter, label)
+        for b in self._bays:
+            o = self._bay_origins.get(b.bay_label)
+            if o is None:
+                continue
+            for z in b.zones:
+                if b.ramp_at_top:
+                    rect = QRect(o.x() + z.cube_offset_x * cp,
+                                 o.y() + b.length_cells * cp + 4,
+                                 z.width_units * cp, 24)
+                else:
+                    rect = QRect(o.x() + z.cube_offset_x * cp,
+                                 o.y() - 40, z.width_units * cp, 24)
+                p.drawText(rect, Qt.AlignmentFlag.AlignCenter, z.zone_label)
 
     def _draw_pallets(self, p: QPainter) -> None:
         cp = self._cell_px
@@ -268,10 +307,12 @@ class BayCanvasViewport(QWidget):
         for r in self._pallet_rects:
             if r.cargo_line_id == self._drag_id:
                 continue
-            o = self._fwd_origin if r.bay == "forward" else self._rear_origin
-            bay_l = FORWARD_L if r.bay == "forward" else REAR_L
+            o = self._bay_origins.get(r.bay)
+            b = self._bay_by_label.get(r.bay)
+            if o is None or b is None:
+                continue
             screen_y = _local_y_to_screen_y(
-                o.y(), r.cell_y, r.cell_l, bay_l, cp, r.ship_forward_y,
+                o.y(), r.cell_y, r.cell_l, b.length_cells, cp, r.ship_forward_y,
             )
             rect = QRect(o.x() + r.cell_x * cp + 1,
                          screen_y + 1,
@@ -292,38 +333,36 @@ class BayCanvasViewport(QWidget):
             p.setPen(QPen(text_color))
             p.drawText(rect, Qt.AlignmentFlag.AlignCenter, r.label)
 
-    def _draw_ramp_arrow(self, p: QPainter) -> None:
+    def _draw_ramp_arrows(self, p: QPainter) -> None:
         # Rear-view top-down convention: ship-forward at top of screen.
-        # The F-bay's nose ramp is at the FORWARD (top) edge of the bay
-        # rectangle; the R-bay's rear ramp is at the AFT (bottom) edge.
-        # Arrow shape flips accordingly so it always points OFF-SHIP.
+        # A bay's ramp lands either at the top (nose ramp) or the
+        # bottom (rear ramp) of its rectangle; the arrow points
+        # OFF-SHIP accordingly.
         cp = self._cell_px
         p.setPen(QPen(QColor("#ff8a3c"), 2))
-        font = QFont("Segoe UI", 10)
-        p.setFont(font)
-        # F-bay: arrow ABOVE the bay, ▲ pointing up (off the nose).
-        x = self._fwd_origin.x() + FORWARD_W * cp // 2
-        y = self._fwd_origin.y() - 22
-        p.drawText(QRect(x - 70, y, 140, 18),
-                   Qt.AlignmentFlag.AlignCenter, "▲ nose ramp")
-        # R-bay: arrow BELOW the bay, ▼ pointing down (off the tail).
-        x = self._rear_origin.x() + REAR_W * cp // 2
-        y = self._rear_origin.y() + REAR_L * cp + 6
-        p.drawText(QRect(x - 70, y, 140, 18),
-                   Qt.AlignmentFlag.AlignCenter, "▼ rear ramp")
+        p.setFont(QFont("Segoe UI", 10))
+        for b in self._bays:
+            o = self._bay_origins.get(b.bay_label)
+            if o is None:
+                continue
+            x = o.x() + b.width_cells * cp // 2
+            if b.ramp_at_top:
+                y = o.y() - 22
+                text = f"▲ {b.ramp_label}"
+            else:
+                y = o.y() + b.length_cells * cp + 6
+                text = f"▼ {b.ramp_label}"
+            p.drawText(QRect(x - 70, y, 140, 18),
+                       Qt.AlignmentFlag.AlignCenter, text)
 
     def _draw_drag_preview(self, p: QPainter) -> None:
         cp = self._cell_px
         if self._hover_zone:
-            bay = "forward" if self._hover_zone.startswith("F") else "rear"
-            x_off = {"F1": 0, "F2": 2, "F3": 4,
-                     "R1": 0, "R2": 2, "R3": 4, "R4": 6}[self._hover_zone]
-            o = self._fwd_origin if bay == "forward" else self._rear_origin
-            length = FORWARD_L if bay == "forward" else REAR_L
-            rect = QRect(o.x() + x_off * cp, o.y(), 2 * cp, length * cp)
-            p.setBrush(QBrush(QColor(123, 191, 63, 60)))
-            p.setPen(QPen(QColor("#7bbf3f"), 2))
-            p.drawRect(rect)
+            rect = self._zone_rect(self._hover_zone)
+            if not rect.isNull():
+                p.setBrush(QBrush(QColor(123, 191, 63, 60)))
+                p.setPen(QPen(QColor("#7bbf3f"), 2))
+                p.drawRect(rect)
 
         source = next(
             (r for r in self._pallet_rects if r.cargo_line_id == self._drag_id),
@@ -345,7 +384,7 @@ class BayCanvasViewport(QWidget):
 # ── zone-strip viewport (used by main window) ────────────────────────────
 
 class ZoneStripsViewport(QWidget):
-    """Renders each of F1/F2/F3, R1/R2/R3/R4 as a single colored strip.
+    """Renders each zone column as a single colored strip.
 
     Mixed-destination zones flash diagonal stripes of the two destination
     colors until the user clicks them (acknowledgement).
@@ -361,9 +400,9 @@ class ZoneStripsViewport(QWidget):
         self.setMouseTracking(True)
 
         self._strips: list = []
+        self._bays: list = []
+        self._bay_origins: dict[str, QPoint] = {}
         self._cell_px = 14
-        self._fwd_origin = QPoint(20, 30)
-        self._rear_origin = QPoint(20, 30)
         self._hover_zone: str | None = None
         self._acknowledged: set[str] = set()
         self._flash_on = True
@@ -374,6 +413,11 @@ class ZoneStripsViewport(QWidget):
         self._timer.start()
 
         self.setStyleSheet("background-color: #070b10;")
+
+    def set_bay_layout(self, bays: list) -> None:
+        self._bays = list(bays)
+        self._compute_layout()
+        self.update()
 
     def set_strips(self, strips: list) -> None:
         # If a zone is no longer mixed, drop its acknowledgement
@@ -389,35 +433,18 @@ class ZoneStripsViewport(QWidget):
                for s in self._strips):
             self.update()
 
-    # ── geometry (shares logic with BayCanvasViewport) ─────────────────
+    # ── geometry ────────────────────────────────────────────────────────
 
     def _compute_layout(self) -> None:
-        margin = 16
-        gap = 30
-        label_height = 42          # generous gap above the bay so the
-                                   # F1/F2/F3, R1-R4 labels never collide
-                                   # with the bay outline
-        ramp_height = 22
-        avail_w = max(0, self.width() - 2 * margin - gap)
-        avail_h = max(0, self.height() - label_height - ramp_height - 2 * margin)
-        total_w_cells = FORWARD_W + REAR_W
-        max_l_cells = max(FORWARD_L, REAR_L)
-        cell_by_w = avail_w // total_w_cells if total_w_cells else 0
-        cell_by_h = avail_h // max_l_cells if max_l_cells else 0
-        self._cell_px = max(6, min(cell_by_w, cell_by_h, 28))
-        used_w = total_w_cells * self._cell_px + gap
-        x_origin = (self.width() - used_w) // 2
-        used_h = max_l_cells * self._cell_px + label_height + ramp_height
-        # Clamp y_origin so labels never get clipped at the top edge
-        y_origin = max(label_height, (self.height() - used_h) // 2 + label_height)
-        self._fwd_origin = QPoint(x_origin, y_origin)
-        self._rear_origin = QPoint(
-            x_origin + FORWARD_W * self._cell_px + gap, y_origin,
+        self._cell_px, self._bay_origins = _compute_bay_layout(
+            self.width(), self.height(), self._bays,
         )
 
     def _strip_rect(self, strip) -> QRect:
         cp = self._cell_px
-        o = self._fwd_origin if strip.bay == "forward" else self._rear_origin
+        o = self._bay_origins.get(strip.bay)
+        if o is None:
+            return QRect()
         return QRect(
             o.x() + strip.cube_offset_x * cp,
             o.y() + strip.cube_offset_y * cp,
@@ -463,17 +490,17 @@ class ZoneStripsViewport(QWidget):
         self._draw_zone_labels(p)
         for s in self._strips:
             self._draw_strip(p, s)
-        self._draw_ramp_arrow(p)
+        self._draw_ramp_arrows(p)
 
         p.end()
 
     def _draw_bay_outlines(self, p: QPainter) -> None:
         cp = self._cell_px
-        for o, w, l in (
-            (self._fwd_origin, FORWARD_W, FORWARD_L),
-            (self._rear_origin, REAR_W, REAR_L),
-        ):
-            rect = QRect(o.x(), o.y(), w * cp, l * cp)
+        for b in self._bays:
+            o = self._bay_origins.get(b.bay_label)
+            if o is None:
+                continue
+            rect = QRect(o.x(), o.y(), b.width_cells * cp, b.length_cells * cp)
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(QBrush(QColor("#142028")))
             p.drawRect(rect)
@@ -483,47 +510,51 @@ class ZoneStripsViewport(QWidget):
 
     def _draw_zone_labels(self, p: QPainter) -> None:
         # Column labels go on the END OPPOSITE THE RAMP so the ramp
-        # arrow has clearance: F-bay labels at the bottom (its nose
-        # ramp is now at the top), R-bay labels at the top.
+        # arrow has clearance.
         cp = self._cell_px
         font_pt = max(8, min(cp - 6, 12))
         font = QFont("Segoe UI", font_pt)
         font.setBold(True)
         p.setFont(font)
         p.setPen(QPen(QColor("#5be4ff")))
-        for label, x_off in (("F1", 0), ("F2", 2), ("F3", 4)):
-            o = self._fwd_origin
-            rect = QRect(o.x() + x_off * cp,
-                         o.y() + FORWARD_L * cp + 4,
-                         2 * cp, 24)
-            p.drawText(rect, Qt.AlignmentFlag.AlignCenter, label)
-        for label, x_off in (("R1", 0), ("R2", 2), ("R3", 4), ("R4", 6)):
-            o = self._rear_origin
-            rect = QRect(o.x() + x_off * cp, o.y() - 40, 2 * cp, 24)
-            p.drawText(rect, Qt.AlignmentFlag.AlignCenter, label)
+        for b in self._bays:
+            o = self._bay_origins.get(b.bay_label)
+            if o is None:
+                continue
+            for z in b.zones:
+                if b.ramp_at_top:
+                    rect = QRect(o.x() + z.cube_offset_x * cp,
+                                 o.y() + b.length_cells * cp + 4,
+                                 z.width_units * cp, 24)
+                else:
+                    rect = QRect(o.x() + z.cube_offset_x * cp,
+                                 o.y() - 40, z.width_units * cp, 24)
+                p.drawText(rect, Qt.AlignmentFlag.AlignCenter, z.zone_label)
 
-    def _draw_ramp_arrow(self, p: QPainter) -> None:
+    def _draw_ramp_arrows(self, p: QPainter) -> None:
         # Rear-view top-down convention: ship-forward at top of screen.
-        # The F-bay's nose ramp is at the FORWARD (top) edge of the bay
-        # rectangle; the R-bay's rear ramp is at the AFT (bottom) edge.
-        # Arrow shape flips accordingly so it always points OFF-SHIP.
+        # The arrow points OFF-SHIP from whichever end the ramp is on.
         cp = self._cell_px
         p.setPen(QPen(QColor("#ff8a3c"), 2))
-        font = QFont("Segoe UI", 10)
-        p.setFont(font)
-        # F-bay: arrow ABOVE the bay, ▲ pointing up (off the nose).
-        x = self._fwd_origin.x() + FORWARD_W * cp // 2
-        y = self._fwd_origin.y() - 22
-        p.drawText(QRect(x - 70, y, 140, 18),
-                   Qt.AlignmentFlag.AlignCenter, "▲ nose ramp")
-        # R-bay: arrow BELOW the bay, ▼ pointing down (off the tail).
-        x = self._rear_origin.x() + REAR_W * cp // 2
-        y = self._rear_origin.y() + REAR_L * cp + 6
-        p.drawText(QRect(x - 70, y, 140, 18),
-                   Qt.AlignmentFlag.AlignCenter, "▼ rear ramp")
+        p.setFont(QFont("Segoe UI", 10))
+        for b in self._bays:
+            o = self._bay_origins.get(b.bay_label)
+            if o is None:
+                continue
+            x = o.x() + b.width_cells * cp // 2
+            if b.ramp_at_top:
+                y = o.y() - 22
+                text = f"▲ {b.ramp_label}"
+            else:
+                y = o.y() + b.length_cells * cp + 6
+                text = f"▼ {b.ramp_label}"
+            p.drawText(QRect(x - 70, y, 140, 18),
+                       Qt.AlignmentFlag.AlignCenter, text)
 
     def _draw_strip(self, p: QPainter, strip) -> None:
         rect = self._strip_rect(strip)
+        if rect.isNull():
+            return
         if strip.is_empty:
             self._draw_empty_strip(p, rect, strip)
             return
@@ -646,6 +677,7 @@ class BayCanvas(QWidget):
         self.controller = controller
         self.setMinimumWidth(460)
         self.setMaximumWidth(560)
+        self._bay_layout: list = []
 
         root = QVBoxLayout(self)
         # Inset past the 22 px rounded corners so the stop selector
@@ -675,25 +707,21 @@ class BayCanvas(QWidget):
         self.viewport.zone_clicked.connect(self.zone_detail_requested.emit)
         root.addWidget(self.viewport, 1)
 
-        # Totals + a small Legend button. The full legend doesn't fit
-        # horizontally on the main panel (especially with the conflict
-        # chips), so it lives in a popup.
+        # Per-bay SCU totals + a small Legend button. The full legend
+        # doesn't fit horizontally on the main panel (especially with
+        # the conflict chips), so it lives in a popup.
         totals = QHBoxLayout()
-        self.fwd_label = QLabel("Forward: 0 / 216 SCU")
-        self.fwd_label.setProperty("muted", True)
-        self.rear_label = QLabel("Rear: 0 / 480 SCU")
-        self.rear_label.setProperty("muted", True)
+        self.totals_label = QLabel("")
+        self.totals_label.setProperty("muted", True)
+        self.totals_label.setWordWrap(True)
         legend_btn = QPushButton("Legend")
         legend_btn.setProperty("flat", True)
         legend_btn.setToolTip(
             "Show the destination color key + any conflict pairs on this stop."
         )
         legend_btn.clicked.connect(self._open_legend)
-        totals.addWidget(self.fwd_label)
-        totals.addStretch(1)
+        totals.addWidget(self.totals_label, 1)
         totals.addWidget(legend_btn)
-        totals.addStretch(1)
-        totals.addWidget(self.rear_label)
         root.addLayout(totals)
 
     def _open_legend(self) -> None:
@@ -708,6 +736,11 @@ class BayCanvas(QWidget):
         return self.stop_combo.currentData()
 
     def refresh(self, *, stop_number: int | None = None) -> None:
+        # The active ship's bay structure can change when a new workday
+        # starts, so re-fetch it on every refresh.
+        self._bay_layout = self.controller.get_bay_layout()
+        self.viewport.set_bay_layout(self._bay_layout)
+
         # Repopulate the stop selector so it stays in sync with the
         # current route.  If the caller didn't pass an explicit stop,
         # use whatever the user has selected (or fall back to busiest).
@@ -763,7 +796,14 @@ class BayCanvas(QWidget):
         strips = self.controller.get_zone_strips(stop_number=stop_number)
         self.viewport.set_strips(strips)
 
-        fwd_used = sum(s.used_scu for s in strips if s.bay == "forward")
-        rear_used = sum(s.used_scu for s in strips if s.bay == "rear")
-        self.fwd_label.setText(f"Forward: {fwd_used} / 216 SCU")
-        self.rear_label.setText(f"Rear: {rear_used} / 480 SCU")
+        # Per-bay SCU usage — one "Bay: used / capacity" chunk per bay
+        # so the totals row adapts to any ship's bay count.
+        used_by_bay: dict[str, int] = {}
+        for s in strips:
+            used_by_bay[s.bay] = used_by_bay.get(s.bay, 0) + s.used_scu
+        parts = [
+            f"{b.bay_label.capitalize()}: "
+            f"{used_by_bay.get(b.bay_label, 0)} / {b.scu_capacity} SCU"
+            for b in self._bay_layout
+        ]
+        self.totals_label.setText("      ".join(parts))
