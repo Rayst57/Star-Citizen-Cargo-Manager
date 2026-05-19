@@ -102,6 +102,32 @@ class ZoneStrip:
 
 
 @dataclass
+class BayZoneGeom:
+    """Static geometry of a single zone — no route/cargo state."""
+    zone_label: str
+    cube_offset_x: int
+    cube_offset_y: int
+    width_units: int
+    length_units: int
+
+
+@dataclass
+class BayLayout:
+    """A cargo bay's static structure, used by BayCanvas to draw the
+    bay outline + zone grid regardless of whether a route exists."""
+    bay_label: str
+    width_cells: int
+    length_cells: int
+    scu_capacity: int
+    # 'high' = render un-flipped (ramp end derived below); 'low' = flip.
+    ship_forward_y: str
+    # True when the ramp ends up at the TOP of the screen diagram.
+    ramp_at_top: bool
+    ramp_label: str
+    zones: list[BayZoneGeom]
+
+
+@dataclass
 class PalletRect:
     """A single pallet drawn on the BayCanvas viewport."""
     cargo_line_id: int
@@ -230,24 +256,39 @@ class AppController(QObject):
         self.route_changed.emit()
         self._emit_progress()
 
+    def list_ships(self) -> list[sqlite3.Row]:
+        """All selectable ships, ordered for the workday picker."""
+        return self.conn.execute(
+            """
+            SELECT id, name, manufacturer, total_scu
+            FROM ships
+            WHERE is_active = 1
+            ORDER BY total_scu DESC, name
+            """
+        ).fetchall()
+
     def start_workday(
         self,
         origin_station_id: int,
         final_destination_id: int | None,
         round_robin: bool,
+        ship_id: int | None = None,
     ) -> int:
-        """Create a fresh workday after closing any open one."""
+        """Create a fresh workday after closing any open one.
+
+        *ship_id* picks the ship; when omitted the largest-capacity
+        active ship is used as a sensible default.
+        """
         # Close existing open workday
         self.conn.execute(
             "UPDATE workdays SET ended_at = ? WHERE ended_at IS NULL",
             (datetime.now(timezone.utc).isoformat(),),
         )
-        # Resolve C2 ship id (only ship in v1)
-        ship = self.conn.execute(
-            "SELECT id FROM ships WHERE name = 'C2 Hercules'"
-        ).fetchone()
-        if not ship:
-            raise RuntimeError("C2 Hercules ship row missing — DB seed failed")
+        if ship_id is None:
+            ships = self.list_ships()
+            if not ships:
+                raise RuntimeError("No ships in DB — seed failed")
+            ship_id = ships[0]["id"]
 
         cur = self.conn.execute(
             """
@@ -258,7 +299,7 @@ class AppController(QObject):
             """,
             (
                 datetime.now(timezone.utc).isoformat(),
-                ship["id"],
+                ship_id,
                 origin_station_id,
                 final_destination_id if not round_robin else origin_station_id,
                 1 if round_robin else 0,
@@ -760,6 +801,72 @@ class AppController(QObject):
                         occupied[key] = r.cargo_line_id
 
         return rects
+
+    def get_bay_layout(self) -> list[BayLayout]:
+        """Static bay/zone structure for the active ship — what the
+        BayCanvas needs to draw the empty bays before any route exists.
+
+        Bays are returned in load order (port-side first column wins
+        ties) so the canvas lays them out left-to-right consistently.
+        """
+        if not self.workday_id:
+            return []
+        rows = self.conn.execute(
+            """
+            SELECT z.zone_label, z.bay_label, z.cube_offset_x, z.cube_offset_y,
+                   z.width_units, z.length_units, z.scu_capacity,
+                   z.ship_forward_y, z.ramp_side, z.load_order
+            FROM ship_zones z
+            JOIN workdays w ON w.ship_id = z.ship_id
+            WHERE w.id = ?
+            ORDER BY z.load_order, z.cube_offset_x
+            """,
+            (self.workday_id,),
+        ).fetchall()
+
+        bays: dict[str, dict] = {}
+        order: list[str] = []
+        for r in rows:
+            b = r["bay_label"]
+            d = bays.get(b)
+            if d is None:
+                d = bays[b] = {
+                    "zones": [], "w": 0, "l": 0, "scu": 0,
+                    "ship_forward_y": r["ship_forward_y"],
+                    "ramp_side": r["ramp_side"],
+                    "order": r["load_order"] if r["load_order"] is not None else 1 << 30,
+                }
+                order.append(b)
+            d["zones"].append(BayZoneGeom(
+                zone_label=r["zone_label"],
+                cube_offset_x=r["cube_offset_x"],
+                cube_offset_y=r["cube_offset_y"],
+                width_units=r["width_units"],
+                length_units=r["length_units"],
+            ))
+            d["w"] = max(d["w"], r["cube_offset_x"] + r["width_units"])
+            d["l"] = max(d["l"], r["cube_offset_y"] + r["length_units"])
+            d["scu"] += r["scu_capacity"]
+
+        order.sort(key=lambda b: bays[b]["order"])
+        layout: list[BayLayout] = []
+        for b in order:
+            d = bays[b]
+            # The ramp lands at the top of the diagram when the ramp
+            # edge and the ship-forward end are the same Y end (the
+            # renderer always puts ship-forward at the top of screen).
+            ramp_at_top = (d["ramp_side"] == "low_y") == (d["ship_forward_y"] == "low")
+            layout.append(BayLayout(
+                bay_label=b,
+                width_cells=d["w"],
+                length_cells=d["l"],
+                scu_capacity=d["scu"],
+                ship_forward_y=d["ship_forward_y"],
+                ramp_at_top=ramp_at_top,
+                ramp_label="nose ramp" if ramp_at_top else "rear ramp",
+                zones=d["zones"],
+            ))
+        return layout
 
     def get_zone_strips(self, stop_number: int | None = None) -> list[ZoneStrip]:
         """Per-zone summary used by the main BayCanvas zone-strip view.

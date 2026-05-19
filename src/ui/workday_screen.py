@@ -99,6 +99,17 @@ class WorkdayScreen(QDialog):
         header.setProperty("heading", True)
         layout.addWidget(header)
 
+        # Ship combo — which ship is this workday flown in.
+        ship_row = QHBoxLayout()
+        ship_row.addWidget(QLabel("Ship"))
+        self.ship_combo = QComboBox()
+        for s in self.controller.list_ships():
+            self.ship_combo.addItem(
+                f"{s['name']}  ({s['total_scu']} SCU)", userData=s["id"]
+            )
+        ship_row.addWidget(self.ship_combo, 1)
+        layout.addLayout(ship_row)
+
         # Origin combo
         origin_row = QHBoxLayout()
         origin_row.addWidget(QLabel("Origin"))
@@ -156,9 +167,10 @@ class WorkdayScreen(QDialog):
     def _on_start_new(self) -> None:
         origin_id = self.origin_combo.currentData()
         final_id = self.final_combo.currentData()
+        ship_id = self.ship_combo.currentData()
         # Round Robin is the dropdown entry whose userData is None.
         rr = final_id is None
-        wid = self.controller.start_workday(origin_id, final_id, rr)
+        wid = self.controller.start_workday(origin_id, final_id, rr, ship_id=ship_id)
         self.workday_id = wid
         self.accept()
 

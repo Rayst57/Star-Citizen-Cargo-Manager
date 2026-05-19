@@ -1,8 +1,9 @@
 """
 Seed data loader — populates reference tables on first launch.
 
-Reads data/seed_stations.json, data/seed_commodities.json, and
-data/seed_c2.json then inserts into the DB via parameterised queries.
+Reads data/seed_stations.json, data/seed_commodities.json, and the
+per-ship seed files (seed_c2.json, seed_starlancer.json, ...) then
+inserts into the DB via parameterised queries.
 
 Idempotent: INSERT OR IGNORE keeps re-runs safe if called more than once.
 """
@@ -117,10 +118,12 @@ def load_commodities(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-# ── C2 Hercules ship + zones ───────────────────────────────────────────────
+# ── Ships + zones ──────────────────────────────────────────────────────────
 
-def load_c2(conn: sqlite3.Connection) -> None:
-    data = _load_json("seed_c2.json")
+def load_ship(conn: sqlite3.Connection, filename: str) -> None:
+    """Load a single ship definition (ship row + its zones) from a
+    seed JSON file. Idempotent — INSERT OR IGNORE keeps re-runs safe."""
+    data = _load_json(filename)
     ship = data["ship"]
 
     conn.execute(
@@ -193,8 +196,12 @@ def load_default_settings(conn: sqlite3.Connection) -> None:
 
 # ── Entry point ───────────────────────────────────────────────────────────
 
+_SHIP_SEEDS = ("seed_c2.json", "seed_starlancer.json")
+
+
 def load_all_seeds(conn: sqlite3.Connection) -> None:
     load_stations(conn)
     load_commodities(conn)
-    load_c2(conn)
+    for ship_file in _SHIP_SEEDS:
+        load_ship(conn, ship_file)
     load_default_settings(conn)
