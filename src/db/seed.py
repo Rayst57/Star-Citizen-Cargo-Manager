@@ -121,28 +121,47 @@ def load_commodities(conn: sqlite3.Connection) -> None:
 # ── Ships + zones ──────────────────────────────────────────────────────────
 
 def load_ship(conn: sqlite3.Connection, filename: str) -> None:
-    """Load a single ship definition (ship row + its zones) from a
-    seed JSON file. Idempotent — INSERT OR IGNORE keeps re-runs safe."""
+    """Load/sync a single ship definition (ship row + its zones) from a
+    seed JSON file.
+
+    Declarative: the seed JSON is authoritative. Re-running upserts the
+    ship and every zone, and drops any zone no longer in the file — so
+    editing a ship's layout takes effect on the next launch even on an
+    existing DB. ship_zones has no inbound foreign keys (placements
+    reference zones by label text), so replacing zones is safe.
+    """
     data = _load_json(filename)
     ship = data["ship"]
 
     conn.execute(
         """
-        INSERT OR IGNORE INTO ships
-            (name, manufacturer, total_scu, is_active)
+        INSERT INTO ships (name, manufacturer, total_scu, is_active)
         VALUES (?, ?, ?, ?)
+        ON CONFLICT(name) DO UPDATE SET
+            manufacturer = excluded.manufacturer,
+            total_scu    = excluded.total_scu,
+            is_active    = excluded.is_active
         """,
-        (ship["name"], ship.get("manufacturer"), ship["total_scu"], ship.get("is_active", 1)),
+        (ship["name"], ship.get("manufacturer"),
+         ship["total_scu"], ship.get("is_active", 1)),
     )
-    row = conn.execute(
+    ship_id = conn.execute(
         "SELECT id FROM ships WHERE name = ?", (ship["name"],)
-    ).fetchone()
-    ship_id = row["id"]
+    ).fetchone()["id"]
+
+    seed_labels = [z["zone_label"] for z in data["zones"]]
+    if seed_labels:
+        placeholders = ",".join("?" * len(seed_labels))
+        conn.execute(
+            f"DELETE FROM ship_zones "
+            f"WHERE ship_id = ? AND zone_label NOT IN ({placeholders})",
+            (ship_id, *seed_labels),
+        )
 
     for z in data["zones"]:
         conn.execute(
             """
-            INSERT OR IGNORE INTO ship_zones
+            INSERT INTO ship_zones
                 (ship_id, zone_label, bay_label, zone_type,
                  width_units, length_units, height_units,
                  cube_offset_x, cube_offset_y,
@@ -150,6 +169,21 @@ def load_ship(conn: sqlite3.Connection, filename: str) -> None:
                  left_zone_label, right_zone_label,
                  ramp_side, ship_forward_y, notes)
             VALUES (?, ?, ?, 'STRUCTURED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(ship_id, zone_label) DO UPDATE SET
+                bay_label       = excluded.bay_label,
+                width_units     = excluded.width_units,
+                length_units    = excluded.length_units,
+                height_units    = excluded.height_units,
+                cube_offset_x   = excluded.cube_offset_x,
+                cube_offset_y   = excluded.cube_offset_y,
+                scu_capacity    = excluded.scu_capacity,
+                load_order      = excluded.load_order,
+                unload_priority = excluded.unload_priority,
+                left_zone_label = excluded.left_zone_label,
+                right_zone_label = excluded.right_zone_label,
+                ramp_side       = excluded.ramp_side,
+                ship_forward_y  = excluded.ship_forward_y,
+                notes           = excluded.notes
             """,
             (
                 ship_id,
@@ -199,9 +233,16 @@ def load_default_settings(conn: sqlite3.Connection) -> None:
 _SHIP_SEEDS = ("seed_c2.json", "seed_starlancer.json")
 
 
+def sync_ships(conn: sqlite3.Connection) -> None:
+    """(Re)load every ship seed. Safe to call on an existing DB — used
+    both at first-init and as a migration step so ship/zone edits and
+    newly-added ships reach DBs that were created before them."""
+    for ship_file in _SHIP_SEEDS:
+        load_ship(conn, ship_file)
+
+
 def load_all_seeds(conn: sqlite3.Connection) -> None:
     load_stations(conn)
     load_commodities(conn)
-    for ship_file in _SHIP_SEEDS:
-        load_ship(conn, ship_file)
+    sync_ships(conn)
     load_default_settings(conn)

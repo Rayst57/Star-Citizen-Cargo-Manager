@@ -2,20 +2,22 @@
   "_meta": {
     "purpose": "MISC Starlancer MAX ship + zone definitions.",
     "axis_convention": "Width = port-to-starboard (X). Length = ramp-end to forward (Y). Height = floor up (Z). All units are 1.25 m cubes.",
-    "ramp_note": "The Starlancer MAX has a single cargo bay loaded via the rear ramp, so every zone uses ramp_side='low_y' (Y=0 = rear ramp edge).",
-    "render_note": "ship_forward_y='high' — high local-Y points toward the nose, so the bay renders un-flipped with the rear ramp at the bottom of the diagram.",
-    "PROPOSED_LAYOUT_REVIEW_ME": "DRAFT numbers — total 224 SCU split into 4 equal strips (2 wide x 7 long x 4 high = 56 SCU each). Correct the zone count / dimensions / SCU once the in-game cargo grid is confirmed."
+    "ramp_note": "The Starlancer MAX loads via the rear; both bays use ramp_side='low_y' with ship_forward_y='high' so the rear/entry end renders at the bottom of the diagram.",
+    "layout_note": "Forward bay = the upper pad bay: two columns F1/F2, each 16+24+24 = 64 SCU. Rear bay = the lower vehicle-bay section: side pad stacks R1/R2 ((4+16+4) x2 = 48 SCU each) flanking the central Rear Bulk zone RB.",
+    "rb_note": "RB (Rear Bulk) is the vehicle-bay floor. It is rated conservatively at 32 SCU and given the HIGHEST unload_priority so the planner only fills it as a last-ditch overflow zone, after F1/F2/R1/R2. Its width/length/height describe the physical bay box; scu_capacity (32) is the rated bulk limit and is intentionally lower than the box volume.",
+    "totals": "Ship total = F1 64 + F2 64 + R1 48 + R2 48 + RB 32 = 256 SCU. Pad grid alone (per the in-game layout image) is 224 SCU."
   },
   "ship": {
     "name": "Starlancer MAX",
     "manufacturer": "MISC",
-    "total_scu": 224,
+    "total_scu": 256,
     "is_active": 1
   },
   "zones": [
-    { "zone_label": "M1", "bay_label": "main", "width_units": 2, "length_units": 7, "height_units": 4, "cube_offset_x": 0, "cube_offset_y": 0, "scu_capacity": 56, "load_order": 1, "unload_priority": 1, "left_zone_label": null, "right_zone_label": "M2", "ramp_side": "low_y", "ship_forward_y": "high", "notes": "Main bay, port column. Loaded via the rear ramp (Y=0 = rear edge)." },
-    { "zone_label": "M2", "bay_label": "main", "width_units": 2, "length_units": 7, "height_units": 4, "cube_offset_x": 2, "cube_offset_y": 0, "scu_capacity": 56, "load_order": 2, "unload_priority": 2, "left_zone_label": "M1", "right_zone_label": "M3", "ramp_side": "low_y", "ship_forward_y": "high", "notes": "Main bay, mid-port column." },
-    { "zone_label": "M3", "bay_label": "main", "width_units": 2, "length_units": 7, "height_units": 4, "cube_offset_x": 4, "cube_offset_y": 0, "scu_capacity": 56, "load_order": 3, "unload_priority": 3, "left_zone_label": "M2", "right_zone_label": "M4", "ramp_side": "low_y", "ship_forward_y": "high", "notes": "Main bay, mid-starboard column." },
-    { "zone_label": "M4", "bay_label": "main", "width_units": 2, "length_units": 7, "height_units": 4, "cube_offset_x": 6, "cube_offset_y": 0, "scu_capacity": 56, "load_order": 4, "unload_priority": 4, "left_zone_label": "M3", "right_zone_label": null, "ramp_side": "low_y", "ship_forward_y": "high", "notes": "Main bay, starboard column." }
+    { "zone_label": "F1", "bay_label": "forward", "width_units": 2, "length_units": 8, "height_units": 4, "cube_offset_x": 0, "cube_offset_y": 0, "scu_capacity": 64, "load_order": 1, "unload_priority": 3, "left_zone_label": null, "right_zone_label": "F2", "ramp_side": "low_y", "ship_forward_y": "high", "notes": "Forward pad bay, port column (16 + 24 + 24 SCU pads)." },
+    { "zone_label": "F2", "bay_label": "forward", "width_units": 2, "length_units": 8, "height_units": 4, "cube_offset_x": 2, "cube_offset_y": 0, "scu_capacity": 64, "load_order": 2, "unload_priority": 4, "left_zone_label": "F1", "right_zone_label": null, "ramp_side": "low_y", "ship_forward_y": "high", "notes": "Forward pad bay, starboard column (16 + 24 + 24 SCU pads)." },
+    { "zone_label": "R1", "bay_label": "rear", "width_units": 2, "length_units": 6, "height_units": 4, "cube_offset_x": 0, "cube_offset_y": 0, "scu_capacity": 48, "load_order": 3, "unload_priority": 1, "left_zone_label": null, "right_zone_label": "RB", "ramp_side": "low_y", "ship_forward_y": "high", "notes": "Rear bay, port pad stack ((4 + 16 + 4) x2 SCU pads)." },
+    { "zone_label": "RB", "bay_label": "rear", "width_units": 4, "length_units": 6, "height_units": 4, "cube_offset_x": 2, "cube_offset_y": 0, "scu_capacity": 32, "load_order": 4, "unload_priority": 5, "left_zone_label": "R1", "right_zone_label": "R2", "ramp_side": "low_y", "ship_forward_y": "high", "notes": "Rear Bulk — vehicle-bay floor used for bulk cargo. Highest unload_priority so the planner treats it as a last-ditch overflow zone." },
+    { "zone_label": "R2", "bay_label": "rear", "width_units": 2, "length_units": 6, "height_units": 4, "cube_offset_x": 6, "cube_offset_y": 0, "scu_capacity": 48, "load_order": 5, "unload_priority": 2, "left_zone_label": "RB", "right_zone_label": null, "ramp_side": "low_y", "ship_forward_y": "high", "notes": "Rear bay, starboard pad stack ((4 + 16 + 4) x2 SCU pads)." }
   ]
 }

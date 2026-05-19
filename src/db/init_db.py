@@ -76,6 +76,14 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
         )
         conn.commit()
 
+    # Re-sync every ship seed. load_all_seeds() only runs on first init,
+    # so without this an existing DB never sees ships added (or ship
+    # layouts corrected) after it was created. sync_ships() is
+    # declarative + idempotent, so this is safe to run every launch.
+    from .seed import sync_ships
+
+    sync_ships(conn)
+
 
 def initialize_database(db_path: Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
     """Initialize the database on first launch; open existing DB otherwise.
