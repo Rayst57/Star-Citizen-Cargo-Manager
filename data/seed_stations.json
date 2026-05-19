@@ -6,36 +6,2703 @@
     "as_of": "Patch 4.x — May 2026"
   },
   "systems": [
-    { "name": "Stanton", "is_active": 1 },
-    { "name": "Pyro",    "is_active": 1, "notes": "Placeholder; expand station list later" }
+    {
+      "name": "Stanton",
+      "is_active": 1
+    },
+    {
+      "name": "Pyro",
+      "is_active": 1,
+      "notes": "Placeholder; expand station list later"
+    }
   ],
   "stations": [
-    { "system": "Stanton", "name": "Seraphim Station",     "parent_body": "Crusader",  "station_type": "orbital",  "is_gateway": 0, "sort_order": 10,  "aliases": ["Seraphim"] },
-    { "system": "Stanton", "name": "Ambitious Dream",      "parent_body": "CRU-L1",    "station_type": "lagrange", "is_gateway": 0, "sort_order": 20,  "aliases": ["CRU-L1 Ambitious Dream Station", "Ambitious"] },
-    { "system": "Stanton", "name": "Beautiful Glen",       "parent_body": "CRU-L5",    "station_type": "lagrange", "is_gateway": 0, "sort_order": 30,  "aliases": ["CRU-L5 Beautiful Glen Station"] },
-    { "system": "Stanton", "name": "Shallow Fields",       "parent_body": "CRU-L4",    "station_type": "lagrange", "is_gateway": 0, "sort_order": 40,  "aliases": ["Shallow Field", "Shallow Fields Station"] },
-    { "system": "Stanton", "name": "Shallow Frontier",     "parent_body": "HUR-L1",    "station_type": "lagrange", "is_gateway": 0, "sort_order": 50,  "aliases": ["Shallow Frontier Station"] },
-    { "system": "Stanton", "name": "Yellow Core",          "parent_body": "HUR-L4",    "station_type": "lagrange", "is_gateway": 0, "sort_order": 60,  "aliases": ["Yellow Core Station"] },
-    { "system": "Stanton", "name": "Everus Harbor",        "parent_body": "Hurston",   "station_type": "orbital",  "is_gateway": 0, "sort_order": 70,  "aliases": ["Everest Harbor", "Evers Harbor", "Evers", "Everus"] },
-    { "system": "Stanton", "name": "Baijini Point",        "parent_body": "ArcCorp",   "station_type": "orbital",  "is_gateway": 0, "sort_order": 80,  "aliases": ["Bajini", "Bageeni", "Begini", "Magini", "Vijini", "Baijini"] },
-    { "system": "Stanton", "name": "Wide Forest",          "parent_body": "ARC-L1",    "station_type": "lagrange", "is_gateway": 0, "sort_order": 90,  "aliases": ["ARC-L1 Wide Forest Station", "Wild Forest"] },
-    { "system": "Stanton", "name": "Lively Pathway",       "parent_body": "ARC-L2",    "station_type": "lagrange", "is_gateway": 0, "sort_order": 100, "aliases": ["ARC-L2 Lively Pathway Station"] },
-    { "system": "Stanton", "name": "Port Tressler",        "parent_body": "microTech", "station_type": "orbital",  "is_gateway": 0, "sort_order": 110, "aliases": ["Tressler", "Point Tressler"] },
-    { "system": "Stanton", "name": "Long Forest",          "parent_body": "MIC-L2",    "station_type": "lagrange", "is_gateway": 0, "sort_order": 120, "aliases": ["MIC-L2 Long Forest Station", "Long Force"] },
-    { "system": "Stanton", "name": "Pyro Jump Point",      "parent_body": null,        "station_type": "gateway",  "is_gateway": 1, "sort_order": 900, "aliases": ["Stanton-Pyro Gate (Stanton side)", "Stanton Gateway"] },
-    { "system": "Pyro",    "name": "Stanton Jump Point",   "parent_body": null,        "station_type": "gateway",  "is_gateway": 1, "sort_order": 100, "aliases": ["Pyro-Stanton Gate (Pyro side)", "Pyro Gateway"] }
+    {
+      "system": "Stanton",
+      "name": "Seraphim Station",
+      "parent_body": "Crusader",
+      "station_type": "orbital",
+      "is_gateway": 0,
+      "sort_order": 10,
+      "aliases": [
+        "Seraphim"
+      ]
+    },
+    {
+      "system": "Stanton",
+      "name": "Ambitious Dream",
+      "parent_body": "CRU-L1",
+      "station_type": "lagrange",
+      "is_gateway": 0,
+      "sort_order": 20,
+      "aliases": [
+        "CRU-L1 Ambitious Dream Station",
+        "Ambitious"
+      ]
+    },
+    {
+      "system": "Stanton",
+      "name": "Beautiful Glen",
+      "parent_body": "CRU-L5",
+      "station_type": "lagrange",
+      "is_gateway": 0,
+      "sort_order": 30,
+      "aliases": [
+        "CRU-L5 Beautiful Glen Station"
+      ]
+    },
+    {
+      "system": "Stanton",
+      "name": "Shallow Fields",
+      "parent_body": "CRU-L4",
+      "station_type": "lagrange",
+      "is_gateway": 0,
+      "sort_order": 40,
+      "aliases": [
+        "Shallow Field",
+        "Shallow Fields Station"
+      ]
+    },
+    {
+      "system": "Stanton",
+      "name": "Shallow Frontier",
+      "parent_body": "HUR-L1",
+      "station_type": "lagrange",
+      "is_gateway": 0,
+      "sort_order": 50,
+      "aliases": [
+        "Shallow Frontier Station"
+      ]
+    },
+    {
+      "system": "Stanton",
+      "name": "Yellow Core",
+      "parent_body": "HUR-L4",
+      "station_type": "lagrange",
+      "is_gateway": 0,
+      "sort_order": 60,
+      "aliases": [
+        "Yellow Core Station"
+      ]
+    },
+    {
+      "system": "Stanton",
+      "name": "Everus Harbor",
+      "parent_body": "Hurston",
+      "station_type": "orbital",
+      "is_gateway": 0,
+      "sort_order": 70,
+      "aliases": [
+        "Everest Harbor",
+        "Evers Harbor",
+        "Evers",
+        "Everus"
+      ]
+    },
+    {
+      "system": "Stanton",
+      "name": "Baijini Point",
+      "parent_body": "ArcCorp",
+      "station_type": "orbital",
+      "is_gateway": 0,
+      "sort_order": 80,
+      "aliases": [
+        "Bajini",
+        "Bageeni",
+        "Begini",
+        "Magini",
+        "Vijini",
+        "Baijini"
+      ]
+    },
+    {
+      "system": "Stanton",
+      "name": "Wide Forest",
+      "parent_body": "ARC-L1",
+      "station_type": "lagrange",
+      "is_gateway": 0,
+      "sort_order": 90,
+      "aliases": [
+        "ARC-L1 Wide Forest Station",
+        "Wild Forest"
+      ]
+    },
+    {
+      "system": "Stanton",
+      "name": "Lively Pathway",
+      "parent_body": "ARC-L2",
+      "station_type": "lagrange",
+      "is_gateway": 0,
+      "sort_order": 100,
+      "aliases": [
+        "ARC-L2 Lively Pathway Station"
+      ]
+    },
+    {
+      "system": "Stanton",
+      "name": "Port Tressler",
+      "parent_body": "microTech",
+      "station_type": "orbital",
+      "is_gateway": 0,
+      "sort_order": 110,
+      "aliases": [
+        "Tressler",
+        "Point Tressler"
+      ]
+    },
+    {
+      "system": "Stanton",
+      "name": "Long Forest",
+      "parent_body": "MIC-L2",
+      "station_type": "lagrange",
+      "is_gateway": 0,
+      "sort_order": 120,
+      "aliases": [
+        "MIC-L2 Long Forest Station",
+        "Long Force"
+      ]
+    },
+    {
+      "system": "Stanton",
+      "name": "Pyro Jump Point",
+      "parent_body": null,
+      "station_type": "gateway",
+      "is_gateway": 1,
+      "sort_order": 900,
+      "aliases": [
+        "Stanton-Pyro Gate (Stanton side)",
+        "Stanton Gateway"
+      ]
+    },
+    {
+      "system": "Pyro",
+      "name": "Stanton Jump Point",
+      "parent_body": null,
+      "station_type": "gateway",
+      "is_gateway": 1,
+      "sort_order": 100,
+      "aliases": [
+        "Pyro-Stanton Gate (Pyro side)",
+        "Pyro Gateway"
+      ]
+    },
+    {
+      "system": "Stanton",
+      "name": "Lorville",
+      "parent_body": "Hurston",
+      "station_type": "major_location",
+      "is_gateway": 0,
+      "sort_order": 1010,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDMS-Edmond",
+      "parent_body": "Hurston",
+      "station_type": "mining_outpost",
+      "is_gateway": 0,
+      "sort_order": 1020,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDMS-Hadley",
+      "parent_body": "Hurston",
+      "station_type": "mining_outpost",
+      "is_gateway": 0,
+      "sort_order": 1030,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDMS-Oparei",
+      "parent_body": "Hurston",
+      "station_type": "mining_outpost",
+      "is_gateway": 0,
+      "sort_order": 1040,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDMS-Pinewood",
+      "parent_body": "Hurston",
+      "station_type": "mining_outpost",
+      "is_gateway": 0,
+      "sort_order": 1050,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDMS-Stanhope",
+      "parent_body": "Hurston",
+      "station_type": "mining_outpost",
+      "is_gateway": 0,
+      "sort_order": 1060,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDMS-Thedus",
+      "parent_body": "Hurston",
+      "station_type": "mining_outpost",
+      "is_gateway": 0,
+      "sort_order": 1070,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDSF-Adlai",
+      "parent_body": "Hurston",
+      "station_type": "underground_facility",
+      "is_gateway": 0,
+      "sort_order": 1080,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDSF-Barnabas",
+      "parent_body": "Hurston",
+      "station_type": "underground_facility",
+      "is_gateway": 0,
+      "sort_order": 1090,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDSF-Breckinridge",
+      "parent_body": "Hurston",
+      "station_type": "underground_facility",
+      "is_gateway": 0,
+      "sort_order": 1100,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDSF-Colfax",
+      "parent_body": "Hurston",
+      "station_type": "underground_facility",
+      "is_gateway": 0,
+      "sort_order": 1110,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDSF-Damaris",
+      "parent_body": "Hurston",
+      "station_type": "underground_facility",
+      "is_gateway": 0,
+      "sort_order": 1120,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDSF-Elbridge",
+      "parent_body": "Hurston",
+      "station_type": "underground_facility",
+      "is_gateway": 0,
+      "sort_order": 1130,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDSF-Hendricks",
+      "parent_body": "Hurston",
+      "station_type": "underground_facility",
+      "is_gateway": 0,
+      "sort_order": 1140,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDSF-Hiram",
+      "parent_body": "Hurston",
+      "station_type": "underground_facility",
+      "is_gateway": 0,
+      "sort_order": 1150,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDSF-Hobart",
+      "parent_body": "Hurston",
+      "station_type": "underground_facility",
+      "is_gateway": 0,
+      "sort_order": 1160,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDSF-Ishmael",
+      "parent_body": "Hurston",
+      "station_type": "underground_facility",
+      "is_gateway": 0,
+      "sort_order": 1170,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDSF-Millerand",
+      "parent_body": "Hurston",
+      "station_type": "underground_facility",
+      "is_gateway": 0,
+      "sort_order": 1180,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDSF-Rufus",
+      "parent_body": "Hurston",
+      "station_type": "underground_facility",
+      "is_gateway": 0,
+      "sort_order": 1190,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDSF-Sherman",
+      "parent_body": "Hurston",
+      "station_type": "underground_facility",
+      "is_gateway": 0,
+      "sort_order": 1200,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDSF-Tamar",
+      "parent_body": "Hurston",
+      "station_type": "underground_facility",
+      "is_gateway": 0,
+      "sort_order": 1210,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDSF-Tompkins",
+      "parent_body": "Hurston",
+      "station_type": "underground_facility",
+      "is_gateway": 0,
+      "sort_order": 1220,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDSF-Zacharias",
+      "parent_body": "Hurston",
+      "station_type": "underground_facility",
+      "is_gateway": 0,
+      "sort_order": 1230,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDRSO-Baier",
+      "parent_body": "Hurston",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 1240,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDRSO-Bardie",
+      "parent_body": "Hurston",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 1250,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDRSO-Bersch",
+      "parent_body": "Hurston",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 1260,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDRSO-Bowes",
+      "parent_body": "Hurston",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 1270,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDRSO-Brel",
+      "parent_body": "Hurston",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 1280,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDRSO-Cronshaw",
+      "parent_body": "Hurston",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 1290,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDRSO-Foster",
+      "parent_body": "Hurston",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 1300,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDRSO-Franz",
+      "parent_body": "Hurston",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 1310,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDRSO-Giblin",
+      "parent_body": "Hurston",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 1320,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDRSO-Hosley",
+      "parent_body": "Hurston",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 1330,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDRSO-Malloy",
+      "parent_body": "Hurston",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 1340,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDRSO-Marling",
+      "parent_body": "Hurston",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 1350,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDRSO-McKuen",
+      "parent_body": "Hurston",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 1360,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDRSO-Newman",
+      "parent_body": "Hurston",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 1370,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDRSO-Olliff",
+      "parent_body": "Hurston",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 1380,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDRSO-Pearce",
+      "parent_body": "Hurston",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 1390,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDRSO-Sims",
+      "parent_body": "Hurston",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 1400,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDRSO-Sheppard",
+      "parent_body": "Hurston",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 1410,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDRSO-Stott",
+      "parent_body": "Hurston",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 1420,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDRSO-Tillman",
+      "parent_body": "Hurston",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 1430,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDRSO-Walker",
+      "parent_body": "Hurston",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 1440,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDRSO-Wyatt",
+      "parent_body": "Hurston",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 1450,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDSF-Palomar",
+      "parent_body": "Hurston",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 1460,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDRSO-Bramen",
+      "parent_body": "Hurston",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 1470,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Covalex Distribution Centre S1DC06",
+      "parent_body": "Hurston",
+      "station_type": "distribution_centre",
+      "is_gateway": 0,
+      "sort_order": 1480,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Dupree Industrial Manufacturing Facility",
+      "parent_body": "Hurston",
+      "station_type": "distribution_centre",
+      "is_gateway": 0,
+      "sort_order": 1490,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Greycat Stanton I Production Complex-B",
+      "parent_body": "Hurston",
+      "station_type": "distribution_centre",
+      "is_gateway": 0,
+      "sort_order": 1500,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDPC-Cassillo",
+      "parent_body": "Hurston",
+      "station_type": "distribution_centre",
+      "is_gateway": 0,
+      "sort_order": 1510,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDPC-Farnesway",
+      "parent_body": "Hurston",
+      "station_type": "distribution_centre",
+      "is_gateway": 0,
+      "sort_order": 1520,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Sakura Sun Magnolia Workcenter",
+      "parent_body": "Hurston",
+      "station_type": "distribution_centre",
+      "is_gateway": 0,
+      "sort_order": 1530,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Reclamation & Disposal Orinth",
+      "parent_body": "Hurston",
+      "station_type": "salvage_yard",
+      "is_gateway": 0,
+      "sort_order": 1540,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Cutter's Rig",
+      "parent_body": "Hurston",
+      "station_type": "settlement",
+      "is_gateway": 0,
+      "sort_order": 1550,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Weeping Cove",
+      "parent_body": "Hurston",
+      "station_type": "settlement",
+      "is_gateway": 0,
+      "sort_order": 1560,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Finn's Folly",
+      "parent_body": "Hurston",
+      "station_type": "settlement",
+      "is_gateway": 0,
+      "sort_order": 1570,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Zephyr",
+      "parent_body": "Hurston",
+      "station_type": "settlement",
+      "is_gateway": 0,
+      "sort_order": 1580,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Maker's Point",
+      "parent_body": "Hurston",
+      "station_type": "settlement",
+      "is_gateway": 0,
+      "sort_order": 1590,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Rappel",
+      "parent_body": "Hurston",
+      "station_type": "settlement",
+      "is_gateway": 0,
+      "sort_order": 1600,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Picker's Field",
+      "parent_body": "Hurston",
+      "station_type": "settlement",
+      "is_gateway": 0,
+      "sort_order": 1610,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Ludlow",
+      "parent_body": "Hurston",
+      "station_type": "settlement",
+      "is_gateway": 0,
+      "sort_order": 1620,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Rico's Remains",
+      "parent_body": "Hurston",
+      "station_type": "forward_operating_base",
+      "is_gateway": 0,
+      "sort_order": 1630,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Trilo",
+      "parent_body": "Hurston",
+      "station_type": "forward_operating_base",
+      "is_gateway": 0,
+      "sort_order": 1640,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Lowdown",
+      "parent_body": "Hurston",
+      "station_type": "forward_operating_base",
+      "is_gateway": 0,
+      "sort_order": 1650,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Broken Patch",
+      "parent_body": "Hurston",
+      "station_type": "forward_operating_base",
+      "is_gateway": 0,
+      "sort_order": 1660,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Orison",
+      "parent_body": "Crusader",
+      "station_type": "major_location",
+      "is_gateway": 0,
+      "sort_order": 6010,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Cloudrest Retreat",
+      "parent_body": "Crusader",
+      "station_type": "floating_platform_community",
+      "is_gateway": 0,
+      "sort_order": 6020,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Empyrean Park",
+      "parent_body": "Crusader",
+      "station_type": "floating_platform_community",
+      "is_gateway": 0,
+      "sort_order": 6030,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Prospect Point",
+      "parent_body": "Crusader",
+      "station_type": "floating_platform_community",
+      "is_gateway": 0,
+      "sort_order": 6040,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Area18",
+      "parent_body": "ArcCorp",
+      "station_type": "major_location",
+      "is_gateway": 0,
+      "sort_order": 10010,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Area04",
+      "parent_body": "ArcCorp",
+      "station_type": "minor_location",
+      "is_gateway": 0,
+      "sort_order": 10020,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Area06",
+      "parent_body": "ArcCorp",
+      "station_type": "minor_location",
+      "is_gateway": 0,
+      "sort_order": 10030,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Area07",
+      "parent_body": "ArcCorp",
+      "station_type": "minor_location",
+      "is_gateway": 0,
+      "sort_order": 10040,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Area11",
+      "parent_body": "ArcCorp",
+      "station_type": "minor_location",
+      "is_gateway": 0,
+      "sort_order": 10050,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Area17",
+      "parent_body": "ArcCorp",
+      "station_type": "minor_location",
+      "is_gateway": 0,
+      "sort_order": 10060,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Area20",
+      "parent_body": "ArcCorp",
+      "station_type": "minor_location",
+      "is_gateway": 0,
+      "sort_order": 10070,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Area26",
+      "parent_body": "ArcCorp",
+      "station_type": "minor_location",
+      "is_gateway": 0,
+      "sort_order": 10080,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Area39",
+      "parent_body": "ArcCorp",
+      "station_type": "minor_location",
+      "is_gateway": 0,
+      "sort_order": 10090,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "New Babbage",
+      "parent_body": "microTech",
+      "station_type": "major_location",
+      "is_gateway": 0,
+      "sort_order": 13010,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "MT DataCenter 2UB-RB9-5",
+      "parent_body": "microTech",
+      "station_type": "data_center",
+      "is_gateway": 0,
+      "sort_order": 13020,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "MT DataCenter 4HJ-LVE-A",
+      "parent_body": "microTech",
+      "station_type": "data_center",
+      "is_gateway": 0,
+      "sort_order": 13030,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "MT DataCenter 5WQ-R2V-C",
+      "parent_body": "microTech",
+      "station_type": "data_center",
+      "is_gateway": 0,
+      "sort_order": 13040,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "MT DataCenter 8FK-Q2X-K",
+      "parent_body": "microTech",
+      "station_type": "data_center",
+      "is_gateway": 0,
+      "sort_order": 13050,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "MT DataCenter D79-ECG-R",
+      "parent_body": "microTech",
+      "station_type": "data_center",
+      "is_gateway": 0,
+      "sort_order": 13060,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "MT DataCenter E2Q-NSG-Y",
+      "parent_body": "microTech",
+      "station_type": "data_center",
+      "is_gateway": 0,
+      "sort_order": 13070,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "MT DataCenter TMG-XEV-2",
+      "parent_body": "microTech",
+      "station_type": "data_center",
+      "is_gateway": 0,
+      "sort_order": 13080,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "MT DataCenter QVX-J88-J",
+      "parent_body": "microTech",
+      "station_type": "data_center",
+      "is_gateway": 0,
+      "sort_order": 13090,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "MT DataCenter L8P-JUC-8",
+      "parent_body": "microTech",
+      "station_type": "data_center",
+      "is_gateway": 0,
+      "sort_order": 13100,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Covalex Distribution Centre S4DC05",
+      "parent_body": "microTech",
+      "station_type": "distribution_centre",
+      "is_gateway": 0,
+      "sort_order": 13110,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Cry-Astro Processing Plant 19-02",
+      "parent_body": "microTech",
+      "station_type": "distribution_centre",
+      "is_gateway": 0,
+      "sort_order": 13120,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Cry-Astro Processing Plant 34-12",
+      "parent_body": "microTech",
+      "station_type": "distribution_centre",
+      "is_gateway": 0,
+      "sort_order": 13130,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "MicroTech Logistics Depot S4LD01",
+      "parent_body": "microTech",
+      "station_type": "distribution_centre",
+      "is_gateway": 0,
+      "sort_order": 13140,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "MicroTech Logistics Depot S4LD13",
+      "parent_body": "microTech",
+      "station_type": "distribution_centre",
+      "is_gateway": 0,
+      "sort_order": 13150,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Sakura Sun Goldenrod Workcenter",
+      "parent_body": "microTech",
+      "station_type": "distribution_centre",
+      "is_gateway": 0,
+      "sort_order": 13160,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Greycat Stanton IV Production Complex-A",
+      "parent_body": "microTech",
+      "station_type": "distribution_centre",
+      "is_gateway": 0,
+      "sort_order": 13170,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Calhoun Pass Emergency Shelter",
+      "parent_body": "microTech",
+      "station_type": "emergency_shelter",
+      "is_gateway": 0,
+      "sort_order": 13180,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Point Wain Emergency Shelter",
+      "parent_body": "microTech",
+      "station_type": "emergency_shelter",
+      "is_gateway": 0,
+      "sort_order": 13190,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Nuiqsut Emergency Shelter",
+      "parent_body": "microTech",
+      "station_type": "emergency_shelter",
+      "is_gateway": 0,
+      "sort_order": 13200,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Clear View Emergency Shelter",
+      "parent_body": "microTech",
+      "station_type": "emergency_shelter",
+      "is_gateway": 0,
+      "sort_order": 13210,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Shubin Mining Facility SM0-10",
+      "parent_body": "microTech",
+      "station_type": "mining_outpost",
+      "is_gateway": 0,
+      "sort_order": 13220,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Shubin Mining Facility SM0-13",
+      "parent_body": "microTech",
+      "station_type": "mining_outpost",
+      "is_gateway": 0,
+      "sort_order": 13230,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Shubin Mining Facility SM0-18",
+      "parent_body": "microTech",
+      "station_type": "mining_outpost",
+      "is_gateway": 0,
+      "sort_order": 13240,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Shubin Mining Facility SM0-22",
+      "parent_body": "microTech",
+      "station_type": "mining_outpost",
+      "is_gateway": 0,
+      "sort_order": 13250,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "MT OpCenter LTI-4",
+      "parent_body": "microTech",
+      "station_type": "opcenter",
+      "is_gateway": 0,
+      "sort_order": 13260,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Rayari Deltana Research Outpost",
+      "parent_body": "microTech",
+      "station_type": "research_outpost",
+      "is_gateway": 0,
+      "sort_order": 13270,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Rayari Livengood Research Outpost",
+      "parent_body": "microTech",
+      "station_type": "research_outpost",
+      "is_gateway": 0,
+      "sort_order": 13280,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Ghost Hollow",
+      "parent_body": "microTech",
+      "station_type": "settlement",
+      "is_gateway": 0,
+      "sort_order": 13290,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDMS-Bezdek",
+      "parent_body": "Arial",
+      "station_type": "mining_outpost",
+      "is_gateway": 0,
+      "sort_order": 2010,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDMS-Lathan",
+      "parent_body": "Arial",
+      "station_type": "mining_outpost",
+      "is_gateway": 0,
+      "sort_order": 2020,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Coven",
+      "parent_body": "Arial",
+      "station_type": "forward_operating_base",
+      "is_gateway": 0,
+      "sort_order": 2030,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Smokestack",
+      "parent_body": "Arial",
+      "station_type": "forward_operating_base",
+      "is_gateway": 0,
+      "sort_order": 2040,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "The Dregs",
+      "parent_body": "Arial",
+      "station_type": "forward_operating_base",
+      "is_gateway": 0,
+      "sort_order": 2050,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "CommArray ST1-13",
+      "parent_body": "Arial",
+      "station_type": "comm_array",
+      "is_gateway": 0,
+      "sort_order": 2060,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDMS-Norgaard",
+      "parent_body": "Aberdeen",
+      "station_type": "mining_outpost",
+      "is_gateway": 0,
+      "sort_order": 3010,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDMS-Anderson",
+      "parent_body": "Aberdeen",
+      "station_type": "mining_outpost",
+      "is_gateway": 0,
+      "sort_order": 3020,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Klescher Rehabilitation Facility",
+      "parent_body": "Aberdeen",
+      "station_type": "prison",
+      "is_gateway": 0,
+      "sort_order": 3030,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Ruptura PAF-I",
+      "parent_body": "Aberdeen",
+      "station_type": "planetary_alignment_facility",
+      "is_gateway": 0,
+      "sort_order": 3040,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Ruptura PAF-II",
+      "parent_body": "Aberdeen",
+      "station_type": "planetary_alignment_facility",
+      "is_gateway": 0,
+      "sort_order": 3050,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Ruptura PAF-III",
+      "parent_body": "Aberdeen",
+      "station_type": "planetary_alignment_facility",
+      "is_gateway": 0,
+      "sort_order": 3060,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Vivere PAF-I",
+      "parent_body": "Aberdeen",
+      "station_type": "planetary_alignment_facility",
+      "is_gateway": 0,
+      "sort_order": 3070,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Vivere PAF-II",
+      "parent_body": "Aberdeen",
+      "station_type": "planetary_alignment_facility",
+      "is_gateway": 0,
+      "sort_order": 3080,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Vivere PAF-III",
+      "parent_body": "Aberdeen",
+      "station_type": "planetary_alignment_facility",
+      "is_gateway": 0,
+      "sort_order": 3090,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Ruptura OLP",
+      "parent_body": "Aberdeen",
+      "station_type": "orbital_laser_platform",
+      "is_gateway": 0,
+      "sort_order": 3100,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Vivere OLP",
+      "parent_body": "Aberdeen",
+      "station_type": "orbital_laser_platform",
+      "is_gateway": 0,
+      "sort_order": 3110,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Barton Flats Aid Shelter",
+      "parent_body": "Aberdeen",
+      "station_type": "shelter",
+      "is_gateway": 0,
+      "sort_order": 3120,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Boondoggle",
+      "parent_body": "Aberdeen",
+      "station_type": "forward_operating_base",
+      "is_gateway": 0,
+      "sort_order": 3130,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "The Grove",
+      "parent_body": "Aberdeen",
+      "station_type": "forward_operating_base",
+      "is_gateway": 0,
+      "sort_order": 3140,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "CommArray ST1-92",
+      "parent_body": "Aberdeen",
+      "station_type": "comm_array",
+      "is_gateway": 0,
+      "sort_order": 3160,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDMS-Hahn",
+      "parent_body": "Magda",
+      "station_type": "mining_outpost",
+      "is_gateway": 0,
+      "sort_order": 4010,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDMS-Perlman",
+      "parent_body": "Magda",
+      "station_type": "mining_outpost",
+      "is_gateway": 0,
+      "sort_order": 4020,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Gonzo",
+      "parent_body": "Magda",
+      "station_type": "forward_operating_base",
+      "is_gateway": 0,
+      "sort_order": 4030,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Nevermind",
+      "parent_body": "Magda",
+      "station_type": "forward_operating_base",
+      "is_gateway": 0,
+      "sort_order": 4040,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "CommArray ST1-48",
+      "parent_body": "Magda",
+      "station_type": "comm_array",
+      "is_gateway": 0,
+      "sort_order": 4050,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDMS-Ryder",
+      "parent_body": "Ita",
+      "station_type": "mining_outpost",
+      "is_gateway": 0,
+      "sort_order": 5010,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "HDMS-Woodruff",
+      "parent_body": "Ita",
+      "station_type": "mining_outpost",
+      "is_gateway": 0,
+      "sort_order": 5020,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "The Shades",
+      "parent_body": "Ita",
+      "station_type": "forward_operating_base",
+      "is_gateway": 0,
+      "sort_order": 5030,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Thimblerig",
+      "parent_body": "Ita",
+      "station_type": "forward_operating_base",
+      "is_gateway": 0,
+      "sort_order": 5040,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Comm Array ST1-02",
+      "parent_body": "Ita",
+      "station_type": "comm_array",
+      "is_gateway": 0,
+      "sort_order": 5050,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Terra Mills HydroFarm",
+      "parent_body": "Cellin",
+      "station_type": "farm",
+      "is_gateway": 0,
+      "sort_order": 7010,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Hickes Research Outpost",
+      "parent_body": "Cellin",
+      "station_type": "research_outpost",
+      "is_gateway": 0,
+      "sort_order": 7020,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Criska",
+      "parent_body": "Cellin",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 7030,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Dipur",
+      "parent_body": "Cellin",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 7040,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Lespin",
+      "parent_body": "Cellin",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 7050,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Kota",
+      "parent_body": "Cellin",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 7060,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Pakote",
+      "parent_body": "Cellin",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 7070,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Sharga",
+      "parent_body": "Cellin",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 7080,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Saktigar",
+      "parent_body": "Cellin",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 7090,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Gandan",
+      "parent_body": "Cellin",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 7100,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Awala",
+      "parent_body": "Cellin",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 7110,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Birbari",
+      "parent_body": "Cellin",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 7120,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Chilad",
+      "parent_body": "Cellin",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 7130,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "NT-999-XV",
+      "parent_body": "Cellin",
+      "station_type": "underground_bunker",
+      "is_gateway": 0,
+      "sort_order": 7140,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "The Hollows",
+      "parent_body": "Cellin",
+      "station_type": "forward_operating_base",
+      "is_gateway": 0,
+      "sort_order": 7150,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Consumption",
+      "parent_body": "Cellin",
+      "station_type": "forward_operating_base",
+      "is_gateway": 0,
+      "sort_order": 7160,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Fetch",
+      "parent_body": "Cellin",
+      "station_type": "forward_operating_base",
+      "is_gateway": 0,
+      "sort_order": 7170,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Stone's Throw",
+      "parent_body": "Cellin",
+      "station_type": "forward_operating_base",
+      "is_gateway": 0,
+      "sort_order": 7180,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Ashburn Channel",
+      "parent_body": "Cellin",
+      "station_type": "shelter",
+      "is_gateway": 0,
+      "sort_order": 7190,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Flanagan's Ravine",
+      "parent_body": "Cellin",
+      "station_type": "shelter",
+      "is_gateway": 0,
+      "sort_order": 7200,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Julep Ravine",
+      "parent_body": "Cellin",
+      "station_type": "shelter",
+      "is_gateway": 0,
+      "sort_order": 7210,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Mogote",
+      "parent_body": "Cellin",
+      "station_type": "shelter",
+      "is_gateway": 0,
+      "sort_order": 7220,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Tram & Myers Mining",
+      "parent_body": "Cellin",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 7230,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Gallete Family Farms",
+      "parent_body": "Cellin",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 7240,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "PRIVATE PROPERTY",
+      "parent_body": "Cellin",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 7250,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Abandoned outpost",
+      "parent_body": "Cellin",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 7260,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Security Post Kareah",
+      "parent_body": "Cellin",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 7270,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Comm Array ST2-28",
+      "parent_body": "Cellin",
+      "station_type": "comm_array",
+      "is_gateway": 0,
+      "sort_order": 7280,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "ArcCorp Mining Area 141",
+      "parent_body": "Daymar",
+      "station_type": "mining_outpost",
+      "is_gateway": 0,
+      "sort_order": 8010,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Shubin Mining Facility SCD-1",
+      "parent_body": "Daymar",
+      "station_type": "mining_outpost",
+      "is_gateway": 0,
+      "sort_order": 8020,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Attritus PAF-I",
+      "parent_body": "Daymar",
+      "station_type": "planetary_alignment_facility",
+      "is_gateway": 0,
+      "sort_order": 8030,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Attritus PAF-II",
+      "parent_body": "Daymar",
+      "station_type": "planetary_alignment_facility",
+      "is_gateway": 0,
+      "sort_order": 8040,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Attritus PAF-III",
+      "parent_body": "Daymar",
+      "station_type": "planetary_alignment_facility",
+      "is_gateway": 0,
+      "sort_order": 8050,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Lamina PAF-I",
+      "parent_body": "Daymar",
+      "station_type": "planetary_alignment_facility",
+      "is_gateway": 0,
+      "sort_order": 8060,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Lamina PAF-II",
+      "parent_body": "Daymar",
+      "station_type": "planetary_alignment_facility",
+      "is_gateway": 0,
+      "sort_order": 8070,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Lamina PAF-III",
+      "parent_body": "Daymar",
+      "station_type": "planetary_alignment_facility",
+      "is_gateway": 0,
+      "sort_order": 8080,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Attritus OLP",
+      "parent_body": "Daymar",
+      "station_type": "orbital_laser_platform",
+      "is_gateway": 0,
+      "sort_order": 8090,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Lamina OLP",
+      "parent_body": "Daymar",
+      "station_type": "orbital_laser_platform",
+      "is_gateway": 0,
+      "sort_order": 8100,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Brio's Breaker Yard",
+      "parent_body": "Daymar",
+      "station_type": "salvage_yard",
+      "is_gateway": 0,
+      "sort_order": 8110,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Bountiful Harvest Hydroponics",
+      "parent_body": "Daymar",
+      "station_type": "farm",
+      "is_gateway": 0,
+      "sort_order": 8120,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Jumptown",
+      "parent_body": "Daymar",
+      "station_type": "drug_lab",
+      "is_gateway": 0,
+      "sort_order": 8130,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Moluto",
+      "parent_body": "Daymar",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 8140,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Thaquray",
+      "parent_body": "Daymar",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 8150,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Prashad",
+      "parent_body": "Daymar",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 8160,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Dawu",
+      "parent_body": "Daymar",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 8170,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Erden",
+      "parent_body": "Daymar",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 8180,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Menian",
+      "parent_body": "Daymar",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 8190,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Reawick",
+      "parent_body": "Daymar",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 8200,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Tavan",
+      "parent_body": "Daymar",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 8210,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Ulaga",
+      "parent_body": "Daymar",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 8220,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Yafa",
+      "parent_body": "Daymar",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 8230,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "NT-999-XVI",
+      "parent_body": "Daymar",
+      "station_type": "underground_bunker",
+      "is_gateway": 0,
+      "sort_order": 8240,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "The Garden",
+      "parent_body": "Daymar",
+      "station_type": "underground_bunker",
+      "is_gateway": 0,
+      "sort_order": 8250,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "TPF",
+      "parent_body": "Daymar",
+      "station_type": "underground_bunker",
+      "is_gateway": 0,
+      "sort_order": 8260,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Minlo Spire",
+      "parent_body": "Daymar",
+      "station_type": "forward_operating_base",
+      "is_gateway": 0,
+      "sort_order": 8270,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Wailing rock",
+      "parent_body": "Daymar",
+      "station_type": "forward_operating_base",
+      "is_gateway": 0,
+      "sort_order": 8280,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Hospice",
+      "parent_body": "Daymar",
+      "station_type": "forward_operating_base",
+      "is_gateway": 0,
+      "sort_order": 8290,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Dunlow Ridge",
+      "parent_body": "Daymar",
+      "station_type": "shelter",
+      "is_gateway": 0,
+      "sort_order": 8300,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Eager Flats",
+      "parent_body": "Daymar",
+      "station_type": "shelter",
+      "is_gateway": 0,
+      "sort_order": 8310,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Tamdon Plains",
+      "parent_body": "Daymar",
+      "station_type": "shelter",
+      "is_gateway": 0,
+      "sort_order": 8320,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Wolf Point",
+      "parent_body": "Daymar",
+      "station_type": "shelter",
+      "is_gateway": 0,
+      "sort_order": 8330,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Nuen Waste Management",
+      "parent_body": "Daymar",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 8340,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Kudre Ore",
+      "parent_body": "Daymar",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 8350,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Whistlers Crypt",
+      "parent_body": "Daymar",
+      "station_type": "settlement",
+      "is_gateway": 0,
+      "sort_order": 8360,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Yadar Valley",
+      "parent_body": "Daymar",
+      "station_type": "racetrack",
+      "is_gateway": 0,
+      "sort_order": 8370,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Abandoned outpost (Daymar)",
+      "parent_body": "Daymar",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 8380,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "UEES Flyssa",
+      "parent_body": "Daymar",
+      "station_type": "wreck_site",
+      "is_gateway": 0,
+      "sort_order": 8390,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Covalex Hub Gundo",
+      "parent_body": "Daymar",
+      "station_type": "artificial_satellite",
+      "is_gateway": 0,
+      "sort_order": 8410,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Comm Array ST2-47",
+      "parent_body": "Daymar",
+      "station_type": "comm_array",
+      "is_gateway": 0,
+      "sort_order": 8420,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "ArcCorp Mining Area 157",
+      "parent_body": "Yela",
+      "station_type": "mining_outpost",
+      "is_gateway": 0,
+      "sort_order": 9010,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Deakins Research Outpost",
+      "parent_body": "Yela",
+      "station_type": "research_outpost",
+      "is_gateway": 0,
+      "sort_order": 9020,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Opal",
+      "parent_body": "Yela",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 9030,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Wan",
+      "parent_body": "Yela",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 9040,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Hasik",
+      "parent_body": "Yela",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 9050,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Iteke",
+      "parent_body": "Yela",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 9060,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Klipra",
+      "parent_body": "Yela",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 9070,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Moka",
+      "parent_body": "Yela",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 9080,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Peska",
+      "parent_body": "Yela",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 9090,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Walvis",
+      "parent_body": "Yela",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 9100,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Triolet",
+      "parent_body": "Yela",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 9110,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Afterlife",
+      "parent_body": "Yela",
+      "station_type": "underground_bunker",
+      "is_gateway": 0,
+      "sort_order": 9120,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Connor's",
+      "parent_body": "Yela",
+      "station_type": "underground_bunker",
+      "is_gateway": 0,
+      "sort_order": 9130,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "NT-999-XXII",
+      "parent_body": "Yela",
+      "station_type": "underground_bunker",
+      "is_gateway": 0,
+      "sort_order": 9140,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Utopia",
+      "parent_body": "Yela",
+      "station_type": "underground_bunker",
+      "is_gateway": 0,
+      "sort_order": 9150,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Half Stack",
+      "parent_body": "Yela",
+      "station_type": "forward_operating_base",
+      "is_gateway": 0,
+      "sort_order": 9160,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Mainline",
+      "parent_body": "Yela",
+      "station_type": "forward_operating_base",
+      "is_gateway": 0,
+      "sort_order": 9170,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Rolo's Crater",
+      "parent_body": "Yela",
+      "station_type": "forward_operating_base",
+      "is_gateway": 0,
+      "sort_order": 9180,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Aston Ridge Aid Shelter",
+      "parent_body": "Yela",
+      "station_type": "shelter",
+      "is_gateway": 0,
+      "sort_order": 9190,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Kosso Basin Aid Shelter",
+      "parent_body": "Yela",
+      "station_type": "shelter",
+      "is_gateway": 0,
+      "sort_order": 9200,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Nakamura Valley Aid Shelter",
+      "parent_body": "Yela",
+      "station_type": "shelter",
+      "is_gateway": 0,
+      "sort_order": 9210,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Talarine Divide Aid Shelter",
+      "parent_body": "Yela",
+      "station_type": "shelter",
+      "is_gateway": 0,
+      "sort_order": 9220,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Benson Mining Outpost",
+      "parent_body": "Yela",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 9230,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "NT-999-XX",
+      "parent_body": "Yela",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 9240,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Abandoned Outpost",
+      "parent_body": "Yela",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 9250,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "GrimHEX",
+      "parent_body": "Yela",
+      "station_type": "artificial_satellite",
+      "is_gateway": 0,
+      "sort_order": 9260,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Comm Array ST2-76",
+      "parent_body": "Yela",
+      "station_type": "comm_array",
+      "is_gateway": 0,
+      "sort_order": 9270,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Miner's Lament",
+      "parent_body": "Yela",
+      "station_type": "natural_satellite",
+      "is_gateway": 0,
+      "sort_order": 9280,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Humboldt Mines",
+      "parent_body": "Lyria",
+      "station_type": "mining_outpost",
+      "is_gateway": 0,
+      "sort_order": 11010,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Loveridge Mineral Reserve",
+      "parent_body": "Lyria",
+      "station_type": "mining_outpost",
+      "is_gateway": 0,
+      "sort_order": 11020,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Shubin Mining Facility SAL-2",
+      "parent_body": "Lyria",
+      "station_type": "mining_outpost",
+      "is_gateway": 0,
+      "sort_order": 11030,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Shubin Mining Facility SAL-5",
+      "parent_body": "Lyria",
+      "station_type": "mining_outpost",
+      "is_gateway": 0,
+      "sort_order": 11040,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Shubin Processing Facility SPAL-3",
+      "parent_body": "Lyria",
+      "station_type": "processing_facility",
+      "is_gateway": 0,
+      "sort_order": 11050,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Shubin Processing Facility SPAL-7",
+      "parent_body": "Lyria",
+      "station_type": "processing_facility",
+      "is_gateway": 0,
+      "sort_order": 11060,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Shubin Processing Facility SPAL-9",
+      "parent_body": "Lyria",
+      "station_type": "processing_facility",
+      "is_gateway": 0,
+      "sort_order": 11070,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Shubin Processing Facility SPAL-12",
+      "parent_body": "Lyria",
+      "station_type": "processing_facility",
+      "is_gateway": 0,
+      "sort_order": 11080,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Shubin Processing Facility SPAL-16",
+      "parent_body": "Lyria",
+      "station_type": "processing_facility",
+      "is_gateway": 0,
+      "sort_order": 11090,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Shubin Processing Facility SPAL-21",
+      "parent_body": "Lyria",
+      "station_type": "processing_facility",
+      "is_gateway": 0,
+      "sort_order": 11100,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Security Depot Lyria-1",
+      "parent_body": "Lyria",
+      "station_type": "security_post",
+      "is_gateway": 0,
+      "sort_order": 11110,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Buckets",
+      "parent_body": "Lyria",
+      "station_type": "other",
+      "is_gateway": 0,
+      "sort_order": 11180,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Launch Pad",
+      "parent_body": "Lyria",
+      "station_type": "other",
+      "is_gateway": 0,
+      "sort_order": 11190,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "CommArray ST3-18",
+      "parent_body": "Lyria",
+      "station_type": "comm_array",
+      "is_gateway": 0,
+      "sort_order": 11200,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Shady Glen Farms",
+      "parent_body": "Wala",
+      "station_type": "farm",
+      "is_gateway": 0,
+      "sort_order": 12010,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "ArcCorp Mining Area 045",
+      "parent_body": "Wala",
+      "station_type": "mining_outpost",
+      "is_gateway": 0,
+      "sort_order": 12020,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "ArcCorp Mining Area 048",
+      "parent_body": "Wala",
+      "station_type": "mining_outpost",
+      "is_gateway": 0,
+      "sort_order": 12030,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "ArcCorp Mining Area 056",
+      "parent_body": "Wala",
+      "station_type": "mining_outpost",
+      "is_gateway": 0,
+      "sort_order": 12040,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "ArcCorp Mining Area 061",
+      "parent_body": "Wala",
+      "station_type": "mining_outpost",
+      "is_gateway": 0,
+      "sort_order": 12050,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "ArcCorp Processing Center 115",
+      "parent_body": "Wala",
+      "station_type": "processing_facility",
+      "is_gateway": 0,
+      "sort_order": 12060,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "ArcCorp Processing Center 123",
+      "parent_body": "Wala",
+      "station_type": "processing_facility",
+      "is_gateway": 0,
+      "sort_order": 12070,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Samson & Sons Salvage Center",
+      "parent_body": "Wala",
+      "station_type": "salvage_yard",
+      "is_gateway": 0,
+      "sort_order": 12100,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "CommArray ST3-35",
+      "parent_body": "Wala",
+      "station_type": "comm_array",
+      "is_gateway": 0,
+      "sort_order": 12110,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Shubin Mining Facility SMCa-6",
+      "parent_body": "Calliope",
+      "station_type": "mining_outpost",
+      "is_gateway": 0,
+      "sort_order": 14010,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Shubin Mining Facility SMCa-8",
+      "parent_body": "Calliope",
+      "station_type": "mining_outpost",
+      "is_gateway": 0,
+      "sort_order": 14020,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Shubin Processing Facility SPMC-1",
+      "parent_body": "Calliope",
+      "station_type": "processing_facility",
+      "is_gateway": 0,
+      "sort_order": 14030,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Shubin Processing Facility SPMC-3",
+      "parent_body": "Calliope",
+      "station_type": "processing_facility",
+      "is_gateway": 0,
+      "sort_order": 14040,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Shubin Processing Facility SPMC-5",
+      "parent_body": "Calliope",
+      "station_type": "processing_facility",
+      "is_gateway": 0,
+      "sort_order": 14050,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Shubin Processing Facility SPMC-10",
+      "parent_body": "Calliope",
+      "station_type": "processing_facility",
+      "is_gateway": 0,
+      "sort_order": 14060,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Shubin Processing Facility SPMC-11",
+      "parent_body": "Calliope",
+      "station_type": "processing_facility",
+      "is_gateway": 0,
+      "sort_order": 14070,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Shubin Processing Facility SPMC-14",
+      "parent_body": "Calliope",
+      "station_type": "processing_facility",
+      "is_gateway": 0,
+      "sort_order": 14080,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Rayari Anvik Research Outpost",
+      "parent_body": "Calliope",
+      "station_type": "research_outpost",
+      "is_gateway": 0,
+      "sort_order": 14090,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Rayari Kaltag Research Outpost",
+      "parent_body": "Calliope",
+      "station_type": "research_outpost",
+      "is_gateway": 0,
+      "sort_order": 14100,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "CommArray ST4-31",
+      "parent_body": "Calliope",
+      "station_type": "comm_array",
+      "is_gateway": 0,
+      "sort_order": 14120,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Rayari Cantwell Research Outpost",
+      "parent_body": "Clio",
+      "station_type": "research_outpost",
+      "is_gateway": 0,
+      "sort_order": 15010,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Rayari McGrath Research Outpost",
+      "parent_body": "Clio",
+      "station_type": "research_outpost",
+      "is_gateway": 0,
+      "sort_order": 15020,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "CommArray ST4-59",
+      "parent_body": "Clio",
+      "station_type": "comm_array",
+      "is_gateway": 0,
+      "sort_order": 15030,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Bud's Growery",
+      "parent_body": "Euterpe",
+      "station_type": "farm",
+      "is_gateway": 0,
+      "sort_order": 16010,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "The Icebreaker",
+      "parent_body": "Euterpe",
+      "station_type": "racetrack",
+      "is_gateway": 0,
+      "sort_order": 16020,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Devlin Scrap & Salvage",
+      "parent_body": "Euterpe",
+      "station_type": "salvage_yard",
+      "is_gateway": 0,
+      "sort_order": 16030,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "CommArray ST4-64",
+      "parent_body": "Euterpe",
+      "station_type": "comm_array",
+      "is_gateway": 0,
+      "sort_order": 16040,
+      "aliases": []
+    }
   ],
   "station_distances": [],
   "jump_gates": [
     {
-      "from_gateway": { "system": "Stanton", "name": "Pyro Jump Point" },
-      "to_gateway":   { "system": "Pyro",    "name": "Stanton Jump Point" },
+      "from_gateway": {
+        "system": "Stanton",
+        "name": "Pyro Jump Point"
+      },
+      "to_gateway": {
+        "system": "Pyro",
+        "name": "Stanton Jump Point"
+      },
       "distance_km": null,
       "notes": "Bidirectional gateway link; populate distance later"
     },
     {
-      "from_gateway": { "system": "Pyro",    "name": "Stanton Jump Point" },
-      "to_gateway":   { "system": "Stanton", "name": "Pyro Jump Point" },
+      "from_gateway": {
+        "system": "Pyro",
+        "name": "Stanton Jump Point"
+      },
+      "to_gateway": {
+        "system": "Stanton",
+        "name": "Pyro Jump Point"
+      },
       "distance_km": null,
       "notes": "Reverse direction"
     }

@@ -8,12 +8,50 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QComboBox, QDialog, QDialogButtonBox, QFormLayout, QFrame,
+    QComboBox, QCompleter, QDialog, QDialogButtonBox, QFormLayout, QFrame,
     QHBoxLayout, QLabel, QPushButton, QSpinBox, QVBoxLayout, QWidget,
 )
 
 
 PALLET_SIZES = [1, 2, 4, 8, 16, 24, 32]
+
+
+def _make_station_combo(controller) -> QComboBox:
+    """Station picker — alphabetical and type-to-filter.
+
+    With ~290 stations a plain scrolling combo is unusable, so the
+    combo is editable and its completer does a case-insensitive
+    substring match: the user can open it and start typing to narrow
+    the list down to whatever they want.
+    """
+    combo = QComboBox()
+    combo.setEditable(True)
+    combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+    rows = controller.conn.execute(
+        """
+        SELECT id, name FROM stations
+        WHERE is_active = 1 AND is_gateway = 0
+        ORDER BY name COLLATE NOCASE
+        """
+    ).fetchall()
+    for r in rows:
+        combo.addItem(r["name"], userData=r["id"])
+    completer = combo.completer()
+    completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+    completer.setFilterMode(Qt.MatchFlag.MatchContains)
+    completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+    return combo
+
+
+def _station_id(combo: QComboBox):
+    """Resolve a station combo's selected id. An editable combo's
+    currentIndex can lag the typed text, so match the text to an item
+    first, then fall back to currentData()."""
+    idx = combo.findText(combo.currentText().strip(),
+                         Qt.MatchFlag.MatchFixedString)
+    if idx >= 0:
+        return combo.itemData(idx)
+    return combo.currentData()
 
 
 class DeliveryRow(QFrame):
@@ -29,14 +67,13 @@ class DeliveryRow(QFrame):
         layout.setContentsMargins(6, 4, 6, 4)
         layout.setSpacing(6)
 
-        self.station_combo = QComboBox()
+        self.station_combo = _make_station_combo(controller)
         self.commodity_combo = QComboBox()
         self.scu_spin = QSpinBox()
         self.scu_spin.setRange(1, 696)
         self.scu_spin.setValue(8)
         self.scu_spin.setSuffix(" SCU")
 
-        self._populate_stations()
         self._populate_commodities()
 
         layout.addWidget(QLabel("→"))
@@ -50,17 +87,6 @@ class DeliveryRow(QFrame):
         rm.clicked.connect(lambda: self._on_remove(self))
         layout.addWidget(rm)
 
-    def _populate_stations(self) -> None:
-        rows = self.controller.conn.execute(
-            """
-            SELECT id, name FROM stations
-            WHERE is_active = 1 AND is_gateway = 0
-            ORDER BY sort_order
-            """
-        ).fetchall()
-        for r in rows:
-            self.station_combo.addItem(r["name"], userData=r["id"])
-
     def _populate_commodities(self) -> None:
         rows = self.controller.conn.execute(
             "SELECT id, name FROM commodities WHERE is_active = 1 ORDER BY name"
@@ -70,7 +96,7 @@ class DeliveryRow(QFrame):
 
     def value(self) -> dict:
         return {
-            "destination": self.station_combo.currentData(),
+            "destination": _station_id(self.station_combo),
             "commodity":   self.commodity_combo.currentData(),
             "scu":         self.scu_spin.value(),
         }
@@ -106,8 +132,7 @@ class AddContractDialog(QDialog):
 
         # Top form
         form = QFormLayout()
-        self.pickup_combo = QComboBox()
-        self._populate_stations(self.pickup_combo)
+        self.pickup_combo = _make_station_combo(controller)
         form.addRow("Pickup station", self.pickup_combo)
 
         self.max_combo = QComboBox()
@@ -155,17 +180,6 @@ class AddContractDialog(QDialog):
         else:
             self._add_row()
 
-    def _populate_stations(self, combo: QComboBox) -> None:
-        rows = self.controller.conn.execute(
-            """
-            SELECT id, name FROM stations
-            WHERE is_active = 1 AND is_gateway = 0
-            ORDER BY sort_order
-            """
-        ).fetchall()
-        for r in rows:
-            combo.addItem(r["name"], userData=r["id"])
-
     def _add_row(self) -> DeliveryRow:
         row = DeliveryRow(self.controller, on_remove=self._remove_row)
         self.rows_layout.addWidget(row)
@@ -200,7 +214,7 @@ class AddContractDialog(QDialog):
             if isinstance(self.rows_layout.itemAt(i).widget(), DeliveryRow)
         ]
         return {
-            "pickup_station":  self.pickup_combo.currentData(),
+            "pickup_station":  _station_id(self.pickup_combo),
             "max_pallet_size": self.max_combo.currentData(),
             "deliveries":      [r.value() for r in rows],
         }
