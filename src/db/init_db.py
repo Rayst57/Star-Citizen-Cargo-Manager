@@ -76,12 +76,14 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
         )
         conn.commit()
 
-    # Re-sync every ship seed. load_all_seeds() only runs on first init,
-    # so without this an existing DB never sees ships added (or ship
-    # layouts corrected) after it was created. sync_ships() is
-    # declarative + idempotent, so this is safe to run every launch.
-    from .seed import sync_ships
+    # Re-sync reference data. load_all_seeds() only runs on first init,
+    # so without this an existing DB never sees stations or ships added
+    # (or layouts corrected) after it was created. Both loaders are
+    # idempotent — load_stations() is additive INSERT OR IGNORE,
+    # sync_ships() is a declarative upsert — so this is safe every launch.
+    from .seed import load_stations, sync_ships
 
+    load_stations(conn)
     sync_ships(conn)
 
 
