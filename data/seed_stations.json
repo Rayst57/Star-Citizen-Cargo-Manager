@@ -2678,6 +2678,42 @@
       "is_gateway": 0,
       "sort_order": 16040,
       "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Riker Memorial Spaceport",
+      "parent_body": "ArcCorp",
+      "station_type": "spaceport",
+      "is_gateway": 0,
+      "sort_order": 10015,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Teasa Spaceport",
+      "parent_body": "Hurston",
+      "station_type": "spaceport",
+      "is_gateway": 0,
+      "sort_order": 1015,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "August Dunlow Spaceport",
+      "parent_body": "Crusader",
+      "station_type": "spaceport",
+      "is_gateway": 0,
+      "sort_order": 6015,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "New Babbage Interstellar Spaceport",
+      "parent_body": "microTech",
+      "station_type": "spaceport",
+      "is_gateway": 0,
+      "sort_order": 13015,
+      "aliases": []
     }
   ],
   "station_distances": [],

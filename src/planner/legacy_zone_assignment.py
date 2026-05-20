@@ -1,0 +1,1110 @@
+"""
+Zone assignment — STRICT PALLET-CONFLICT MODE (legacy / pre-CIG-fix).
+
+Kept in-tree as a backup. Active only when settings.strict_pallet_
+conflict_mode is enabled — turn that on if CIG ever regresses the
+pallet-ID / locked-destination fix that made the wider "indistin-
+guishable pallets" problem disappear. The current default planner
+lives in zone_assignment.py and is much simpler.
+
+Design (handbook §10, §9):
+  - One destination per zone whenever capacity allows. Mixed-destination zones
+    are a LAST RESORT for overflow only — the UI will flag them as a warning
+    state requiring user acknowledgement.
+  - Earliest-unload cargo goes into zones with the lowest unload_priority.
+  - Cargo for the same destination stays together when practical.
+  - Conflict cargo is kept in separate zones per contract (never merged).
+  - Conflict pallets land at low-Y (ramp side) within their zone for fast
+    deconfliction at unload.
+  - Zone capacity is enforced via SCU totals (slot-level 3D bin packing is a
+    later enhancement; physical cube_x/y/z fields in zone_assignments are
+    populated with nulls for now).
+
+Algorithm:
+  1. Group cargo lines by delivery destination.
+  2. Order destinations by their stop position in the route (earliest = first).
+  3. Order zones by unload_priority ascending.
+  4. For each destination, claim the next free zone with enough capacity.
+     If the destination's total SCU exceeds one zone, overflow to additional
+     zones until placed.
+  5. Conflict cargo is always allocated to a fresh zone (no overflow shared
+     with other destinations) and gets sibling-zone separation.
+  6. Mixed-destination zones occur only when no fresh zone can fit the
+     remaining cargo — the planner logs a WARN.
+
+The function writes rows to zone_assignments and logs warnings to
+validation_log.
+"""
+
+from __future__ import annotations
+
+import logging
+import sqlite3
+from dataclasses import dataclass
+
+from .palletizer import palletize, palletize_summary
+from .conflicts import ConflictGroup
+
+
+_log = logging.getLogger("cargo_manager")
+
+
+@dataclass
+class ZoneState:
+    zone_label: str
+    bay_label: str
+    scu_capacity: int
+    unload_priority: int
+    remaining_scu: int
+    # delivery_station_ids whose cargo currently occupies this zone
+    occupants: set[int]
+
+
+def _load_zones(ship_id: int, conn: sqlite3.Connection) -> list[ZoneState]:
+    rows = conn.execute(
+        """
+        SELECT zone_label, bay_label, scu_capacity, unload_priority
+        FROM ship_zones
+        WHERE ship_id = ?
+        ORDER BY unload_priority ASC
+        """,
+        (ship_id,),
+    ).fetchall()
+    return [
+        ZoneState(
+            zone_label=r["zone_label"],
+            bay_label=r["bay_label"],
+            scu_capacity=r["scu_capacity"],
+            unload_priority=r["unload_priority"],
+            remaining_scu=r["scu_capacity"],
+            occupants=set(),
+        )
+        for r in rows
+    ]
+
+
+def _log_warn(workday_id: int, message: str, cargo_line_id: int | None, conn: sqlite3.Connection) -> None:
+    from datetime import datetime, timezone
+
+    conn.execute(
+        """
+        INSERT INTO validation_log
+            (workday_id, timestamp, severity, source, message, cargo_line_id)
+        VALUES (?, ?, 'WARN', 'zone_assignment', ?, ?)
+        """,
+        (
+            workday_id,
+            datetime.now(timezone.utc).isoformat(),
+            message,
+            cargo_line_id,
+        ),
+    )
+
+
+def build_zone_plan(
+    workday_id: int,
+    route_stop_order: list[int],
+    conflict_groups: list[ConflictGroup],
+    conn: sqlite3.Connection,
+) -> None:
+    """Assign cargo lines to zones and persist to zone_assignments."""
+    workday = conn.execute(
+        "SELECT ship_id FROM workdays WHERE id = ?", (workday_id,)
+    ).fetchone()
+    if not workday:
+        raise ValueError(f"Workday {workday_id} not found")
+
+    zones = _load_zones(workday["ship_id"], conn)
+    if not zones:
+        _log_warn(workday_id, "No zones found for ship — cannot assign cargo.", None, conn)
+        conn.commit()
+        return
+
+    # ── Clear previous non-manual assignments ────────────────────────────
+    conn.execute(
+        """
+        DELETE FROM zone_assignments
+        WHERE workday_id = ? AND is_manual_override = 0
+        """,
+        (workday_id,),
+    )
+
+    # ── Honor user manual overrides (merge / move / swap) ────────────────
+    # Anything the user pinned via the Zone Detail dialog stays put. We
+    # pre-occupy those zones in the planner state so subsequent
+    # allocations see the real free space and conflict-partner zones,
+    # then skip those cargo lines when the destination loop runs.
+    manual_rows = conn.execute(
+        """
+        SELECT cl.id AS cargo_line_id, cl.delivery_station_id,
+               cl.scu_amount, za.primary_zone_label
+        FROM zone_assignments za
+        JOIN cargo_lines cl ON cl.id = za.cargo_line_id
+        JOIN contracts ct ON ct.id = cl.contract_id
+        WHERE za.workday_id = ?
+          AND za.is_manual_override = 1
+          AND ct.status != 'complete'
+        """,
+        (workday_id,),
+    ).fetchall()
+    manual_cl_ids: set[int] = {r["cargo_line_id"] for r in manual_rows}
+    if manual_rows:
+        zone_by_label = {z.zone_label: z for z in zones}
+        for r in manual_rows:
+            z = zone_by_label.get(r["primary_zone_label"])
+            if z is None:
+                continue
+            z.remaining_scu -= r["scu_amount"]
+            z.occupants.add(r["delivery_station_id"])
+        _log.info(
+            "zone_assignment: %d cargo line(s) pinned by user manual "
+            "override — those zones are pre-occupied; planner will work "
+            "around them.",
+            len(manual_rows),
+        )
+
+    # ── Delivery priority map ────────────────────────────────────────────
+    # Round-robin routes have the origin at BOTH stop 1 (depart) and the
+    # final stop. We want the FIRST occurrence (= when the destination's
+    # cargo is first picked up / unloaded), so build the map only from
+    # not-yet-seen station ids.
+    delivery_priority: dict[int, int] = {}
+    for idx, sid in enumerate(route_stop_order):
+        if sid not in delivery_priority:
+            delivery_priority[sid] = idx
+
+    # ── Identify conflicted cargo lines + their group ────────────────────
+    conflicted_ids: set[int] = {
+        cl_id for grp in conflict_groups for cl_id in grp.cargo_line_ids
+    }
+    cl_to_group: dict[int, int] = {}
+    for grp in conflict_groups:
+        for cl_id in grp.cargo_line_ids:
+            cl_to_group[cl_id] = grp.group_id
+
+    # ── Load cargo lines (excluding ones pinned by manual override) ─────
+    rows = conn.execute(
+        """
+        SELECT cl.id, cl.contract_id, cl.scu_amount, cl.commodity_id,
+               cl.delivery_station_id,
+               ct.max_pallet_size, ct.pickup_station_id, ct.contract_number
+        FROM cargo_lines cl
+        JOIN contracts ct ON ct.id = cl.contract_id
+        WHERE ct.workday_id = ?
+          AND ct.status != 'complete'
+        ORDER BY cl.id
+        """,
+        (workday_id,),
+    ).fetchall()
+    rows = [r for r in rows if r["id"] not in manual_cl_ids]
+
+    # Manually-placed cargo also counts toward conflict-zone tracking,
+    # otherwise a sibling destination could land in a manual zone and
+    # blow the conflict-separation guarantee.
+
+    if not rows:
+        conn.commit()
+        return
+
+    # ── Group by delivery destination ────────────────────────────────────
+    by_destination: dict[int, list[dict]] = {}
+    for r in rows:
+        by_destination.setdefault(r["delivery_station_id"], []).append({
+            "cargo_line_id": r["id"],
+            "scu_amount": r["scu_amount"],
+            "max_pallet_size": r["max_pallet_size"],
+            "is_conflicted": r["id"] in conflicted_ids,
+            "group_id": cl_to_group.get(r["id"]),
+            "pickup_station_id": r["pickup_station_id"],
+        })
+
+    # Sort destinations by TOTAL SCU descending. Big destinations claim
+    # zones first so their cargo stays contiguous; small ones top off
+    # what's left. delivery_priority is the tiebreaker — earliest-route
+    # ties so neighbours' cargo ends up in adjacent zones.
+    #
+    # Why not earliest-route first (the prior strategy)? With that order,
+    # large round-robin destinations like the origin (Seraphim is dest 1
+    # AND the final unload at the end of a round-robin) ended up
+    # processed last, after every fresh zone was claimed by smaller
+    # destinations — and had to fragment across 5+ leftover zones. Sorting
+    # by size keeps Baijini's 236 SCU and Seraphim's 195 SCU each in two
+    # adjacent R-bay zones instead.
+    def _dest_total_scu(did: int) -> int:
+        return sum(c["scu_amount"] for c in by_destination[did])
+
+    ordered_dests = sorted(
+        by_destination.keys(),
+        key=lambda did: (-_dest_total_scu(did),
+                         delivery_priority.get(did, 9999)),
+    )
+
+    # Resolve station names once for readable logging.
+    station_names: dict[int, str] = {
+        r["id"]: r["name"]
+        for r in conn.execute(
+            "SELECT id, name FROM stations WHERE id IN (%s)"
+            % ",".join("?" * len(ordered_dests)),
+            list(ordered_dests),
+        ).fetchall()
+    } if ordered_dests else {}
+
+    # Track every zone each conflict group's cargo lands in. We need the
+    # full set (not just the first zone) so a destination's conflict
+    # cargo avoids ALL of its partner's zones, not just the partner's
+    # initial one. Earlier versions stored a single zone per group, which
+    # let conflict pallets end up in the same zone as their twin once the
+    # partner overflowed.
+    conflict_group_zones: dict[int, set[str]] = {}
+    # Which station's cargo lives in each zone for each group — lets us
+    # explain WHY a mix is happening (conflict-induced vs capacity-induced).
+    conflict_group_stations: dict[int, dict[str, set[int]]] = {}
+    # Full footprint per destination: every zone that destination has
+    # ANY cargo in. Used for the strict "conflict partners must never
+    # share a zone" rule — when destination D's partner P already has
+    # cargo in zones {X, Y}, ALL of {X, Y} are off-limits for D, even
+    # the zones where P's cargo isn't from the same conflict group.
+    # (Otherwise PT could land in R4 with Seraphim just because the
+    # Lively-Pathway-Aluminum specifically lives in R3 — the partners
+    # still end up sharing R4 and the pilot still has trouble at the
+    # elevator.)
+    dest_zones: dict[int, set[str]] = {}
+    # Pre-compute partners-per-destination so the exclusion lookup is
+    # cheap inside the destination loop.
+    partners_by_dest: dict[int, set[int]] = {}
+    for grp in conflict_groups:
+        dest_ids = [d.delivery_station_id for d in grp.destinations]
+        for did in dest_ids:
+            for partner_did in dest_ids:
+                if partner_did != did:
+                    partners_by_dest.setdefault(did, set()).add(partner_did)
+
+    # Seed the conflict tracking with manually-pinned cargo so a sibling
+    # destination's exclusion still covers manually-placed partner zones.
+    for r in manual_rows:
+        # Every manual row counts toward dest_zones, conflict-group
+        # cargo or not — a partner avoids the destination's full
+        # footprint, not just the group-specific portion.
+        dest_zones.setdefault(r["delivery_station_id"], set()).add(
+            r["primary_zone_label"]
+        )
+        gid = cl_to_group.get(r["cargo_line_id"])
+        if gid is None:
+            continue
+        conflict_group_zones.setdefault(gid, set()).add(r["primary_zone_label"])
+        conflict_group_stations.setdefault(gid, {}).setdefault(
+            r["primary_zone_label"], set()
+        ).add(r["delivery_station_id"])
+
+    # ── Consolidation pre-pass ─────────────────────────────────────────
+    # Hybrid model: by default each destination keeps its own zone (the
+    # strict "partners never share" rule). But when a single contract
+    # has 3+ destinations all carrying conflict-flagged cargo (e.g.
+    # Contract 2 with AD/SF Food + AD/BG Ice), the conflict has to be
+    # resolved at every stop. Co-locating the conflict pallets into ONE
+    # "consolidation zone" lets the pilot touch a single zone per
+    # Contract 2 stop, deliver that station's portion, leave the rest.
+    #
+    # IMPORTANT: only the conflict-FLAGGED pallets go into the
+    # consolidation zone. Unique-shape stacks (e.g. a 1×2 SCU Ice pallet
+    # that no other destination has at this size) stay with the
+    # destination's regular zone — there's no ambiguity for those, so
+    # there's no benefit to putting them in the shared zone.
+    cl_to_ambig_sizes: dict[int, set[int]] = {}
+    for grp in conflict_groups:
+        sz = set(grp.ambiguous_sizes)
+        for cl_id in grp.cargo_line_ids:
+            cl_to_ambig_sizes[cl_id] = sz
+
+    contract_to_rows: dict[int, list] = {}
+    for r in rows:
+        contract_to_rows.setdefault(r["contract_id"], []).append(r)
+
+    # cl_id → number of SCU left for the per-destination loop after
+    # the conflict portion has been consolidated. If absent, the cargo
+    # line is unmodified.
+    cl_unique_scu: dict[int, int] = {}
+    consolidation_zone_labels: set[str] = set()
+    for cid, crows in sorted(
+        contract_to_rows.items(),
+        key=lambda x: -sum(r["scu_amount"] for r in x[1]),
+    ):
+        conflict_dests = {
+            r["delivery_station_id"] for r in crows
+            if r["id"] in conflicted_ids
+        }
+        if len(conflict_dests) < 3:
+            continue   # Model A default
+
+        # Split each cargo line into (conflict-pallets, unique-pallets).
+        per_cl_split: dict[int, tuple[list[int], list[int]]] = {}
+        conflict_total = 0
+        for r in crows:
+            ambig = cl_to_ambig_sizes.get(r["id"], set())
+            pallets = palletize(r["scu_amount"], r["max_pallet_size"])
+            conflict_pallets = [p for p in pallets if p in ambig]
+            unique_pallets = [p for p in pallets if p not in ambig]
+            per_cl_split[r["id"]] = (conflict_pallets, unique_pallets)
+            conflict_total += sum(conflict_pallets)
+
+        if conflict_total == 0:
+            continue   # contract has 3+ "conflict destinations" but none
+                       # of the actual pallets are flagged ambiguous
+
+        target = _claim_fresh_zone(zones, conflict_total, excluded_zones=set())
+        if target is None:
+            _log.info(
+                "consolidation: contract %d (%d SCU conflict portion, "
+                "dests=%s) — no fresh zone fits, falling back to "
+                "default per-destination allocation",
+                crows[0]["contract_number"], conflict_total,
+                sorted(conflict_dests),
+            )
+            continue
+
+        all_dests = sorted(conflict_dests)
+        contract_num = crows[0]["contract_number"]
+        _log.info(
+            "consolidation: contract %d → %d SCU of conflict pallets "
+            "into zone %s (dests=%s). Unique pallets stay with each "
+            "destination's regular zone.",
+            contract_num, conflict_total, target.zone_label, all_dests,
+        )
+        consolidation_zone_labels.add(target.zone_label)
+        for r in crows:
+            conflict_pallets, unique_pallets = per_cl_split[r["id"]]
+            cl_unique_scu[r["id"]] = sum(unique_pallets)
+            if not conflict_pallets:
+                continue
+            summary = palletize_summary(sorted(conflict_pallets, reverse=True))
+            note = (
+                f"CONSOLIDATED — Contract {contract_num} conflict portion "
+                f"only. Shared with destinations {all_dests}; the pilot "
+                f"resolves the conflict at delivery. Unique-shape pallets "
+                f"are in this contract's other zone_assignments rows."
+            )
+            conn.execute(
+                """
+                INSERT INTO zone_assignments
+                    (workday_id, cargo_line_id, primary_zone_label,
+                     pallet_breakdown, is_manual_override, notes)
+                VALUES (?, ?, ?, ?, 0, ?)
+                """,
+                (workday_id, r["id"], target.zone_label, summary, note),
+            )
+            target.remaining_scu -= sum(conflict_pallets)
+            target.occupants.add(r["delivery_station_id"])
+            dest_zones.setdefault(r["delivery_station_id"], set()).add(
+                target.zone_label
+            )
+            gid = cl_to_group.get(r["id"])
+            if gid is not None:
+                conflict_group_zones.setdefault(gid, set()).add(target.zone_label)
+                conflict_group_stations.setdefault(gid, {}).setdefault(
+                    target.zone_label, set()
+                ).add(r["delivery_station_id"])
+
+    # Reflect cl_unique_scu in by_destination so the per-destination
+    # loop only sees the unique portion of each consolidated cargo
+    # line. Cargo lines that were fully consolidated (zero unique
+    # pallets) get dropped from by_destination entirely.
+    if cl_unique_scu:
+        for did in list(by_destination.keys()):
+            new_cargo = []
+            for c in by_destination[did]:
+                cl_id = c["cargo_line_id"]
+                if cl_id in cl_unique_scu:
+                    unique = cl_unique_scu[cl_id]
+                    if unique == 0:
+                        continue
+                    new_cargo.append({
+                        **c,
+                        "scu_amount": unique,
+                        # Unique-shape pallets aren't conflict pallets
+                        # themselves — they're distinguishable, so the
+                        # per-destination loop treats them like ordinary
+                        # cargo.
+                        "is_conflicted": False,
+                        "group_id": None,
+                    })
+                else:
+                    new_cargo.append(c)
+            if new_cargo:
+                by_destination[did] = new_cargo
+            else:
+                del by_destination[did]
+        ordered_dests = sorted(
+            by_destination.keys(),
+            key=lambda did: (-_dest_total_scu(did),
+                             delivery_priority.get(did, 9999)),
+        )
+
+
+    _log.info(
+        "zone_assignment: %d destinations (size-descending order):",
+        len(ordered_dests),
+    )
+    for did in ordered_dests:
+        name = station_names.get(did, f"station {did}")
+        _log.info(
+            "  dest %d %s — %d SCU (route_priority=%d)",
+            did, name, _dest_total_scu(did),
+            delivery_priority.get(did, 9999),
+        )
+
+    # ── Assign each destination to one (or more) zones ───────────────────
+    for did in ordered_dests:
+        cargo = by_destination[did]
+        total_dest_scu = sum(c["scu_amount"] for c in cargo)
+        is_dest_conflicted = any(c["is_conflicted"] for c in cargo)
+        dest_name = station_names.get(did, str(did))
+
+        # Build sibling-zone exclusion set. Two rules:
+        #
+        # 1. Strict partner exclusion — every zone a conflict partner
+        #    has ANY cargo in is off-limits. (Otherwise PT could land
+        #    in R4 with Seraphim simply because Seraphim's
+        #    Lively-Pathway-Aluminum specifically went to R3 — the
+        #    partners would still share R4 and the pilot would still
+        #    have a hard time at the elevator.)
+        # 2. Consolidation zones are off-limits to ANY destination not
+        #    already in them. A consolidation zone is dedicated to one
+        #    contract's deconfliction; piling extra destinations on
+        #    top would mean unrelated cargo gets mixed into the same
+        #    zone the pilot is using for conflict resolution.
+        excluded_zones: set[str] = set()
+        excluded_reason: dict[str, list[int]] = {}  # zone → [partner_did(s)]
+        for partner_did in partners_by_dest.get(did, set()):
+            for zone_label in dest_zones.get(partner_did, set()):
+                excluded_zones.add(zone_label)
+                excluded_reason.setdefault(zone_label, []).append(partner_did)
+        for zone_label in consolidation_zone_labels:
+            if zone_label not in dest_zones.get(did, set()):
+                excluded_zones.add(zone_label)
+
+        # First-fit decreasing — biggest cargo lines claim zones first so
+        # small ones top off leftover space instead of opening fresh zones.
+        cargo.sort(key=lambda c: -c["scu_amount"])
+
+        target_zone = _claim_fresh_zone(
+            zones, total_dest_scu, excluded_zones=excluded_zones
+        )
+
+        if target_zone is not None:
+            _log.info(
+                "  dest %d %s: %d SCU → fresh zone %s "
+                "(conflict=%s, excluded=%s)",
+                did, dest_name, total_dest_scu, target_zone.zone_label,
+                is_dest_conflicted, sorted(excluded_zones),
+            )
+            _place_cargo_in_zone(
+                workday_id, target_zone, did, cargo, conn,
+                conflict_group_zones, conflict_group_stations, dest_zones,
+            )
+            continue
+
+        # No single FRESH zone fits the whole load. Go straight to the
+        # overflow path, which uses pickup-group FFD: each (destination,
+        # pickup-station) bundle stays in one zone if possible, and
+        # mixing only fires when same-dest + fresh capacity combined
+        # cannot fit the cargo. Crucially we DON'T try a
+        # "claim_any_zone_with_capacity(allow_mixed=True)" pre-step,
+        # because that would mix a destination into another dest's zone
+        # even when same-dest + fresh splitting could avoid the mix.
+        _log.info(
+            "  dest %d %s: %d SCU → no fresh single zone fits, falling "
+            "to overflow (excluded=%s)",
+            did, dest_name, total_dest_scu, sorted(excluded_zones),
+        )
+        _place_cargo_with_overflow(
+            workday_id, zones, did, cargo, conn,
+            excluded_zones, conflict_group_zones, conflict_group_stations,
+            dest_zones,
+            excluded_reason=excluded_reason,
+        )
+
+    conn.commit()
+
+
+def _conflict_partners_in_zone(
+    zone_label: str,
+    delivery_station_id: int,
+    cargo: list[dict],
+    conflict_group_zones: dict[int, set[str]],
+    conflict_group_stations: dict[int, dict[str, set[int]]],
+) -> list[tuple[int, int]]:
+    """Return [(group_id, partner_did), ...] for partners sharing this zone."""
+    partners: list[tuple[int, int]] = []
+    grp_ids = {c["group_id"] for c in cargo if c["group_id"] is not None}
+    for gid in grp_ids:
+        if zone_label not in conflict_group_zones.get(gid, set()):
+            continue
+        for sid in conflict_group_stations.get(gid, {}).get(zone_label, set()):
+            if sid != delivery_station_id:
+                partners.append((gid, sid))
+    return partners
+
+
+def _mix_reason(
+    excluded_zones: set[str],
+    target_zone: ZoneState,
+    conflict_partners: list[tuple[int, int]],
+) -> str:
+    """Plain-language reason a mixed placement happened."""
+    if conflict_partners:
+        # Shouldn't normally happen — exclusion should have blocked this —
+        # but flag it loudly if it does so we can debug.
+        partner_dids = sorted({sid for _, sid in conflict_partners})
+        return (
+            f"WARNING — sharing with conflict partner(s) {partner_dids}; "
+            f"exclusion failed"
+        )
+    if excluded_zones:
+        return (
+            "no fresh zone fits the full load AND conflict-zone exclusion "
+            f"({sorted(excluded_zones)}) ruled out additional fresh options"
+        )
+    return "no fresh zone fits the full load"
+
+
+# ── helpers ──────────────────────────────────────────────────────────────
+
+def _claim_fresh_zone(
+    zones: list[ZoneState],
+    needed_scu: int,
+    *,
+    excluded_zones: set[str],
+) -> ZoneState | None:
+    """Return the first empty zone with capacity >= needed_scu, or None."""
+    for z in zones:
+        if z.zone_label in excluded_zones:
+            continue
+        if z.occupants:
+            continue
+        if z.scu_capacity >= needed_scu:
+            return z
+    return None
+
+
+def _claim_zone_with_capacity(
+    zones: list[ZoneState],
+    needed_scu: int,
+    *,
+    excluded_zones: set[str],
+    allow_mixed: bool,
+) -> ZoneState | None:
+    """Return any zone with at least *needed_scu* free, fresh-first."""
+    # Prefer empty zones first
+    for z in zones:
+        if z.zone_label in excluded_zones:
+            continue
+        if not z.occupants and z.remaining_scu >= needed_scu:
+            return z
+    if not allow_mixed:
+        return None
+    # Then accept zones with existing occupants
+    for z in zones:
+        if z.zone_label in excluded_zones:
+            continue
+        if z.remaining_scu >= needed_scu:
+            return z
+    return None
+
+
+def _place_cargo_in_zone(
+    workday_id: int,
+    zone: ZoneState,
+    delivery_station_id: int,
+    cargo: list[dict],
+    conn: sqlite3.Connection,
+    conflict_group_zones: dict[int, set[str]],
+    conflict_group_stations: dict[int, dict[str, set[int]]],
+    dest_zones: dict[int, set[str]],
+    notes: str | None = None,
+) -> None:
+    """Insert zone_assignment rows for *cargo* into *zone*."""
+    for c in cargo:
+        pallets = palletize(c["scu_amount"], c["max_pallet_size"])
+        summary = palletize_summary(pallets)
+        conn.execute(
+            """
+            INSERT INTO zone_assignments
+                (workday_id, cargo_line_id, primary_zone_label,
+                 pallet_breakdown, is_manual_override, notes)
+            VALUES (?, ?, ?, ?, 0, ?)
+            """,
+            (workday_id, c["cargo_line_id"], zone.zone_label, summary, notes),
+        )
+        zone.remaining_scu -= c["scu_amount"]
+        gid = c["group_id"]
+        if gid is not None:
+            conflict_group_zones.setdefault(gid, set()).add(zone.zone_label)
+            conflict_group_stations.setdefault(gid, {}).setdefault(
+                zone.zone_label, set()
+            ).add(delivery_station_id)
+    zone.occupants.add(delivery_station_id)
+    dest_zones.setdefault(delivery_station_id, set()).add(zone.zone_label)
+
+
+def _place_cargo_with_overflow(
+    workday_id: int,
+    zones: list[ZoneState],
+    delivery_station_id: int,
+    cargo: list[dict],
+    conn: sqlite3.Connection,
+    excluded_zones: set[str],
+    conflict_group_zones: dict[int, set[str]],
+    conflict_group_stations: dict[int, dict[str, set[int]]],
+    dest_zones: dict[int, set[str]],
+    excluded_reason: dict[str, list[int]] | None = None,
+) -> None:
+    """Place cargo across multiple zones when no single zone fits it all.
+
+    Cargo-line FFD: instead of pooling every pallet from every cargo
+    line and packing pallet-by-pallet (which sprays a single contract's
+    short pickup across two zones because the 2-SCU "tail" landed in
+    whichever zone had room left), we pack WHOLE cargo lines first.
+    Each cargo line is treated as an atomic unit and dropped into the
+    best-ranked zone where it fits in full. Only when no zone can hold
+    a cargo line in one piece do we fall back to splitting THAT cargo
+    line at the pallet level.
+
+    Zone-rank order (same as before):
+      0. A zone this destination already occupies (smallest remaining
+         first → top it off before opening another)
+      1. A fresh zone (largest first → leave smaller ones for tail
+         pallets)
+      2. A zone occupied by another destination — last resort, the
+         only path that produces a mixed-destination zone
+
+    Why this is a real improvement: in the previous pool-of-pallets
+    algorithm, Baijini's 9 cargo lines were sprayed across R1 and R2
+    even though only one of them genuinely needed splitting; at every
+    pickup stop the pilot was loading bits into BOTH zones. With cargo-
+    line FFD, contracts from a single pickup stop usually land in one
+    zone — the user only sees a multi-zone load when the math actually
+    forces it.
+    """
+    cargo_meta: dict[int, dict] = {c["cargo_line_id"]: c for c in cargo}
+
+    def _rank(z: ZoneState) -> tuple[int, int]:
+        if delivery_station_id in z.occupants:
+            return (0, z.remaining_scu)        # same dest, top off
+        if not z.occupants:
+            return (1, -z.remaining_scu)       # fresh, biggest first
+        return (2, -z.remaining_scu)           # mixed, last resort
+
+    # placement[(cargo_line_id, zone_label)] = list[pallet_size]
+    placement: dict[tuple[int, str], list[int]] = {}
+    zone_kind: dict[str, str] = {}
+    zone_partners: dict[str, list[int]] = {}
+    # Pallets we couldn't place even with the override fallback.
+    unplaced: list[tuple[int, int]] = []
+
+    excluded_reason = excluded_reason or {}
+
+    def _record_zone_pick(z: ZoneState) -> None:
+        """Capture rank kind + log the pick, once per zone."""
+        if z.zone_label in zone_kind:
+            return
+        r = _rank(z)[0]
+        if r == 0:
+            zone_kind[z.zone_label] = "topoff"
+            _log.info(
+                "    overflow dest %d → top-off into %s "
+                "(remaining=%d SCU)",
+                delivery_station_id, z.zone_label, z.remaining_scu,
+            )
+        elif r == 1:
+            zone_kind[z.zone_label] = "fresh"
+            _log.info(
+                "    overflow dest %d → fresh %s (capacity=%d SCU)",
+                delivery_station_id, z.zone_label, z.remaining_scu,
+            )
+        else:
+            zone_kind[z.zone_label] = "mixed"
+            zone_partners[z.zone_label] = sorted(z.occupants)
+            fresh_left = [
+                zz.zone_label for zz in zones
+                if not zz.occupants and zz.remaining_scu > 0
+            ]
+            fresh_blocked_by_conflict = [
+                zl for zl in fresh_left if zl in excluded_zones
+            ]
+            if fresh_blocked_by_conflict:
+                why = (
+                    f"conflict-zone exclusion ruled out fresh zone(s) "
+                    f"{fresh_blocked_by_conflict} (excluded={sorted(excluded_zones)})"
+                )
+            else:
+                why = "no fresh zone has room"
+            _log.info(
+                "    overflow dest %d → MIXED into %s with %s — %s",
+                delivery_station_id, z.zone_label,
+                sorted(z.occupants), why,
+            )
+
+    # Group cargo lines by (destination, pickup_station). Each group
+    # is everything this destination is loading AT ONE PICKUP STOP — so
+    # if we place a whole group in one zone, that stop's load reads as
+    # a single zone in the detailed plan instead of being sprayed.
+    pickup_groups: dict[int, list[dict]] = {}
+    for c in cargo:
+        pickup_groups.setdefault(c["pickup_station_id"], []).append(c)
+
+    # FFD on the groups by their total SCU. Tie-break on the deterministic
+    # smallest cargo_line_id so a recompute yields the same packing.
+    def _group_total_scu(g: list[dict]) -> int:
+        return sum(c["scu_amount"] for c in g)
+
+    def _group_min_clid(g: list[dict]) -> int:
+        return min(c["cargo_line_id"] for c in g)
+
+    remaining_groups = sorted(
+        pickup_groups.values(),
+        key=lambda g: (-_group_total_scu(g), _group_min_clid(g)),
+    )
+
+    def _place_whole_group(group: list[dict], target: ZoneState) -> None:
+        for cl in group:
+            pallets_cl = palletize(cl["scu_amount"], cl["max_pallet_size"])
+            placement.setdefault(
+                (cl["cargo_line_id"], target.zone_label), []
+            ).extend(pallets_cl)
+            target.remaining_scu -= cl["scu_amount"]
+            target.occupants.add(delivery_station_id)
+        dest_zones.setdefault(delivery_station_id, set()).add(target.zone_label)
+
+    def _split_cargo_line_into(
+        cl: dict,
+        pallets: list[int],
+        candidate_zones: list[ZoneState],
+    ) -> list[int]:
+        """Pallet-level split of *cl* across the supplied zones (already
+        rank-sorted). Returns whatever pallets couldn't be placed."""
+        line_pool = sorted(pallets, reverse=True)
+        zones_with_room = [z for z in candidate_zones if z.remaining_scu > 0]
+        while line_pool:
+            smallest = min(line_pool)
+            avail = sorted(
+                [z for z in zones_with_room if z.remaining_scu >= smallest],
+                key=_rank,
+            )
+            if not avail:
+                return line_pool
+            target = avail[0]
+            _record_zone_pick(target)
+            kept: list[int] = []
+            placed_any = False
+            for size in line_pool:
+                if target.remaining_scu >= size:
+                    placement.setdefault(
+                        (cl["cargo_line_id"], target.zone_label), []
+                    ).append(size)
+                    target.remaining_scu -= size
+                    target.occupants.add(delivery_station_id)
+                    placed_any = True
+                else:
+                    kept.append(size)
+            line_pool = kept
+            if placed_any:
+                dest_zones.setdefault(delivery_station_id, set()).add(
+                    target.zone_label
+                )
+            if not placed_any:
+                return line_pool
+        return []
+
+    def _split_group_across_zones(
+        group: list[dict],
+        candidate_zones: list[ZoneState],
+    ) -> list[dict]:
+        """Split a pickup-stop group across multiple zones. Tries to keep
+        each cargo line whole — places cargo lines one at a time in
+        rank-best zone with capacity. Returns the cargo lines we
+        couldn't place at all (pallet-level split fallback runs after).
+        """
+        leftover_cls: list[dict] = []
+        # FFD within the group too, so the biggest piece consumes the
+        # biggest available free chunk first.
+        group_sorted = sorted(group, key=lambda c: -c["scu_amount"])
+        for cl in group_sorted:
+            scu = cl["scu_amount"]
+            pallets_cl = palletize(scu, cl["max_pallet_size"])
+            fits_whole = sorted(
+                [z for z in candidate_zones if z.remaining_scu >= scu],
+                key=_rank,
+            )
+            if fits_whole:
+                target = fits_whole[0]
+                _record_zone_pick(target)
+                placement.setdefault(
+                    (cl["cargo_line_id"], target.zone_label), []
+                ).extend(pallets_cl)
+                target.remaining_scu -= scu
+                target.occupants.add(delivery_station_id)
+                dest_zones.setdefault(delivery_station_id, set()).add(
+                    target.zone_label
+                )
+                continue
+            # Try pallet-level split across same candidates.
+            unplaced_pallets = _split_cargo_line_into(
+                cl, pallets_cl, candidate_zones,
+            )
+            if unplaced_pallets:
+                leftover_cls.append(
+                    {**cl, "_unplaced_pallets": unplaced_pallets}
+                )
+        return leftover_cls
+
+    for group in remaining_groups:
+        group_scu = _group_total_scu(group)
+
+        same_dest_zones = lambda: [
+            z for z in zones
+            if delivery_station_id in z.occupants
+            and z.zone_label not in excluded_zones
+            and z.remaining_scu > 0
+        ]
+        fresh_zones = lambda: [
+            z for z in zones
+            if not z.occupants
+            and z.zone_label not in excluded_zones
+            and z.remaining_scu > 0
+        ]
+        mixed_zones = lambda: [
+            z for z in zones
+            if z.occupants
+            and delivery_station_id not in z.occupants
+            and z.zone_label not in excluded_zones
+            and z.remaining_scu > 0
+        ]
+
+        # Step 1: place the WHOLE pickup group in a same-dest zone if
+        # one fits. Smallest fitting first = top off existing zone.
+        sd_whole = sorted(
+            [z for z in same_dest_zones() if z.remaining_scu >= group_scu],
+            key=lambda z: z.remaining_scu,
+        )
+        if sd_whole:
+            target = sd_whole[0]
+            _record_zone_pick(target)
+            _place_whole_group(group, target)
+            continue
+
+        # Step 2: split this pickup group across SAME-DEST zones only,
+        # if their combined free space fits. Keeps the destination's
+        # footprint tight before we open a new zone (the user's "one
+        # destination per zone" preference — fill leftovers before
+        # spawning another zone for this dest).
+        sd_list = same_dest_zones()
+        sd_total = sum(z.remaining_scu for z in sd_list)
+        if sd_total >= group_scu:
+            _log.info(
+                "    overflow dest %d → pickup group (%d SCU) split "
+                "across same-dest zones %s to keep destination tight",
+                delivery_station_id, group_scu,
+                [z.zone_label for z in sd_list],
+            )
+            _split_group_across_zones(group, sd_list)
+            continue
+
+        # Step 3: open a FRESH zone for the whole group. LARGEST fresh
+        # first — large destinations need contiguous R-bay capacity, and
+        # a small one processed earlier in the FFD order shouldn't burn
+        # a 72-SCU F-bay zone if a 120-SCU R-bay is available and the
+        # group is well over 72 SCU. For small groups the largest fresh
+        # still works (the "waste" lives in the same zone the dest
+        # will keep topping off, or stays empty if the dest has no
+        # more groups — fine, since other dests can't intrude as long
+        # as the no-mix path can still satisfy them).
+        fr_whole = sorted(
+            [z for z in fresh_zones() if z.remaining_scu >= group_scu],
+            key=lambda z: -z.remaining_scu,
+        )
+        if fr_whole:
+            target = fr_whole[0]
+            _record_zone_pick(target)
+            _place_whole_group(group, target)
+            continue
+
+        # Step 4: split across same-dest + fresh together (no mixing).
+        no_mix_zones = sd_list + fresh_zones()
+        no_mix_total = sum(z.remaining_scu for z in no_mix_zones)
+        if no_mix_total >= group_scu:
+            _log.info(
+                "    overflow dest %d → pickup group (%d SCU) split "
+                "across same-dest %s + fresh %s (no mixing required)",
+                delivery_station_id, group_scu,
+                [z.zone_label for z in sd_list],
+                [z.zone_label for z in fresh_zones()],
+            )
+            _split_group_across_zones(group, no_mix_zones)
+            continue
+
+        # Step 5 (last resort): MIXING is unavoidable. Same-dest and
+        # fresh are both exhausted. Spill the rest into other dests'
+        # zones in rank order (most-remaining first).
+        all_eligible = no_mix_zones + mixed_zones()
+        if not all_eligible:
+            for cl in group:
+                for s in palletize(cl["scu_amount"], cl["max_pallet_size"]):
+                    unplaced.append((cl["cargo_line_id"], s))
+            continue
+        _log.info(
+            "    overflow dest %d → pickup group (%d SCU) MIXING into "
+            "%s (last resort — same-dest+fresh combined cannot fit)",
+            delivery_station_id, group_scu,
+            [z.zone_label for z in mixed_zones()],
+        )
+        _split_group_across_zones(group, all_eligible)
+
+    # 2. Persist one zone_assignments row per (cargo_line, zone) pair.
+    cl_zones: dict[int, list[str]] = {}
+    for cl_id, zone_label in placement.keys():
+        cl_zones.setdefault(cl_id, []).append(zone_label)
+
+    def _note_for(zone_label: str, split: bool) -> str:
+        kind = zone_kind.get(zone_label, "fresh")
+        if kind == "mixed":
+            partners = zone_partners.get(zone_label, [])
+            return (
+                f"MIXED — sharing {zone_label} with destination(s) "
+                f"{partners} (no fresh zone left)"
+            )
+        if kind == "topoff":
+            return f"OVERFLOW — top-off into existing same-destination zone {zone_label}"
+        return (
+            "OVERFLOW — split across zones"
+            if split else
+            "OVERFLOW — single zone"
+        )
+
+    for (cl_id, zone_label), sizes in placement.items():
+        sizes.sort(reverse=True)
+        summary = palletize_summary(sizes)
+        note = _note_for(zone_label, split=len(cl_zones[cl_id]) > 1)
+        conn.execute(
+            """
+            INSERT INTO zone_assignments
+                (workday_id, cargo_line_id, primary_zone_label,
+                 pallet_breakdown, is_manual_override, notes)
+            VALUES (?, ?, ?, ?, 0, ?)
+            """,
+            (workday_id, cl_id, zone_label, summary, note),
+        )
+
+    # 3. Record EVERY zone each conflict group uses + this destination's
+    #    full zone footprint. dest_zones drives the strict
+    #    "partners never share any zone" exclusion for future
+    #    destinations; conflict_group_zones is still kept for the mix-
+    #    reason logging.
+    for (cl_id, zone_label) in placement.keys():
+        dest_zones.setdefault(delivery_station_id, set()).add(zone_label)
+        c = cargo_meta[cl_id]
+        gid = c.get("group_id")
+        if gid is None:
+            continue
+        conflict_group_zones.setdefault(gid, set()).add(zone_label)
+        conflict_group_stations.setdefault(gid, {}).setdefault(
+            zone_label, set()
+        ).add(delivery_station_id)
+
+    # 4. Last-resort fallback: if conflict-zone exclusion left cargo
+    #    with no legal home, place it ANYWAY into the best mixed zone
+    #    available (now ignoring excluded_zones). Without this the cargo
+    #    line has no zone_assignments row and shows up in the UI as "?".
+    #    Each fallback placement is loudly tagged so the pilot knows the
+    #    conflict still needs manual resolution at delivery.
+    fallback_placements: dict[tuple[int, str], list[int]] = {}
+    if unplaced and excluded_zones:
+        _log.info(
+            "    overflow dest %d → %d SCU still unplaced after "
+            "conflict-respecting pass; retrying with exclusion ignored",
+            delivery_station_id, sum(s for _, s in unplaced),
+        )
+        retry_pool = list(unplaced)
+        unplaced = []
+        while retry_pool:
+            smallest = min(s for _, s in retry_pool)
+            avail = sorted(
+                [z for z in zones if z.remaining_scu >= smallest],
+                key=_rank,
+            )
+            if not avail:
+                unplaced.extend(retry_pool)
+                break
+            target = avail[0]
+            new_pool: list[tuple[int, int]] = []
+            placed_any = False
+            for cl_id, size in retry_pool:
+                if target.remaining_scu >= size:
+                    fallback_placements.setdefault(
+                        (cl_id, target.zone_label), []
+                    ).append(size)
+                    target.remaining_scu -= size
+                    target.occupants.add(delivery_station_id)
+                    placed_any = True
+                else:
+                    new_pool.append((cl_id, size))
+            if placed_any:
+                dest_zones.setdefault(delivery_station_id, set()).add(
+                    target.zone_label
+                )
+            retry_pool = new_pool
+            if not placed_any:
+                unplaced.extend(retry_pool)
+                break
+
+        for (cl_id, zone_label), sizes in fallback_placements.items():
+            sizes.sort(reverse=True)
+            summary = palletize_summary(sizes)
+            others = sorted(
+                d for d in next(z for z in zones if z.zone_label == zone_label).occupants
+                if d != delivery_station_id
+            )
+            note = (
+                f"MIXED (CONFLICT-OVERRIDE) — sharing {zone_label} with "
+                f"destination(s) {others}; conflict exclusion overridden "
+                f"because the ship had no legal home for this cargo. "
+                f"Resolve the conflict pallets manually at delivery."
+            )
+            conn.execute(
+                """
+                INSERT INTO zone_assignments
+                    (workday_id, cargo_line_id, primary_zone_label,
+                     pallet_breakdown, is_manual_override, notes)
+                VALUES (?, ?, ?, ?, 0, ?)
+                """,
+                (workday_id, cl_id, zone_label, summary, note),
+            )
+            _log.info(
+                "    overflow dest %d → CONFLICT-OVERRIDE placement of "
+                "cargo %d in %s with %s",
+                delivery_station_id, cl_id, zone_label, others,
+            )
+            cl_zones.setdefault(cl_id, []).append(zone_label)
+
+    # Warn on truly unplaced (over capacity even with overrides)
+    if unplaced:
+        per_line_unplaced: dict[int, int] = {}
+        for cl_id, size in unplaced:
+            per_line_unplaced[cl_id] = per_line_unplaced.get(cl_id, 0) + size
+        for cl_id, scu in per_line_unplaced.items():
+            _log_warn(
+                workday_id,
+                f"Cargo line {cl_id} could not place {scu} SCU "
+                f"— ship is over capacity.",
+                cl_id, conn,
+            )
+
+    for cl_id, zone_labels in cl_zones.items():
+        if len(zone_labels) > 1:
+            scu = cargo_meta[cl_id]["scu_amount"]
+            _log_warn(
+                workday_id,
+                f"Cargo line {cl_id} ({scu} SCU) split across "
+                f"{', '.join(zone_labels)}.",
+                cl_id, conn,
+            )
+
