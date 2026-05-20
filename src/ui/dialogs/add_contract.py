@@ -9,7 +9,8 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox, QCompleter, QDialog, QDialogButtonBox, QFormLayout, QFrame,
-    QHBoxLayout, QLabel, QPushButton, QSpinBox, QVBoxLayout, QWidget,
+    QHBoxLayout, QLabel, QMessageBox, QPushButton, QSpinBox, QVBoxLayout,
+    QWidget,
 )
 
 
@@ -23,6 +24,10 @@ def _make_station_combo(controller) -> QComboBox:
     combo is editable and its completer does a case-insensitive
     substring match: the user can open it and start typing to narrow
     the list down to whatever they want.
+
+    Starts with no selection (empty line edit) so an accidental
+    default never gets submitted — the user has to explicitly pick or
+    type a station. The save path catches the missing pick.
     """
     combo = QComboBox()
     combo.setEditable(True)
@@ -36,6 +41,8 @@ def _make_station_combo(controller) -> QComboBox:
     ).fetchall()
     for r in rows:
         combo.addItem(r["name"], userData=r["id"])
+    combo.setCurrentIndex(-1)
+    combo.lineEdit().setPlaceholderText("Pick or type a station…")
     completer = combo.completer()
     completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
     completer.setFilterMode(Qt.MatchFlag.MatchContains)
@@ -207,14 +214,37 @@ class AddContractDialog(QDialog):
 
     # ── results ────────────────────────────────────────────────────────
 
-    def value(self) -> dict:
-        rows: list[DeliveryRow] = [
+    def _delivery_rows(self) -> list[DeliveryRow]:
+        return [
             self.rows_layout.itemAt(i).widget()
             for i in range(self.rows_layout.count())
             if isinstance(self.rows_layout.itemAt(i).widget(), DeliveryRow)
         ]
+
+    def accept(self) -> None:  # noqa: D401
+        # Blank-by-default combos mean the user has to explicitly pick;
+        # catch the missing pick here so it never reaches the DB as a
+        # cryptic NOT NULL failure.
+        if _station_id(self.pickup_combo) is None:
+            QMessageBox.warning(
+                self, "Missing pickup station",
+                "Pick or type a pickup station before saving.",
+            )
+            self.pickup_combo.setFocus()
+            return
+        for r in self._delivery_rows():
+            if _station_id(r.station_combo) is None:
+                QMessageBox.warning(
+                    self, "Missing delivery station",
+                    "Pick or type a delivery station for every line.",
+                )
+                r.station_combo.setFocus()
+                return
+        super().accept()
+
+    def value(self) -> dict:
         return {
             "pickup_station":  _station_id(self.pickup_combo),
             "max_pallet_size": self.max_combo.currentData(),
-            "deliveries":      [r.value() for r in rows],
+            "deliveries":      [r.value() for r in self._delivery_rows()],
         }

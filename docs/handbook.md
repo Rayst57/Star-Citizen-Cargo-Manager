@@ -365,3 +365,44 @@ post-CIG-fix planner; §12 is still the spec when
 cost (the player has to manually move pallets); the planner just
 states the move. The player can ignore it if it's not worth the
 time.
+
+### 16.2 Late-binding cargo pickup (PLANNED — not yet implemented)
+
+**What:** When the route visits a pickup station more than once
+*before* the cargo's delivery, defer the load to the **latest**
+such visit — not the earliest. Keeps the ship lighter through the
+intermediate stops by not carrying cargo that doesn't need to be
+on board yet.
+
+**Example** (real route the user spotted):
+
+```
+Stop 1  Riker Memorial Spaceport    — Depart  Load: 8 SCU Al → Baijini [#1]
+Stop 2  Seraphim Station            — Arrive  Load: 8 SCU Al → Baijini [#3],
+                                              8 SCU Al → Riker   [#3]   ← #3 here today
+Stop 3  Baijini Point               — Arrive  Unload [#1], [#3]; Load Cargo → Seraphim [#2]
+Stop 4  Seraphim Station            — Unload [#2]                        ← #3 should load here
+Stop 5  Riker Memorial Spaceport    — Final unload [#3]
+```
+
+Contract #3's Riker pallet was loaded at Stop 2 and sat on the ship
+through Stop 3 and Stop 4 even though the route comes back to
+Seraphim at Stop 4. Loading at Stop 4 instead frees a zone for the
+Stop 2→3 leg.
+
+**Trade-off with `strict_pallet_conflict_mode`:** this optimization
+is **not safe** when pallet identity is ambiguous. Loading early
+gives the planner flexibility to deconflict in any zone over the
+full route; late-binding could trap the pilot with an unresolvable
+mix at the late pickup. So:
+
+- Default (post-CIG-fix) mode: late-bind freely.
+- `strict_pallet_conflict_mode` ON: keep the current eagerly-load
+  behavior — the conflict spec assumes everything is on board when
+  resolution happens.
+
+**Where the code lives:** `src/planner/route.py` line ~189 —
+`station_map[c["pickup_station_id"]]["loads"].append(ref)` attaches
+every load to the pickup station unconditionally. The fix is to
+walk the visit list per cargo line and pick the latest visit whose
+position is still earlier than the delivery's first visit.
