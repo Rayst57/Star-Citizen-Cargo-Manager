@@ -300,3 +300,68 @@ Example:
 Stop 3. Baijini. Unload R4 unique cargo. Resolve Contract 2
 conflict, 2 SCU and 1 SCU only. Reload rejected pallets to R1.
 ```
+
+---
+
+## 16. Planner backlog
+
+### 16.1 Transload consolidation (PLANNED — not yet implemented)
+
+**What:** A mid-route rebalancing pass. At each stop, after the
+stop's unloads have been applied but BEFORE new cargo is loaded, the
+planner checks whether any destination's remaining cargo can be
+consolidated into fewer zones — and emits explicit transload
+instructions if so.
+
+**Why:** The initial allocation (Stop 1 departure) sometimes has to
+split a destination across two zones because of overflow at the
+start. Once part of the ship empties at an intermediate stop, a
+better zone arrangement often becomes possible — and doing it before
+new cargo lands keeps the loadout tidy and predictable for the rest
+of the route.
+
+**Example:**
+
+- Baijini was split across zones 1 and 3 at Stop 1 (capacity
+  overflow forced the split).
+- Everus was in zones 2 and 1.
+- At Stop 2, Everus's zone-1 cargo unloads — zone 1 now has room.
+- **Transload:** move Baijini from zone 3 into zone 1 so all of
+  Baijini's remaining cargo lives in one place.
+- Then load whatever new cargo this stop picks up.
+
+**Order of operations at each stop:**
+
+```
+1. Unload     — cargo for this destination leaves.
+2. Transload  — consolidate remaining cargo across zones (new).
+3. Upload     — load new cargo for downstream destinations.
+```
+
+This supersedes the conflict-era 7-step §12 flow for the
+post-CIG-fix planner; §12 is still the spec when
+`strict_pallet_conflict_mode` is on.
+
+**What the planner needs to do:**
+
+- At each stop, after applying scheduled unloads to the in-memory
+  zone state, scan for destinations whose remaining cargo lives in
+  more than one zone.
+- For each split destination, check whether a single zone now has
+  enough remaining capacity to hold the whole load. Prefer the zone
+  the destination already occupies (so the transload is one-way).
+- Generate `TRANSLOAD` rows in the per-stop plan: *"move N SCU of
+  Baijini cargo from R3 to R1."* These are surfaced in the detailed
+  plan and in voice readouts, not in `zone_assignments` (which
+  records the final state).
+- Re-check the narrow-conflict rule before moving cargo into a zone
+  that other contracts share — don't create a new conflict to fix
+  an old split.
+- Don't generate gratuitous transloads. Skip when the destination
+  already fits in its primary zone, or when the move wouldn't
+  actually free a contiguous block worth using.
+
+**Out of scope for v1:** automatic detection of *physical* transload
+cost (the player has to manually move pallets); the planner just
+states the move. The player can ignore it if it's not worth the
+time.

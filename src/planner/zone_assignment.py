@@ -39,6 +39,13 @@ The `conflict_groups` parameter is kept for API parity with the legacy
 path; this planner ignores it. (Legacy detect_conflicts is still
 useful when strict mode is on; in normal mode the recompute pipeline
 short-circuits it.)
+
+TODO — transload consolidation (handbook §16.1).
+This planner computes the INITIAL loadout at Stop 1 and never
+rebalances. The desired next step is a per-stop transload pass:
+after each stop's unloads, consolidate split destinations into
+fewer zones before the stop's new cargo is loaded. Order of ops at
+each stop becomes Unload → Transload → Upload. Not yet implemented.
 """
 
 from __future__ import annotations
