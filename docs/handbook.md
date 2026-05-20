@@ -406,3 +406,58 @@ mix at the late pickup. So:
 every load to the pickup station unconditionally. The fix is to
 walk the visit list per cargo line and pick the latest visit whose
 position is still earlier than the delivery's first visit.
+
+### 16.3 Manual stop reorder override (PLANNED — not yet implemented)
+
+**Why:** The route builder orders stops by `stations.sort_order`,
+which is a coarse planet-position proxy with no notion of travel
+distance. Stations that are physically close can end up on opposite
+sides of the route. Until a real distance chart exists, the user
+needs a manual override.
+
+**Example** (the user spotted on a real route):
+
+```
+Stop 1  Seraphim Station      — Depart   Load #3 cargo for Baijini & Riker
+Stop 2  Baijini Point         — Arrive   Unload #3, load #4
+Stop 3  Orison                — Arrive   Load #2 for Baijini
+Stop 4  Riker Memorial …      — Arrive   Unload, load #1
+Stop 5  Baijini Point         — Unload   #2
+```
+
+Seraphim and Orison are spatially adjacent; bouncing Seraphim →
+Baijini → Orison → Baijini is bad even without distance numbers.
+Reordering "no, Stop 2 is actually Orison" produces a better route
+that sort_order alone can't reach.
+
+**Proposed UX:**
+
+- Each StopCard gains a small "Stop #" dropdown (1..N).
+- Changing one stop's number swaps with whatever stop currently has
+  that number. ("Don't try to auto-compute the stop. Force the user
+  to manually select what stop Baijini would be after that.")
+- Origin (Stop 1) and Final destination (Stop N) are LOCKED — only
+  the interior stops are reorderable.
+- Changing a number marks the plan dirty. The Recompute button
+  (existing) commits the new order; until then the visual order is
+  pending.
+- A small "Reset stop order" link on the Route header wipes the
+  override and lets sort_order drive again.
+- Manual order doesn't survive a workday switch — it's per-workday.
+
+**Persistence:** a new column on `workdays` —
+`manual_route_order TEXT` holding a JSON list of station IDs in the
+user's preferred order. NULL = use sort_order (current behavior).
+Stations that appear in the contract set but not in the JSON list
+get appended at the end by sort_order. Stale station IDs (no longer
+in the contract set) are silently dropped on read.
+
+**Where the code lives:** `src/planner/route.py` `_sort_key()` at
+line ~193 is the single point that decides ordering. The fix is to
+read `workday["manual_route_order"]`, use that list's position when
+it has the station, and fall back to sort_order otherwise.
+
+**Trade-off with `strict_pallet_conflict_mode`:** the manual order
+itself is mode-independent — but combine it with the strict path
+carefully, since reordering can change which loads/unloads collide
+in time. Probably worth showing a hint in the UI when both are on.

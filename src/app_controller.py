@@ -395,6 +395,54 @@ class AppController(QObject):
             })
         return out
 
+    def export_contracts(self) -> dict:
+        """Return the current workday's contracts as a portable dict.
+
+        Stations and commodities are referenced by NAME so the dump
+        survives a move to another DB / install.
+        """
+        contracts = [
+            {
+                "pickup_station":  c["pickup_name"],
+                "max_pallet_size": c["max_pallet_size"],
+                "deliveries": [
+                    {
+                        "destination": d["delivery_name"],
+                        "commodity":   d["commodity_name"],
+                        "scu":         d["scu_amount"],
+                    }
+                    for d in c["deliveries"]
+                ],
+            }
+            for c in self.list_contracts()
+        ]
+        return {
+            "version":     1,
+            "exported_at": datetime.now(timezone.utc).isoformat(),
+            "contracts":   contracts,
+        }
+
+    def import_contracts(self, payload: dict) -> tuple[int, list[str]]:
+        """Add every contract from *payload* to the current workday.
+
+        Returns (added_count, error_messages). Skips and reports any
+        contract whose station or commodity name doesn't resolve in
+        the local DB instead of aborting the whole import.
+        """
+        if not isinstance(payload, dict) or "contracts" not in payload:
+            raise ToolError(
+                "Bad import file: expected an object with a 'contracts' list."
+            )
+        added = 0
+        errors: list[str] = []
+        for i, c in enumerate(payload["contracts"], start=1):
+            try:
+                self.add_contract(c)
+                added += 1
+            except (ToolError, KeyError, TypeError, ValueError) as e:
+                errors.append(f"Contract {i}: {e}")
+        return added, errors
+
     def add_contract(self, data: dict) -> int:
         """Add a contract.
 
