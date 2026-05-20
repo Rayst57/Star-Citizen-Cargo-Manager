@@ -1,4 +1,9 @@
-"""Persistent dirty-flag banner with a Recompute button."""
+"""Persistent dirty-flag banner with a Compute/Recompute button.
+
+Replaces the old per-panel Recompute button as the single place to
+trigger a plan compute. Hidden when the workday is clean; shown when
+plan_dirty flips True with whatever contracts/changes have piled up.
+"""
 
 from __future__ import annotations
 
@@ -14,22 +19,36 @@ class RecomputeBanner(QFrame):
         self.setObjectName("recompute_banner")
         layout = QHBoxLayout(self)
         layout.setContentsMargins(12, 6, 12, 6)
-        self.label = QLabel("⚠  Modifications made — recompute required")
+        self.label = QLabel("")
         layout.addWidget(self.label)
         layout.addStretch(1)
-        btn = QPushButton("Recompute")
-        btn.clicked.connect(self.recompute_clicked.emit)
-        layout.addWidget(btn)
+        self.btn = QPushButton("Compute")
+        self.btn.clicked.connect(self.recompute_clicked.emit)
+        layout.addWidget(self.btn)
         self.hide()
 
-    def set_dirty(self, dirty: bool, n_changes: int = 0) -> None:
-        if dirty:
+    def set_dirty(
+        self, dirty: bool, n_changes: int = 0, first_run: bool = False,
+    ) -> None:
+        """Show / hide the banner and adapt its wording.
+
+        first_run = True means the active workday has never been computed
+        yet, so the button reads "Compute" and the label is a friendly
+        invite. After the first successful compute it shifts to
+        "Recompute" with the warning glyph the user already knows.
+        """
+        if not dirty:
+            self.hide()
+            return
+        if first_run:
+            self.label.setText("Ready to compute the plan.")
+            self.btn.setText("Compute")
+        else:
             if n_changes:
                 self.label.setText(
                     f"⚠  {n_changes} modifications pending — recompute required"
                 )
             else:
                 self.label.setText("⚠  Modifications made — recompute required")
-            self.show()
-        else:
-            self.hide()
+            self.btn.setText("↻ Recompute")
+        self.show()

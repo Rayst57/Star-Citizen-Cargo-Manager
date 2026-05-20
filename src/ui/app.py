@@ -39,19 +39,29 @@ def launch() -> int:
     conn = initialize_database(db_path)
     controller = AppController(conn, db_path)
 
-    # Workday screen — loop until accepted or user quits
+    # Workday screen — loop until accepted, or exit on close.
+    #
+    # Three outcomes per iteration:
+    #  - User picked Resume or Start New → controller.workday_id is set,
+    #    we drop out and open the main window.
+    #  - User picked "End and Start New" → workday_id is still None but
+    #    the screen sets continue_picking=True; loop again so the user
+    #    can fill out the new workday.
+    #  - User closed the dialog (X / Cancel) → workday_id None,
+    #    continue_picking False → quit the app.
+    #
+    # The previous version used "is there still an open workday?" as a
+    # proxy for that distinction, which failed both ways: closing with
+    # a stale open workday reopened the screen, and "End and Start New"
+    # (which clears the open workday) accidentally quit.
     while controller.workday_id is None:
         screen = WorkdayScreen(controller)
-        result = screen.exec()
-        if result == 0 and controller.workday_id is None:
-            # rejected and not because the user picked "End and Start New"
-            # The "End and Start New" path also calls reject() but the
-            # inner loop continues so the user sees the New card live.
-            wd = controller.find_open_workday()
-            if wd is None and controller.workday_id is None:
-                # If there's still no open workday and user closed, exit
-                return 0
-        # If accepted, controller.workday_id is set and we drop out of the loop
+        screen.exec()
+        if controller.workday_id is not None:
+            break
+        if screen.continue_picking:
+            continue
+        return 0
 
     window = MainWindow(controller)
     window.show()

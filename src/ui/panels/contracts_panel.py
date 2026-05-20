@@ -12,13 +12,12 @@ from ..widgets.contract_card import ContractCard
 
 
 class ContractsPanel(QWidget):
-    add_requested      = Signal()
-    paste_requested    = Signal()
-    export_requested   = Signal()
-    import_requested   = Signal()
-    edit_requested     = Signal(int)   # contract_number
-    remove_requested   = Signal(int)
-    contract_selected  = Signal(int)
+    add_requested          = Signal()
+    paste_requested        = Signal()
+    import_export_requested = Signal()
+    edit_requested         = Signal(int)   # contract_number
+    remove_requested       = Signal(int)
+    contract_selected      = Signal(int)
 
     def __init__(self, controller, parent=None):
         super().__init__(parent)
@@ -39,20 +38,14 @@ class ContractsPanel(QWidget):
         title.setProperty("heading", True)
         header.addWidget(title)
         header.addStretch(1)
-        export_btn = QPushButton("Export")
-        export_btn.setProperty("flat", True)
-        export_btn.setToolTip(
-            "Save this workday's contracts to a JSON file."
+        io_btn = QPushButton("Import/Export")
+        io_btn.setProperty("flat", True)
+        io_btn.setToolTip(
+            "Save this workday's contracts to a JSON file, or load "
+            "contracts from a previously-exported file."
         )
-        export_btn.clicked.connect(self.export_requested.emit)
-        header.addWidget(export_btn)
-        import_btn = QPushButton("Import")
-        import_btn.setProperty("flat", True)
-        import_btn.setToolTip(
-            "Add contracts from a JSON file exported earlier."
-        )
-        import_btn.clicked.connect(self.import_requested.emit)
-        header.addWidget(import_btn)
+        io_btn.clicked.connect(self.import_export_requested.emit)
+        header.addWidget(io_btn)
         paste_btn = QPushButton("Paste")
         paste_btn.setToolTip(
             "Paste free-form dictation; the parser turns it into one or "
