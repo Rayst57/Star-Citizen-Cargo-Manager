@@ -110,13 +110,13 @@ class MainWindow(QMainWindow):
         # Contracts panel
         self.contracts_panel.add_requested.connect(self._open_add_contract)
         self.contracts_panel.paste_requested.connect(self._open_paste_contracts)
-        self.contracts_panel.export_requested.connect(self._export_contracts)
-        self.contracts_panel.import_requested.connect(self._import_contracts)
+        self.contracts_panel.import_export_requested.connect(
+            self._open_import_export
+        )
         self.contracts_panel.edit_requested.connect(self._open_edit_contract)
         self.contracts_panel.remove_requested.connect(self._on_remove_contract)
 
         # Route panel
-        self.route_panel.recompute_clicked.connect(self.controller.recompute)
         self.route_panel.detailed_plan_requested.connect(self._open_detailed_plan)
 
         # Bay canvas
@@ -133,7 +133,7 @@ class MainWindow(QMainWindow):
         self.controller.contracts_changed.connect(self.contracts_panel.refresh)
         self.controller.contracts_changed.connect(self.bay_canvas.refresh)
         self.controller.route_changed.connect(self.route_panel.refresh)
-        self.controller.plan_dirty_changed.connect(self.banner.set_dirty)
+        self.controller.plan_dirty_changed.connect(self._on_plan_dirty_changed)
         self.controller.recompute_started.connect(
             lambda: self.status.set_progress(0, 0)
         )
@@ -188,6 +188,37 @@ class MainWindow(QMainWindow):
     def _open_paste_contracts(self) -> None:
         dlg = PasteContractsDialog(self.controller, parent=self)
         dlg.exec()
+
+    def _on_plan_dirty_changed(self, dirty: bool) -> None:
+        # First-run = no previous compute on this workday yet → the
+        # banner reads "Compute"; otherwise "Recompute" with the
+        # familiar warning.
+        self.banner.set_dirty(
+            dirty,
+            first_run=not self.controller.has_been_computed(),
+        )
+
+    def _open_import_export(self) -> None:
+        """Single popup that lets the user pick Export or Import,
+        replacing the two header buttons that were clipping in narrow
+        windows."""
+        box = QMessageBox(self)
+        box.setWindowTitle("Import / Export Contracts")
+        box.setText("Save this workday's contracts to a file, or load "
+                    "contracts from a previously-exported file?")
+        export_btn = box.addButton(
+            "Export…", QMessageBox.ButtonRole.ActionRole,
+        )
+        import_btn = box.addButton(
+            "Import…", QMessageBox.ButtonRole.ActionRole,
+        )
+        box.addButton(QMessageBox.StandardButton.Cancel)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is export_btn:
+            self._export_contracts()
+        elif clicked is import_btn:
+            self._import_contracts()
 
     def _export_contracts(self) -> None:
         contracts = self.controller.list_contracts()

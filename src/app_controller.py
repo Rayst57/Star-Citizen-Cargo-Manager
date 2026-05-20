@@ -1068,6 +1068,17 @@ class AppController(QObject):
         ).fetchone()
         return int(row["total_scu"]) if row else 696
 
+    def has_been_computed(self) -> bool:
+        """True once the current workday has had at least one successful
+        compute. Drives the Compute-vs-Recompute label on the banner."""
+        if not self.workday_id:
+            return False
+        row = self.conn.execute(
+            "SELECT last_computed_at FROM workdays WHERE id = ?",
+            (self.workday_id,),
+        ).fetchone()
+        return bool(row and row["last_computed_at"])
+
     # ── route navigation ────────────────────────────────────────────────
 
     def complete_current_stop(self) -> dict | None:
