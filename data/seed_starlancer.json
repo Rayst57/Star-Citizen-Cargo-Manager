@@ -5,7 +5,7 @@
     "ramp_note": "The Starlancer MAX loads via the rear; both bays use ramp_side='low_y' with ship_forward_y='high' so the rear/entry end renders at the bottom of the diagram.",
     "adjacency_note": "left_zone_label / right_zone_label list zones that are physically open to each other so a wide load can span them. No zones on the Starlancer MAX connect laterally — every column is walled/walkway-separated — so all adjacency fields are null.",
     "layout_note": "Forward bay = two columns F1/F2 (2 x 16 x 2 = 64 SCU each). Rear bay = side columns R1/R2 (2 x 8 x 3 = 48 SCU each) flanking the central Rear Bulk zone RB (4 x 11 x 2 = 88 SCU).",
-    "rb_note": "RB (Rear Bulk) is the vehicle-bay floor used for bulk cargo. Rated at 88 SCU (11 standard 8-SCU pads reliably loaded). Given the HIGHEST unload_priority so the planner only fills it as a last-ditch overflow zone, after F1/F2/R1/R2.",
+    "rb_note": "RB (Rear Bulk) is the vehicle-bay floor used for bulk cargo. Rated at 88 SCU (11 standard 8-SCU pads reliably loaded). Physical shape is a T whose WIDER 3-pad cap sits at the FORWARD end of the bay (away from the rear ramp); the narrower 2-pad stem extends rearward toward the ramp. Approximated here as a uniform 4 x 11 x 2 rectangle (volume matches; the T silhouette is not modeled separately). Given the HIGHEST unload_priority so the planner only fills it as a last-ditch overflow zone, after F1/F2/R1/R2.",
     "totals": "Ship total = F1 64 + F2 64 + R1 48 + R2 48 + RB 88 = 312 SCU."
   },
   "ship": {
