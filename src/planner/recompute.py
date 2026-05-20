@@ -25,6 +25,7 @@ from datetime import datetime, timezone
 from .route import RouteStop, build_simple_route
 from .conflicts import ConflictGroup, detect_conflicts, persist_conflicts
 from .loadout import Snapshot, build_loadout_snapshots
+from .zone_assignment import TransloadMove
 from ..settings import AppSettings
 
 
@@ -33,6 +34,7 @@ class RecomputeResult:
     route_stops: list[RouteStop]
     conflict_groups: list[ConflictGroup]
     snapshots: Snapshot
+    transload_moves: dict[int, list[TransloadMove]] = field(default_factory=dict)
     validation_warnings: list[str] = field(default_factory=list)
 
 
@@ -83,17 +85,23 @@ def recompute(workday_id: int, conn: sqlite3.Connection) -> RecomputeResult:
         )
 
     # ── 4. Zone assignment ────────────────────────────────────────────────
-    # Ordered list of station IDs for delivery-priority ranking.
-    station_order = [s.station_id for s in route_stops]
+    # Strict-conflict mode runs the legacy static placer; the default
+    # post-CIG-fix planner walks the route stop-by-stop so it can reuse
+    # bays as cargo unloads (and emits transload-consolidation moves
+    # along the way). The two paths have intentionally different
+    # signatures.
+    transload_moves: dict[int, list[TransloadMove]] = {}
     if strict_mode:
-        from .legacy_zone_assignment import build_zone_plan
+        from .legacy_zone_assignment import build_zone_plan as _legacy_build
+        station_order = [s.station_id for s in route_stops]
+        _legacy_build(workday_id, station_order, conflict_groups, conn)
+        stop_pairs = [(s.stop_number, s.station_id) for s in route_stops]
+        snapshots = build_loadout_snapshots(workday_id, stop_pairs, conn)
     else:
         from .zone_assignment import build_zone_plan
-    build_zone_plan(workday_id, station_order, conflict_groups, conn)
-
-    # ── 5. Loadout snapshots ──────────────────────────────────────────────
-    stop_pairs = [(s.stop_number, s.station_id) for s in route_stops]
-    snapshots = build_loadout_snapshots(workday_id, stop_pairs, conn)
+        sim = build_zone_plan(workday_id, route_stops, conflict_groups, conn)
+        snapshots = sim.snapshots
+        transload_moves = sim.transload_moves
 
     # ── 6. Persist route stops ────────────────────────────────────────────
     conn.execute(
@@ -127,6 +135,7 @@ def recompute(workday_id: int, conn: sqlite3.Connection) -> RecomputeResult:
         route_stops=route_stops,
         conflict_groups=conflict_groups,
         snapshots=snapshots,
+        transload_moves=transload_moves,
         validation_warnings=[r["message"] for r in warn_rows],
     )
 

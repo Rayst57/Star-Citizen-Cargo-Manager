@@ -219,6 +219,29 @@ class DetailedPlanDialog(QDialog):
         else:
             layout.addWidget(self._muted("Unload: none"))
 
+        # Transload section — planner's consolidation recommendation.
+        # Shown between Unload and Load so the pilot can choose to merge
+        # same-destination cargo into fewer zones before the next pickup
+        # arrives. Skipping is fine; the rest of the plan still works.
+        moves = getattr(result, "transload_moves", {}).get(stop.stop_number, [])
+        if moves:
+            layout.addWidget(self._section_label("Transload (optional consolidation)"))
+            for m in moves:
+                line = QLabel(
+                    f"  Move {m.scu_amount} SCU {m.commodity_name}  "
+                    f"{m.from_zone}  →  {m.to_zone}  "
+                    f"(→ {m.delivery_station_name})  "
+                    f"[Contract {m.contract_number}]"
+                )
+                line.setWordWrap(True)
+                line.setStyleSheet("color: #a0e0ff;")
+                layout.addWidget(line)
+                if m.pallet_breakdown:
+                    pl = QLabel(f"      Pallets: {m.pallet_breakdown}")
+                    pl.setWordWrap(True)
+                    pl.setProperty("muted", True)
+                    layout.addWidget(pl)
+
         # Load section — same zone-grouped layout. All cargo lines that
         # land in the same zone (e.g. Contract 2's two AD-bound lines
         # both going to F2) are shown under a single zone header.
