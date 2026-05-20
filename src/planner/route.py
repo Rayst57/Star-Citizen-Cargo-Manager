@@ -174,7 +174,16 @@ def build_simple_route(
         station_map[cl["delivery_station_id"]]["unloads"].append(ref)
 
     for c in contracts:
-        # Find cargo lines for this contract to attach to the pickup stop
+        # Find cargo lines for this contract to attach to the pickup stop.
+        #
+        # TODO (handbook §16.2) — late-binding pickup: when the pickup
+        # station gets visited more than once BEFORE the delivery, this
+        # eagerly attaches the load to the earliest visit. Safe under
+        # strict_pallet_conflict_mode (the conflict spec assumes
+        # everything's on board for deconfliction), but in the default
+        # post-CIG-fix mode it wastes zone space mid-route. Future: walk
+        # visits per cargo line and bind the load to the latest visit
+        # still before the delivery.
         for cl in cargo_lines:
             if cl["contract_id"] == c["id"]:
                 ref = CargoLineRef(
