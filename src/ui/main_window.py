@@ -7,10 +7,13 @@ never talk to each other directly.
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QMainWindow, QMessageBox, QStatusBar,
-    QVBoxLayout, QWidget,
+    QFileDialog, QHBoxLayout, QLabel, QMainWindow, QMessageBox,
+    QStatusBar, QVBoxLayout, QWidget,
 )
 
 from ..app_controller import AppController, ToolError
@@ -107,6 +110,8 @@ class MainWindow(QMainWindow):
         # Contracts panel
         self.contracts_panel.add_requested.connect(self._open_add_contract)
         self.contracts_panel.paste_requested.connect(self._open_paste_contracts)
+        self.contracts_panel.export_requested.connect(self._export_contracts)
+        self.contracts_panel.import_requested.connect(self._import_contracts)
         self.contracts_panel.edit_requested.connect(self._open_edit_contract)
         self.contracts_panel.remove_requested.connect(self._on_remove_contract)
 
@@ -183,6 +188,65 @@ class MainWindow(QMainWindow):
     def _open_paste_contracts(self) -> None:
         dlg = PasteContractsDialog(self.controller, parent=self)
         dlg.exec()
+
+    def _export_contracts(self) -> None:
+        contracts = self.controller.list_contracts()
+        if not contracts:
+            QMessageBox.information(
+                self, "Nothing to export",
+                "No contracts in the current workday yet.",
+            )
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export contracts", "contracts.json",
+            "JSON files (*.json);;All files (*)",
+        )
+        if not path:
+            return
+        try:
+            payload = self.controller.export_contracts()
+            Path(path).write_text(
+                json.dumps(payload, indent=2), encoding="utf-8",
+            )
+        except OSError as e:
+            QMessageBox.warning(self, "Export failed", str(e))
+            return
+        n = len(payload["contracts"])
+        self.statusBar().showMessage(
+            f"Exported {n} contract{'s' if n != 1 else ''} → {path}", 5000,
+        )
+
+    def _import_contracts(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Import contracts", "",
+            "JSON files (*.json);;All files (*)",
+        )
+        if not path:
+            return
+        try:
+            payload = json.loads(Path(path).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as e:
+            QMessageBox.warning(self, "Import failed",
+                                f"Could not read the file:\n{e}")
+            return
+        try:
+            added, errors = self.controller.import_contracts(payload)
+        except ToolError as e:
+            QMessageBox.warning(self, "Import failed", str(e))
+            return
+        if errors:
+            preview = "\n".join(errors[:8])
+            more = f"\n…and {len(errors) - 8} more." if len(errors) > 8 else ""
+            QMessageBox.warning(
+                self, "Import finished with issues",
+                f"Imported {added} contract(s). Skipped "
+                f"{len(errors)}:\n\n{preview}{more}",
+            )
+        else:
+            QMessageBox.information(
+                self, "Import complete",
+                f"Imported {added} contract(s).",
+            )
 
     def _open_edit_contract(self, contract_number: int) -> None:
         c = next(

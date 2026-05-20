@@ -67,6 +67,17 @@ class RoutePanel(QWidget):
     def set_recompute_enabled(self, enabled: bool) -> None:
         self.recompute_btn.setEnabled(enabled)
 
+    def _has_been_computed(self) -> bool:
+        """True once the current workday has had at least one successful
+        compute — drives the Compute vs Recompute button wording."""
+        if not self.controller.workday_id:
+            return False
+        row = self.controller.conn.execute(
+            "SELECT last_computed_at FROM workdays WHERE id = ?",
+            (self.controller.workday_id,),
+        ).fetchone()
+        return bool(row and row["last_computed_at"])
+
     def refresh(self) -> None:
         # Properly delete (don't just orphan) old stop cards. setParent(None)
         # would re-promote the QFrame to a top-level window — visible ones
@@ -83,6 +94,19 @@ class RoutePanel(QWidget):
         result = self.controller.get_last_result()
         contracts = self.controller.list_contracts()
         self.set_recompute_enabled(bool(contracts))
+
+        # "Compute" the first time this workday is planned; "Recompute"
+        # on every subsequent click. Avoids the "Recompute" label
+        # before there is anything to re-compute.
+        if self._has_been_computed():
+            self.recompute_btn.setText("↻ Recompute")
+            empty_verb = "Recompute"
+        else:
+            self.recompute_btn.setText("Compute")
+            empty_verb = "Compute"
+        self.empty_label.setText(
+            f"No route — add a contract and {empty_verb}."
+        )
 
         if not result or not result.route_stops:
             self.empty_label.show()
