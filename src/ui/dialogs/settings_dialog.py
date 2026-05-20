@@ -155,6 +155,24 @@ class SettingsDialog(QDialog):
         self.always_on_top.setChecked(bool(self.settings.get("always_on_top")))
         f.addRow("", self.always_on_top)
 
+        # Planner fallback: switches the zone planner back to the
+        # legacy strict-exclusion / consolidation logic that was needed
+        # before CIG fixed pallet-ID and locked-destination. Off by
+        # default; flip on only if CIG ever regresses.
+        self.strict_conflict_mode = QCheckBox(
+            "Strict pallet conflict mode (legacy / pre-CIG-fix)"
+        )
+        self.strict_conflict_mode.setChecked(
+            bool(self.settings.get("strict_pallet_conflict_mode"))
+        )
+        self.strict_conflict_mode.setToolTip(
+            "Use the older planner that treats indistinguishable pallets "
+            "from different contracts as a hard conflict — keep this OFF "
+            "unless the in-game pallet-ID / locked-destination behavior "
+            "has regressed."
+        )
+        f.addRow("", self.strict_conflict_mode)
+
         return w
 
     # ── helpers ────────────────────────────────────────────────────────
@@ -193,5 +211,9 @@ class SettingsDialog(QDialog):
 
         self.settings.set("window_opacity", self.opacity.value())
         self.settings.set("always_on_top", self.always_on_top.isChecked())
+        self.settings.set(
+            "strict_pallet_conflict_mode",
+            self.strict_conflict_mode.isChecked(),
+        )
 
         self.accept()

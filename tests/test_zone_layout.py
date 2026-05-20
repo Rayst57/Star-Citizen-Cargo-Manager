@@ -16,6 +16,14 @@ from src.app_controller import AppController
 from src.db.init_db import initialize_database
 from src.palletizer_color import assign_destination_colors
 from src.planner.recompute import recompute as run_recompute
+from src.settings import AppSettings
+
+
+def _enable_strict_mode(controller):
+    """Tests of the legacy strict-conflict-exclusion / consolidation
+    behavior need that planner path; default is now the simpler
+    destination-first planner. Flip the setting before recompute."""
+    AppSettings(controller.conn).set("strict_pallet_conflict_mode", True)
 
 
 @pytest.fixture(scope="session")
@@ -69,6 +77,7 @@ def test_two_destinations_get_two_zones(controller):
 
 
 def test_conflict_zones_use_separate_zones(controller):
+    _enable_strict_mode(controller)
     wid = controller.start_workday(_seraphim(controller), None, False)
     # Yellow Core × Tungsten conflict
     controller.add_contract({
@@ -126,6 +135,7 @@ def test_zone_strip_aggregates_scu(controller):
 
 def test_conflict_small_pallets_placed_at_ramp(controller):
     """Ambiguous (small) pallets should land at low Y (ramp side)."""
+    _enable_strict_mode(controller)
     wid = controller.start_workday(_seraphim(controller), None, False)
     controller.add_contract({
         "pickup_station": "Yellow Core",
@@ -250,6 +260,7 @@ def test_conflict_exclusion_covers_all_partner_zones(controller):
     Seraphim — Baijini's conflict partner — places. None of Seraphim's
     cargo should land in R3 OR R4.
     """
+    _enable_strict_mode(controller)
     wid = controller.start_workday(_seraphim(controller), None, True)
 
     # Two ambiguous Tungsten contracts (same source, same commodity, two

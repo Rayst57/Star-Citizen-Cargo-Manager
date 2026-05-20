@@ -24,8 +24,8 @@ from datetime import datetime, timezone
 
 from .route import RouteStop, build_simple_route
 from .conflicts import ConflictGroup, detect_conflicts, persist_conflicts
-from .zone_assignment import build_zone_plan
 from .loadout import Snapshot, build_loadout_snapshots
+from ..settings import AppSettings
 
 
 @dataclass
@@ -69,12 +69,26 @@ def recompute(workday_id: int, conn: sqlite3.Connection) -> RecomputeResult:
         return RecomputeResult(route_stops=[], conflict_groups=[], snapshots={})
 
     # ── 2 & 3. Detect + persist conflicts ────────────────────────────────
-    conflict_groups = detect_conflicts(workday_id, conn)
-    persist_conflicts(workday_id, conflict_groups, conn)
+    # Only relevant in legacy strict-conflict mode. In the default
+    # post-CIG-fix mode the planner doesn't use them, so we skip the
+    # work and clear any stale rows from a prior strict-mode recompute.
+    strict_mode = AppSettings(conn).get("strict_pallet_conflict_mode")
+    if strict_mode:
+        conflict_groups = detect_conflicts(workday_id, conn)
+        persist_conflicts(workday_id, conflict_groups, conn)
+    else:
+        conflict_groups = []
+        conn.execute(
+            "DELETE FROM pallet_conflicts WHERE workday_id = ?", (workday_id,)
+        )
 
     # ── 4. Zone assignment ────────────────────────────────────────────────
-    # Ordered list of station IDs for delivery-priority ranking
+    # Ordered list of station IDs for delivery-priority ranking.
     station_order = [s.station_id for s in route_stops]
+    if strict_mode:
+        from .legacy_zone_assignment import build_zone_plan
+    else:
+        from .zone_assignment import build_zone_plan
     build_zone_plan(workday_id, station_order, conflict_groups, conn)
 
     # ── 5. Loadout snapshots ──────────────────────────────────────────────

@@ -36,6 +36,12 @@ DEFAULTS: dict[str, str] = {
     "always_on_top":         "0",
     "hotkey_recompute":      "[]",
     "hotkey_cancel":         "Escape",
+    # Backup path for the old "indistinguishable identical pallets"
+    # conflict model. Off by default — CIG's pallet-ID / locked-
+    # destination fix made that conflict a non-issue. Flip on if CIG
+    # ever regresses; the planner will fall back to the legacy
+    # strict-exclusion / consolidation logic.
+    "strict_pallet_conflict_mode": "0",
 }
 
 
@@ -47,7 +53,7 @@ def _coerce(key: str, raw: str) -> Any:
         except (TypeError, ValueError):
             return float(DEFAULTS[key])
     if key in {"noise_suppression", "tts_enabled", "use_realtime_api",
-               "always_on_top"}:
+               "always_on_top", "strict_pallet_conflict_mode"}:
         return raw not in ("", "0", "false", "False")
     if key in {"ptt_binds", "hotkey_recompute"}:
         try:
