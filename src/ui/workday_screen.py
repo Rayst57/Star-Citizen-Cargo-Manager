@@ -21,6 +21,11 @@ class WorkdayScreen(QDialog):
         self.controller = controller
         self.workday_id: int | None = None
         self.open_settings = False
+        # Set to True when the user picks "End and Start New" — tells
+        # the launch loop to keep iterating (show the screen again so
+        # they can fill out the new workday) instead of treating the
+        # dialog close as an app-quit.
+        self.continue_picking = False
 
         self.setWindowTitle("Star Citizen Cargo Manager")
         self.setMinimumWidth(440)
@@ -162,6 +167,7 @@ class WorkdayScreen(QDialog):
         self.controller.end_workday()
         # Rebuild UI: simplest is to close and reopen, but for v1 we just
         # re-enable the new-workday card and disable the resume card.
+        self.continue_picking = True
         self.reject()  # caller can re-show; see app.py
 
     def _on_start_new(self) -> None:
