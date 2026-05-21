@@ -1,8 +1,14 @@
 """Persistent dirty-flag banner with a Compute/Recompute button.
 
 Replaces the old per-panel Recompute button as the single place to
-trigger a plan compute. Hidden when the workday is clean; shown when
-plan_dirty flips True with whatever contracts/changes have piled up.
+trigger a plan compute. Visible whenever a workday is active so the
+button is reachable on Resume (when the saved plan is already clean
+but the user may want a fresh recompute anyway).
+
+States:
+  - first_run (never computed): bright invite + "Compute"
+  - dirty (modifications pending): warning glyph + "↻ Recompute"
+  - clean (plan up to date): muted text + "↻ Recompute"
 """
 
 from __future__ import annotations
@@ -32,18 +38,16 @@ class RecomputeBanner(QFrame):
     ) -> None:
         """Show / hide the banner and adapt its wording.
 
-        first_run = True means the active workday has never been computed
-        yet, so the button reads "Compute" and the label is a friendly
-        invite. After the first successful compute it shifts to
-        "Recompute" with the warning glyph the user already knows.
+        Hidden only when there's no active workday at all (caller
+        passes dirty=False AND first_run=False AND we have no plan
+        history — handled via set_no_workday). With a workday active,
+        the banner stays visible so Recompute is always reachable.
         """
-        if not dirty:
-            self.hide()
-            return
         if first_run:
             self.label.setText("Ready to compute the plan.")
             self.btn.setText("Compute")
-        else:
+            self.setProperty("state", "first_run")
+        elif dirty:
             if n_changes:
                 self.label.setText(
                     f"⚠  {n_changes} modifications pending — recompute required"
@@ -51,4 +55,19 @@ class RecomputeBanner(QFrame):
             else:
                 self.label.setText("⚠  Modifications made — recompute required")
             self.btn.setText("↻ Recompute")
+            self.setProperty("state", "dirty")
+        else:
+            # Plan is current; banner stays visible so Recompute is
+            # always reachable (esp. after Resume Day).
+            self.label.setText("Plan is current.")
+            self.btn.setText("↻ Recompute")
+            self.setProperty("state", "clean")
+        # Re-polish to pick up the [state] style hook if the theme
+        # uses it; harmless if not.
+        self.style().unpolish(self)
+        self.style().polish(self)
         self.show()
+
+    def set_no_workday(self) -> None:
+        """Hide the banner when there's no active workday."""
+        self.hide()
