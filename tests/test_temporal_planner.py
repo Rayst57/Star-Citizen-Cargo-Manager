@@ -217,3 +217,69 @@ def test_transload_moves_recorded_when_consolidation_helps(controller):
         "Expected a transload move for Long Forest cargo specifically. "
         f"All moves: {result.transload_moves}"
     )
+
+
+def test_planner_respects_physical_pack_constraints(controller):
+    """Regression: in the user's log the planner placed cl#1 (31 SCU
+    = 3 large 8-SCU pads + smalls) AND cl#3 (16 SCU = 2 large 8-SCU
+    pads) into Starlancer R1 because 31 + 16 = 47 <= 48 SCU. But R1
+    is 2x8x3 cubes — only 4 large 2x2x2 pads physically fit, and
+    cl#1 alone already needs 3 of those slots. cl#3's two large pads
+    won't both fit; one overflows.
+
+    With the physical-aware planner, the second Everus line should
+    land somewhere ELSE (likely F1 which is 2x16x2 = clean 8-pad
+    capacity), and the BayCanvas should render zero overflow.
+    """
+    starlancer = controller.conn.execute(
+        "SELECT id FROM ships WHERE name LIKE 'Starlancer%'"
+    ).fetchone()
+    if not starlancer:
+        pytest.skip("Starlancer not seeded in this environment")
+
+    wid = controller.start_workday(_seraphim(controller), None, False)
+    controller.conn.execute(
+        "UPDATE workdays SET ship_id = ? WHERE id = ?",
+        (starlancer["id"], wid),
+    )
+    controller.conn.commit()
+
+    # Three Everus-bound contracts that, if naively SCU-summed, would
+    # all fit in R1 (31 + 16 = 47 <= 48) but physically don't.
+    for scu in (31, 16):
+        controller.add_contract({
+            "pickup_station": "Wide Forest",
+            "max_pallet_size": 8,
+            "deliveries": [
+                {"destination": "Everus Harbor", "commodity": "Tungsten", "scu": scu},
+            ],
+        })
+    result = run_recompute(wid, controller.conn)
+    controller._last_result = result
+    assign_destination_colors(wid, controller.conn)
+
+    # Render every stop with cargo onboard; the packer must report
+    # zero overflow in every zone. (The packer logs WARN when it
+    # overflows; we check rect-vs-SCU sums.)
+    for s in result.route_stops:
+        if not result.snapshots.get(s.stop_number):
+            continue
+        rects = controller.get_pallet_rects(stop_number=s.stop_number)
+        # Sum rendered SCU by zone, compare to snapshot SCU.
+        rendered_by_zone: dict[str, int] = {}
+        for r in rects:
+            rendered_by_zone[r.zone_label] = (
+                rendered_by_zone.get(r.zone_label, 0) + r.pallet_size
+            )
+        snapshot_by_zone: dict[str, int] = {}
+        for e in result.snapshots[s.stop_number]:
+            snapshot_by_zone[e.zone_label] = (
+                snapshot_by_zone.get(e.zone_label, 0) + e.scu_amount
+            )
+        for zone, snap_scu in snapshot_by_zone.items():
+            rendered = rendered_by_zone.get(zone, 0)
+            assert rendered == snap_scu, (
+                f"Stop {s.stop_number} zone {zone}: snapshot says "
+                f"{snap_scu} SCU but renderer only fit {rendered} — "
+                f"the planner committed a layout the packer can't draw."
+            )
