@@ -230,7 +230,7 @@ def load_default_settings(conn: sqlite3.Connection) -> None:
 
 # ── Entry point ───────────────────────────────────────────────────────────
 
-_SHIP_SEEDS = ("seed_c2.json", "seed_starlancer.json")
+_SHIP_SEEDS = ("seed_c2.json", "seed_starlancer.json", "seed_hermes.json")
 
 
 def sync_ships(conn: sqlite3.Connection) -> None:
