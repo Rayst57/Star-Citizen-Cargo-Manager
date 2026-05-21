@@ -123,6 +123,13 @@ CREATE TABLE ship_zones (
     unload_priority     INTEGER,
     left_zone_label     TEXT,
     right_zone_label    TEXT,
+    -- Front/back adjacency: for ships where two zones share an open
+    -- bay (no bulkhead between them, so pallets could physically slide
+    -- between them or the renderer should draw them seamlessly).
+    -- Example: RSI Hermes has F1<->R1 as one continuous column.
+    -- NULL means a structural separation (C2, Starlancer).
+    front_zone_label    TEXT,
+    back_zone_label     TEXT,
     -- Which Y end of THIS zone's bay is the loading ramp.
     -- 'low_y'  = ramp at Y=0 (current C2 default for both bays)
     -- 'high_y' = ramp at Y=length-1 (e.g. nose-only loaders)
