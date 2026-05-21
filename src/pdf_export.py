@@ -1,9 +1,9 @@
 """PDF export for the computed loading plan.
 
-Produces a cockpit cheat sheet: one page per stop with the bay state
-diagram on top, then the unload / load / transload lists below.
-Sized for letter-paper printing or on-screen reading on a phone in
-the game.
+Modeled after the in-app Detailed Plan dialog: one card per stop with
+zone-grouped Unload / Transload / Load sections, conflict warnings,
+and the onboard snapshot after each stop. Text-only — easier to read
+on a phone in the cockpit than a tiny diagram, and prints cleanly.
 
 Implementation uses Qt's built-in QPdfWriter + QPainter so there's no
 extra dependency beyond PySide6.
@@ -11,39 +11,130 @@ extra dependency beyond PySide6.
 
 from __future__ import annotations
 
+from collections import Counter, OrderedDict
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QRect, QRectF, Qt
+from PySide6.QtCore import QRect, Qt
 from PySide6.QtGui import (
-    QBrush, QColor, QFont, QPageLayout, QPageSize, QPainter, QPdfWriter, QPen,
+    QBrush, QColor, QFont, QFontMetrics, QPageLayout, QPageSize,
+    QPainter, QPdfWriter, QPen,
 )
+
+from .planner.palletizer import VALID_SIZES, palletize
 
 if TYPE_CHECKING:
     from .app_controller import AppController
 
 
-# Page geometry constants — values are in QPdfWriter device pixels
-# (resolution = 150 DPI below, so 150 px ≈ 1 inch).
+# Page geometry — letter paper at 150 DPI.
 _DPI = 150
-_MARGIN = 60          # ~0.4 inch
 _PAGE_W = int(8.5 * _DPI)
 _PAGE_H = int(11 * _DPI)
+_MARGIN = 75               # ~0.5 inch
 _CONTENT_W = _PAGE_W - 2 * _MARGIN
+_BOTTOM = _PAGE_H - _MARGIN
 
-# Colors — match the in-app palette so the printout reads like the UI.
-_INK = QColor("#0d2330")          # near-black for text
-_ACCENT = QColor("#26b6d4")       # heading cyan
-_MUTED = QColor("#5d7280")        # subdued grey
-_ZONE_BORDER = QColor("#26b6d4")
-_EMPTY_FILL = QColor("#e6f1f5")
-_ZONE_BG = QColor("#ffffff")
+# Palette — matches the in-app Detailed Plan styling.
+_INK = QColor("#0d2330")
+_ACCENT = QColor("#26b6d4")          # cyan headings
+_HEADER = QColor("#0a5d6b")          # darker cyan for stop title
+_ZONE_HEAD = QColor("#1b7a8a")       # zone-group header
+_MUTED = QColor("#5d7280")
+_WARN = QColor("#c83b3b")
+_TRANSLOAD = QColor("#1d6f8a")
+_CONFLICT = QColor("#c8631b")
 
+
+class _Cursor:
+    """Tracks current page-Y and starts a new page when content runs
+    out of room. Centralises word-wrap drawing so every text line uses
+    the same vertical budgeting logic."""
+
+    def __init__(self, painter: QPainter, writer: QPdfWriter):
+        self.painter = painter
+        self.writer = writer
+        self.y = _MARGIN
+
+    def new_page(self) -> None:
+        self.writer.newPage()
+        self.y = _MARGIN
+
+    def space(self, px: int) -> None:
+        self.y += px
+
+    def need(self, px: int) -> None:
+        """Start a new page if *px* won't fit in the remaining space."""
+        if self.y + px > _BOTTOM:
+            self.new_page()
+
+    def text(
+        self,
+        s: str,
+        *,
+        font: QFont,
+        color: QColor = _INK,
+        indent: int = 0,
+        gap_after: int = 4,
+    ) -> None:
+        """Draw word-wrapped text starting at the current cursor.
+        Advances the cursor past the drawn block + gap_after pixels."""
+        if not s:
+            self.space(gap_after)
+            return
+        self.painter.setFont(font)
+        self.painter.setPen(QPen(color))
+        # Measure required height via QFontMetrics with the same width.
+        fm = QFontMetrics(font)
+        # Reserve up to 6 lines of text per draw; if a single piece of
+        # text would exceed that, page-break before measuring.
+        max_h = 6 * fm.lineSpacing()
+        if self.y + fm.lineSpacing() > _BOTTOM:
+            self.new_page()
+        rect = QRect(
+            _MARGIN + indent, self.y,
+            _CONTENT_W - indent, _BOTTOM - self.y,
+        )
+        bounding = self.painter.boundingRect(
+            rect,
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
+            | Qt.TextFlag.TextWordWrap,
+            s,
+        )
+        # If the wrapped block won't fit on this page, page-break first
+        # (unless we're already at the top of a fresh page — then just
+        # let it overflow).
+        if bounding.height() > _BOTTOM - self.y and self.y > _MARGIN + 1:
+            self.new_page()
+            rect = QRect(
+                _MARGIN + indent, self.y,
+                _CONTENT_W - indent, _BOTTOM - self.y,
+            )
+            bounding = self.painter.boundingRect(
+                rect,
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
+                | Qt.TextFlag.TextWordWrap,
+                s,
+            )
+        self.painter.drawText(
+            rect,
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
+            | Qt.TextFlag.TextWordWrap,
+            s,
+        )
+        self.y += bounding.height() + gap_after
+
+    def rule(self, color: QColor = _MUTED) -> None:
+        """Thin horizontal divider."""
+        self.painter.setPen(QPen(color, 1))
+        self.painter.drawLine(
+            _MARGIN, self.y, _PAGE_W - _MARGIN, self.y,
+        )
+        self.y += 8
+
+
+# ── Public entry point ────────────────────────────────────────────────
 
 def export_plan_pdf(controller: "AppController", path: str) -> None:
-    """Write the current computed plan to *path* as a PDF.
-
-    Raises if no plan has been computed yet on the active workday.
-    """
     result = controller._last_result
     if result is None or not result.route_stops:
         raise RuntimeError("No computed plan to export — recompute first.")
@@ -57,27 +148,32 @@ def export_plan_pdf(controller: "AppController", path: str) -> None:
     ship_name = ship_row["name"] if ship_row else "—"
     ship_total = ship_row["total_scu"] if ship_row else 0
 
-    # Destination colour map for the bay diagram fills. Colors live
-    # on the stations table once they're auto-assigned per workday.
-    colour_map = {
-        r["name"]: r["color_hex"]
-        for r in controller.conn.execute(
-            "SELECT name, color_hex FROM stations "
-            "WHERE color_hex IS NOT NULL"
-        ).fetchall()
-    }
+    # Lookup tables that mirror what DetailedPlanDialog builds.
+    cl_to_dest: dict[int, str] = {}
+    cl_to_zone: dict[int, str] = {}
+    cl_to_max_pallet: dict[int, int] = {}
+    for r in controller.conn.execute(
+        """
+        SELECT cl.id, s.name AS dest_name,
+               za.primary_zone_label AS zone_label,
+               ct.max_pallet_size
+        FROM cargo_lines cl
+        JOIN stations s ON s.id = cl.delivery_station_id
+        JOIN contracts ct ON ct.id = cl.contract_id
+        LEFT JOIN zone_assignments za
+               ON za.cargo_line_id = cl.id
+              AND za.workday_id = ct.workday_id
+        WHERE ct.workday_id = ?
+        """,
+        (controller.workday_id,),
+    ).fetchall():
+        cl_to_dest[r["id"]] = r["dest_name"]
+        cl_to_zone[r["id"]] = r["zone_label"] or "?"
+        cl_to_max_pallet[r["id"]] = r["max_pallet_size"]
 
-    # Per-zone scu_capacity lookup — BayZoneGeom doesn't carry it.
-    zone_caps = {
-        r["zone_label"]: r["scu_capacity"]
-        for r in controller.conn.execute(
-            "SELECT z.zone_label, z.scu_capacity "
-            "FROM ship_zones z "
-            "JOIN workdays w ON w.ship_id = z.ship_id "
-            "WHERE w.id = ?",
-            (controller.workday_id,),
-        ).fetchall()
-    }
+    conflict_cl_ids: set[int] = set()
+    for grp in result.conflict_groups:
+        conflict_cl_ids.update(grp.cargo_line_ids)
 
     writer = QPdfWriter(path)
     writer.setPageSize(QPageSize(QPageSize.PageSizeId.Letter))
@@ -87,14 +183,22 @@ def export_plan_pdf(controller: "AppController", path: str) -> None:
 
     painter = QPainter(writer)
     try:
-        # Cover page
-        _render_cover(painter, ship_name, ship_total, result)
+        cursor = _Cursor(painter, writer)
+        _render_cover(cursor, ship_name, ship_total, result)
 
-        # One page per stop
-        for stop in result.route_stops:
-            writer.newPage()
-            _render_stop_page(
-                painter, controller, stop, result, colour_map, zone_caps,
+        n_stops = len(result.route_stops)
+        for idx, stop in enumerate(result.route_stops):
+            cursor.new_page()
+            if idx == 0:
+                title = "Initial Departure"
+            elif idx == n_stops - 1:
+                title = "Final Destination"
+            else:
+                title = f"Stop {idx}"
+            _render_stop(
+                cursor, controller, stop, title, result,
+                cl_to_dest, cl_to_zone, cl_to_max_pallet,
+                conflict_cl_ids,
             )
     finally:
         painter.end()
@@ -102,324 +206,285 @@ def export_plan_pdf(controller: "AppController", path: str) -> None:
 
 # ── Cover page ─────────────────────────────────────────────────────────
 
-def _render_cover(painter, ship_name, ship_total, result) -> None:
-    y = _MARGIN
-
-    painter.setPen(QPen(_ACCENT))
-    painter.setFont(QFont("Segoe UI", 28, QFont.Weight.Bold))
-    painter.drawText(_MARGIN, y + 40, "STAR CITIZEN CARGO MANAGER")
-    y += 80
-
-    painter.setPen(QPen(_INK))
-    painter.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
-    painter.drawText(_MARGIN, y + 20, "Loading Plan")
-    y += 60
-
-    painter.setPen(QPen(_MUTED))
-    painter.setFont(QFont("Segoe UI", 12))
-    painter.drawText(_MARGIN, y + 20, f"Ship: {ship_name}  ({ship_total} SCU)")
-    painter.drawText(_MARGIN, y + 40,
-                     f"Stops: {len(result.route_stops)}  •  "
-                     f"Snapshots: {len(result.snapshots)}")
-    y += 80
-
-    # Route summary
-    painter.setPen(QPen(_INK))
-    painter.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
-    painter.drawText(_MARGIN, y + 20, "Route")
-    y += 40
-
-    painter.setFont(QFont("Segoe UI", 11))
-    for stop in result.route_stops:
-        if y > _PAGE_H - _MARGIN - 40:
-            break
-        line = (
-            f"  {stop.stop_number:>2}.  {stop.station_name}  "
-            f"({stop.action})  —  loads={stop.loads}, unloads={stop.unloads}"
-        )
-        painter.drawText(_MARGIN, y + 16, line)
-        y += 22
-
-    # Footer
-    painter.setPen(QPen(_MUTED))
-    painter.setFont(QFont("Segoe UI", 9))
-    painter.drawText(
-        _MARGIN, _PAGE_H - _MARGIN,
-        "Loading doctrine: lower unload_priority zones drain first.",
+def _render_cover(cursor, ship_name, ship_total, result) -> None:
+    cursor.text(
+        "STAR CITIZEN CARGO MANAGER",
+        font=QFont("Segoe UI", 22, QFont.Weight.Bold),
+        color=_ACCENT,
+        gap_after=8,
     )
+    cursor.text(
+        "Loading Plan",
+        font=QFont("Segoe UI", 18, QFont.Weight.Bold),
+        gap_after=16,
+    )
+
+    cursor.text(
+        f"Ship: {ship_name}  ({ship_total} SCU capacity)",
+        font=QFont("Segoe UI", 12),
+        color=_MUTED,
+        gap_after=2,
+    )
+    cursor.text(
+        f"{len(result.route_stops)} stops  •  "
+        f"{sum(len(v) for v in result.transload_moves.values())} "
+        f"transload move(s)",
+        font=QFont("Segoe UI", 12),
+        color=_MUTED,
+        gap_after=24,
+    )
+
+    cursor.text(
+        "Route",
+        font=QFont("Segoe UI", 14, QFont.Weight.Bold),
+        gap_after=8,
+    )
+    n_stops = len(result.route_stops)
+    for idx, stop in enumerate(result.route_stops):
+        if idx == 0:
+            tag = "Initial Departure"
+        elif idx == n_stops - 1:
+            tag = "Final Destination"
+        else:
+            tag = f"Stop {idx}"
+        n_loads = len(stop.loads)
+        n_unloads = len(stop.unloads)
+        line = (
+            f"{stop.stop_number:>2}.  {tag}: {stop.station_name}  "
+            f"({stop.action})  —  "
+            f"loads {n_loads}, unloads {n_unloads}"
+        )
+        cursor.text(
+            line,
+            font=QFont("Segoe UI", 11),
+            indent=10,
+            gap_after=2,
+        )
 
 
 # ── Per-stop page ──────────────────────────────────────────────────────
 
-def _render_stop_page(
-    painter, controller, stop, result, colour_map, zone_caps,
+def _render_stop(
+    cursor, controller, stop, title, result,
+    cl_to_dest, cl_to_zone, cl_to_max_pallet,
+    conflict_cl_ids,
 ) -> None:
-    y = _MARGIN
-
-    # Header
-    painter.setPen(QPen(_ACCENT))
-    painter.setFont(QFont("Segoe UI", 22, QFont.Weight.Bold))
-    painter.drawText(
-        _MARGIN, y + 30,
-        f"Stop {stop.stop_number}: {stop.station_name}",
+    # Title
+    cursor.text(
+        f"{title}: {stop.station_name}",
+        font=QFont("Segoe UI", 20, QFont.Weight.Bold),
+        color=_HEADER,
+        gap_after=2,
     )
-    painter.setPen(QPen(_MUTED))
-    painter.setFont(QFont("Segoe UI", 12))
-    painter.drawText(
-        _MARGIN, y + 56,
-        f"{stop.action}  •  loads={stop.loads}, unloads={stop.unloads}",
+    cursor.text(
+        f"Action: {stop.action}",
+        font=QFont("Segoe UI", 11),
+        color=_MUTED,
+        gap_after=10,
     )
-    y += 80
+    cursor.rule()
 
-    # Bay diagram
+    stop_cl_ids = {r.cargo_line_id for r in stop.loads + stop.unloads}
+    stop_conflict_groups = [
+        g for g in result.conflict_groups
+        if any(cl in stop_cl_ids for cl in g.cargo_line_ids)
+    ]
+    if stop_conflict_groups:
+        cursor.text(
+            "⚠ WARNING: this stop touches conflict cargo — track every "
+            "pallet at the elevator (see Conflict notes below).",
+            font=QFont("Segoe UI", 11, QFont.Weight.Bold),
+            color=_WARN,
+            gap_after=14,
+        )
+
+    # Unload
+    if stop.unloads:
+        _section_header(cursor, "Unload")
+        _render_zone_grouped(
+            cursor, controller, stop.unloads,
+            cl_to_zone, cl_to_dest, cl_to_max_pallet,
+            action="deliver",
+        )
+    else:
+        cursor.text(
+            "Unload: none",
+            font=QFont("Segoe UI", 11, QFont.Weight.Normal),
+            color=_MUTED,
+            gap_after=12,
+        )
+
+    # Transload
+    moves = result.transload_moves.get(stop.stop_number, [])
+    if moves:
+        _section_header(cursor, "Transload (optional consolidation)")
+        for m in moves:
+            cursor.text(
+                f"Move {m.scu_amount} SCU {m.commodity_name}  "
+                f"{m.from_zone} → {m.to_zone}  "
+                f"(→ {m.delivery_station_name})  "
+                f"[Contract {m.contract_number}]",
+                font=QFont("Segoe UI", 11),
+                color=_TRANSLOAD,
+                indent=10,
+                gap_after=2,
+            )
+            if m.pallet_breakdown:
+                cursor.text(
+                    f"Pallets: {m.pallet_breakdown}",
+                    font=QFont("Segoe UI", 10),
+                    color=_MUTED,
+                    indent=30,
+                    gap_after=6,
+                )
+
+    # Load
+    if stop.loads:
+        _section_header(cursor, "Load")
+        _render_zone_grouped(
+            cursor, controller, stop.loads,
+            cl_to_zone, cl_to_dest, cl_to_max_pallet,
+            action="load",
+        )
+    else:
+        cursor.text(
+            "Load: none",
+            font=QFont("Segoe UI", 11, QFont.Weight.Normal),
+            color=_MUTED,
+            gap_after=12,
+        )
+
+    # Conflict notes
+    if stop_conflict_groups:
+        _section_header(cursor, "Conflict notes")
+        for g in stop_conflict_groups:
+            names = " / ".join(d.delivery_station_name for d in g.destinations)
+            amb = " + ".join(f"1×{s}" for s in g.ambiguous_sizes)
+            cursor.text(
+                f"⚠ Group {g.group_id} — {g.pickup_station_name} × "
+                f"{g.commodity_name}",
+                font=QFont("Segoe UI", 11, QFont.Weight.Bold),
+                color=_CONFLICT,
+                indent=10,
+                gap_after=2,
+            )
+            cursor.text(
+                f"destinations: {names}",
+                font=QFont("Segoe UI", 10),
+                color=_CONFLICT,
+                indent=20,
+                gap_after=2,
+            )
+            cursor.text(
+                f"conflict sizes: {amb}",
+                font=QFont("Segoe UI", 10),
+                color=_CONFLICT,
+                indent=20,
+                gap_after=8,
+            )
+
+    # Onboard after this stop
     snapshot = result.snapshots.get(stop.stop_number, [])
-    diagram_rect = QRect(_MARGIN, y, _CONTENT_W, 260)
-    _draw_bay_diagram(
-        painter, controller, snapshot, diagram_rect,
-        colour_map, zone_caps,
-    )
-    y += 280
-
-    # Loads, unloads, transloads
-    transloads = result.transload_moves.get(stop.stop_number, [])
-    y = _draw_section(
-        painter, y, "Unloads",
-        [_format_unload_line(e) for e in snapshot
-         if False],  # snapshots are post-state; unloads enumerated below
-    )
-
-    # The snapshot is post-state, so derive unload list from the
-    # previous stop's snapshot minus this one — simpler to read
-    # straight from the cargo table by stop:
-    unload_lines = _unload_lines_for_stop(controller, stop)
-    if unload_lines:
-        y = _draw_section(painter, y, f"Unload ({stop.unloads})", unload_lines)
-
-    load_lines = _load_lines_for_stop(controller, stop)
-    if load_lines:
-        y = _draw_section(painter, y, f"Load ({stop.loads})", load_lines)
-
-    if transloads:
-        y = _draw_section(
-            painter, y,
-            f"Transload ({len(transloads)})",
-            [
-                f"  cl#{m.cargo_line_id}  {m.scu_amount} SCU "
-                f"{m.commodity_name} → {m.delivery_station_name}  "
-                f"({m.from_zone} → {m.to_zone})"
-                for m in transloads
-            ],
+    _section_header(cursor, "Onboard after this stop")
+    if snapshot:
+        # Group by zone for tidier reading.
+        by_zone: "OrderedDict[str, list]" = OrderedDict()
+        for e in snapshot:
+            by_zone.setdefault(e.zone_label, []).append(e)
+        for zone, entries in by_zone.items():
+            zone_scu = sum(e.scu_amount for e in entries)
+            cursor.text(
+                f"{zone}:  {zone_scu} SCU",
+                font=QFont("Segoe UI", 11, QFont.Weight.Bold),
+                color=_ZONE_HEAD,
+                indent=10,
+                gap_after=2,
+            )
+            for e in entries:
+                tag = "  ⚠" if e.is_conflicted else ""
+                cursor.text(
+                    f"{e.scu_amount} SCU {e.commodity_name} "
+                    f"→ {e.delivery_station_name}{tag}",
+                    font=QFont("Segoe UI", 10),
+                    color=_MUTED,
+                    indent=30,
+                    gap_after=2,
+                )
+    else:
+        cursor.text(
+            "Empty",
+            font=QFont("Segoe UI", 11, QFont.Weight.Normal),
+            color=_MUTED,
+            indent=10,
+            gap_after=6,
         )
 
-    # Footer
-    painter.setPen(QPen(_MUTED))
-    painter.setFont(QFont("Segoe UI", 9))
-    painter.drawText(
-        _MARGIN, _PAGE_H - _MARGIN,
-        f"— Stop {stop.stop_number} of {len(result.route_stops)} —",
+
+def _section_header(cursor, text: str) -> None:
+    cursor.space(4)
+    cursor.text(
+        text,
+        font=QFont("Segoe UI", 13, QFont.Weight.Bold),
+        color=_ACCENT,
+        gap_after=6,
     )
 
 
-def _draw_section(painter, y, title, lines):
-    if y > _PAGE_H - _MARGIN - 80:
-        return y
-    painter.setPen(QPen(_INK))
-    painter.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
-    painter.drawText(_MARGIN, y + 18, title)
-    y += 30
-    painter.setFont(QFont("Segoe UI", 10))
-    for line in lines:
-        if y > _PAGE_H - _MARGIN - 30:
-            painter.drawText(_MARGIN + 10, y + 14, "…")
-            y += 18
-            break
-        painter.drawText(_MARGIN + 10, y + 14, line)
-        y += 18
-    return y + 10
-
-
-def _unload_lines_for_stop(controller, stop) -> list[str]:
-    rows = controller.conn.execute(
-        """
-        SELECT cl.id AS cl_id, cl.scu_amount, c.contract_number,
-               cm.name AS commodity, s.name AS dest
-        FROM cargo_lines cl
-        JOIN contracts c ON c.id = cl.contract_id
-        JOIN commodities cm ON cm.id = cl.commodity_id
-        JOIN stations s ON s.id = cl.delivery_station_id
-        WHERE c.workday_id = ?
-          AND cl.delivery_station_id = ?
-        ORDER BY cl.id
-        """,
-        (controller.workday_id, stop.station_id),
-    ).fetchall()
-    return [
-        f"  cl#{r['cl_id']}  {r['scu_amount']} SCU "
-        f"{r['commodity']} → {r['dest']}  (contract #{r['contract_number']})"
-        for r in rows
-    ] if stop.unloads else []
-
-
-def _load_lines_for_stop(controller, stop) -> list[str]:
-    rows = controller.conn.execute(
-        """
-        SELECT cl.id AS cl_id, cl.scu_amount, c.contract_number,
-               cm.name AS commodity, s.name AS dest,
-               za.primary_zone_label
-        FROM cargo_lines cl
-        JOIN contracts c ON c.id = cl.contract_id
-        JOIN commodities cm ON cm.id = cl.commodity_id
-        JOIN stations s ON s.id = cl.delivery_station_id
-        LEFT JOIN zone_assignments za
-               ON za.cargo_line_id = cl.id AND za.workday_id = ?
-        WHERE c.workday_id = ?
-          AND c.pickup_station_id = ?
-        ORDER BY cl.id
-        """,
-        (controller.workday_id, controller.workday_id, stop.station_id),
-    ).fetchall()
-    return [
-        f"  cl#{r['cl_id']}  {r['scu_amount']} SCU "
-        f"{r['commodity']} → {r['dest']}  →  {r['primary_zone_label'] or '—'}  "
-        f"(contract #{r['contract_number']})"
-        for r in rows
-    ] if stop.loads else []
-
-
-def _format_unload_line(e):  # kept for future use
-    return (
-        f"  cl#{e.cargo_line_id}  {e.scu_amount} SCU "
-        f"{e.commodity_name} → {e.delivery_station_name}  ({e.zone_label})"
-    )
-
-
-# ── Bay diagram ────────────────────────────────────────────────────────
-
-def _draw_bay_diagram(
-    painter, controller, snapshot, rect, colour_map, zone_caps,
+def _render_zone_grouped(
+    cursor, controller, refs, cl_to_zone, cl_to_dest, cl_to_max_pallet,
+    *, action: str,
 ) -> None:
-    """Draw a top-down bay diagram inside *rect*: one column per zone,
-    fill height proportional to SCU usage, label + SCU text overlaid.
-    """
-    bays = controller.get_bay_layout()
-    if not bays:
-        return
+    """Match DetailedPlanDialog._render_zone_grouped: one header per
+    zone, all cargo lines into/out of that zone listed under it."""
+    by_zone: "OrderedDict[str, list]" = OrderedDict()
+    for ref in refs:
+        zone = cl_to_zone.get(ref.cargo_line_id, "?")
+        by_zone.setdefault(zone, []).append(ref)
 
-    # Map zone → list of (destination, scu).
-    by_zone: dict[str, list] = {}
-    for e in snapshot:
-        by_zone.setdefault(e.zone_label, []).append(e)
-
-    # Title + scu summary
-    painter.setPen(QPen(_INK))
-    painter.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
-    painter.drawText(rect.x(), rect.y() + 18, "Bay state at this stop")
-    painter.setPen(QPen(_MUTED))
-    painter.setFont(QFont("Segoe UI", 10))
-    total_scu = sum(e.scu_amount for e in snapshot)
-    painter.drawText(
-        rect.x(), rect.y() + 36,
-        f"Total onboard: {total_scu} SCU"
-    )
-
-    # Stack each bay vertically inside the rect.
-    inner = QRect(rect.x(), rect.y() + 50, rect.width(), rect.height() - 50)
-    bay_h = max(60, inner.height() // max(1, len(bays)) - 8)
-    for i, bay in enumerate(bays):
-        bay_top = inner.y() + i * (bay_h + 8)
-        _draw_bay(
-            painter, bay, by_zone, colour_map, zone_caps,
-            QRect(inner.x(), bay_top, inner.width(), bay_h),
+    for zone, zone_refs in by_zone.items():
+        total_scu = sum(r.scu_amount for r in zone_refs)
+        dests = []
+        for r in zone_refs:
+            d = cl_to_dest.get(r.cargo_line_id, "?")
+            if d not in dests:
+                dests.append(d)
+        dest_str = " + ".join(dests)
+        cursor.text(
+            f"{zone}  →  {dest_str}  ({total_scu} SCU total)",
+            font=QFont("Segoe UI", 12, QFont.Weight.Bold),
+            color=_ZONE_HEAD,
+            indent=10,
+            gap_after=4,
         )
+        for ref in zone_refs:
+            cursor.text(
+                f"{ref.scu_amount} SCU {ref.commodity_name}  "
+                f"[Contract {ref.contract_number}]",
+                font=QFont("Segoe UI", 11),
+                indent=30,
+                gap_after=2,
+            )
+            _render_pallet_breakdown(
+                cursor, ref, cl_to_max_pallet,
+            )
+        cursor.space(6)
 
 
-def _draw_bay(painter, bay, by_zone, colour_map, zone_caps, rect) -> None:
-    """Draw one bay as a horizontal row of zone columns."""
-    # Bay label on the left
-    label_w = 60
-    painter.setPen(QPen(_INK))
-    painter.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
-    painter.drawText(
-        QRect(rect.x(), rect.y(), label_w, rect.height()),
-        Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
-        bay.bay_label.title(),
-    )
-
-    # Zones occupy the rest, sized proportional to width_units
-    zones = bay.zones
-    if not zones:
+def _render_pallet_breakdown(cursor, ref, cl_to_max_pallet) -> None:
+    max_pallet = cl_to_max_pallet.get(ref.cargo_line_id)
+    if not max_pallet:
         return
-    total_w = sum(z.width_units for z in zones)
-    zone_area_x = rect.x() + label_w
-    zone_area_w = rect.width() - label_w
-
-    x = zone_area_x
-    for z in zones:
-        col_w = zone_area_w * z.width_units // max(1, total_w)
-        col_rect = QRect(x, rect.y(), col_w - 4, rect.height())
-        _draw_zone_column(painter, z, by_zone.get(z.zone_label, []),
-                          colour_map, zone_caps, col_rect)
-        x += col_w
-
-
-def _draw_zone_column(painter, zone, entries, colour_map, zone_caps, rect) -> None:
-    # Outline
-    painter.setPen(QPen(_ZONE_BORDER, 1.5))
-    painter.setBrush(QBrush(_EMPTY_FILL))
-    painter.drawRect(rect)
-
-    cap = zone_caps.get(zone.zone_label, 1)
-    # cap above is in cubes which equals SCU for our boxes. Use zone
-    # geometry as the SCU capacity proxy — matches scu_capacity in
-    # practice.
-    used = sum(e.scu_amount for e in entries)
-    fill_ratio = min(1.0, used / max(1, cap))
-
-    # Fill from bottom (ramp end) upward.
-    fill_h = int(rect.height() * fill_ratio)
-    fill_rect = QRect(
-        rect.x(), rect.y() + rect.height() - fill_h,
-        rect.width(), fill_h,
-    )
-
-    if entries:
-        # Sort by SCU descending so the largest destination dominates.
-        sorted_entries = sorted(entries, key=lambda e: -e.scu_amount)
-        primary = sorted_entries[0]
-        c = QColor(colour_map.get(primary.delivery_station_name, "#888888"))
-        c.setAlpha(220)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QBrush(c))
-        painter.drawRect(fill_rect)
-
-        # Mixed indicator
-        if len({e.delivery_station_name for e in entries}) > 1:
-            painter.setPen(QPen(QColor("#ff8a3c"), 1.5, Qt.PenStyle.DashLine))
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.drawRect(rect)
-
-    # Zone label
-    painter.setPen(QPen(_INK))
-    painter.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
-    painter.drawText(
-        rect, Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter,
-        zone.zone_label,
-    )
-    # SCU summary at the bottom
-    painter.setFont(QFont("Segoe UI", 8))
-    painter.drawText(
-        rect, Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter,
-        f"{used}/{cap}",
-    )
-    # Destination name centered if any
-    if entries:
-        sorted_entries = sorted(entries, key=lambda e: -e.scu_amount)
-        dest = sorted_entries[0].delivery_station_name
-        if len({e.delivery_station_name for e in entries}) > 1:
-            dest = "MIXED"
-        painter.setFont(QFont("Segoe UI", 8))
-        painter.setPen(QPen(QColor("#ffffff")))
-        painter.drawText(
-            rect, Qt.AlignmentFlag.AlignCenter,
-            dest,
+    pallets = palletize(ref.scu_amount, max_pallet)
+    counts = Counter(pallets)
+    parts = []
+    for size in VALID_SIZES:
+        if counts[size] > 0:
+            parts.append(f"{counts[size]}×{size} SCU")
+    if parts:
+        cursor.text(
+            "Pallets: " + " + ".join(parts),
+            font=QFont("Segoe UI", 10),
+            color=_MUTED,
+            indent=50,
+            gap_after=4,
         )
