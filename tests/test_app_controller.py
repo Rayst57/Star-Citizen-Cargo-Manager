@@ -284,7 +284,7 @@ def test_full_starlancer_rb_renders_pallets_even_when_overflowing(controller):
         (wid,),
     ).fetchall()
     for r in rows:
-        controller.move_cargo(r["cargo_line_id"], "RB")
+        controller.move_cargo(r["cargo_line_id"], "RBA")
 
     # Snapshot any stop that has cargo onboard.
     onboard_stops = [
@@ -295,7 +295,7 @@ def test_full_starlancer_rb_renders_pallets_even_when_overflowing(controller):
 
     for sn in onboard_stops:
         rects = controller.get_pallet_rects(stop_number=sn)
-        rb_rects = [r for r in rects if r.zone_label == "RB"]
+        rb_rects = [r for r in rects if r.zone_label == "RBA"]
         # Pre-fix the count here was 0 because the packer silently
         # bailed. With the partial-fit fix the user should always see
         # at least the large pallets.

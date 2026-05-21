@@ -283,3 +283,71 @@ def test_planner_respects_physical_pack_constraints(controller):
                 f"{snap_scu} SCU but renderer only fit {rendered} — "
                 f"the planner committed a layout the packer can't draw."
             )
+
+
+def test_bulk_drains_into_lower_priority_same_dest_target():
+    """Regression for the user's Departure 7 observation: when bulk
+    (RBA) has cargo bound for a destination that ALSO has cargo in a
+    lower-priority zone with room (F2), the drain pass should
+    relocate the bulk piece into that lower-priority zone.
+
+    Hand-built zone state so the test doesn't depend on the loader's
+    placement choices.
+    """
+    from src.planner.zone_assignment import (
+        _ZoneState, _PlacedCargo, _drain_to_lower_priority,
+    )
+
+    f1 = _ZoneState("F1", "forward", 64, 3, 2, 16, 2)
+    f1.placed = [_PlacedCargo(
+        cargo_line_id=1, contract_id=1, contract_number=1,
+        commodity_id=1, commodity_name="Tungsten",
+        delivery_station_id=1, delivery_station_name="Seraphim Station",
+        scu=64, pallet_sizes=[8] * 8,
+    )]
+    f2 = _ZoneState("F2", "forward", 64, 4, 2, 16, 2)
+    f2.placed = [_PlacedCargo(
+        cargo_line_id=2, contract_id=2, contract_number=2,
+        commodity_id=1, commodity_name="Tungsten",
+        delivery_station_id=1, delivery_station_name="Seraphim Station",
+        scu=16, pallet_sizes=[8, 8],
+    )]
+    rba = _ZoneState("RBA", "rear", 64, 5, 4, 8, 2)
+    rba.placed = [_PlacedCargo(
+        cargo_line_id=3, contract_id=3, contract_number=3,
+        commodity_id=1, commodity_name="Tungsten",
+        delivery_station_id=1, delivery_station_name="Seraphim Station",
+        scu=16, pallet_sizes=[8, 8],
+    )]
+
+    moves = _drain_to_lower_priority([f1, f2, rba])
+
+    assert len(moves) == 1, f"Expected 1 drain, got {len(moves)}"
+    assert moves[0].from_zone == "RBA"
+    assert moves[0].to_zone == "F2"
+    assert moves[0].scu_amount == 16
+    assert rba.used_scu == 0
+    assert f2.used_scu == 32
+
+
+def test_drain_skips_when_only_target_is_empty():
+    """Drain is conservative: never moves into an EMPTY lower-priority
+    zone, which would preempt that zone for later short-hop
+    placements. Topoff (same-dest) is required."""
+    from src.planner.zone_assignment import (
+        _ZoneState, _PlacedCargo, _drain_to_lower_priority,
+    )
+
+    rba = _ZoneState("RBA", "rear", 64, 5, 4, 8, 2)
+    rba.placed = [_PlacedCargo(
+        cargo_line_id=1, contract_id=1, contract_number=1,
+        commodity_id=1, commodity_name="Tungsten",
+        delivery_station_id=1, delivery_station_name="Seraphim Station",
+        scu=16, pallet_sizes=[8, 8],
+    )]
+    r1 = _ZoneState("R1", "rear", 48, 1, 2, 8, 3)
+
+    moves = _drain_to_lower_priority([r1, rba])
+
+    assert moves == []
+    assert rba.used_scu == 16
