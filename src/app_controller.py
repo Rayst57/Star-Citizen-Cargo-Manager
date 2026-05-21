@@ -22,6 +22,7 @@ from PySide6.QtCore import QObject, QThread, Signal
 
 from .planner.canonicalize import canonical_commodity, canonical_station
 from .planner.conflicts import ConflictGroup
+from .planner.physical_packer import best_pack
 from .planner.recompute import RecomputeResult, recompute as run_recompute
 from .planner.route import RouteStop
 from .palletizer_color import assign_destination_colors
@@ -715,9 +716,6 @@ class AppController(QObject):
         ).fetchall()
         color_map = {r["name"]: r["color_hex"] for r in color_rows}
 
-        # Box footprints for pallet sizes
-        boxes = _load_box_footprints()
-
         # Per-cargo-line conflict info: which sizes are ambiguous AND the
         # partner destinations' colors for striping.
         cl_conflict_info: dict[int, tuple[set[int], list[str]]] = {}
@@ -736,18 +734,7 @@ class AppController(QObject):
                 for cl_id in d.cargo_line_ids:
                     cl_conflict_info[cl_id] = (amb_sizes, partners)
 
-        # Per-zone height grid: [height_units_used_at(x,y)]
-        # Zone height is the full vertical capacity in 1.25 m cubes (e.g. 4
-        # for the C2). A 2-height pallet adds 2 to grid[x][y]; capping at the
-        # zone's height_units lets us stack two pallets per floor cell.
-        zone_grids: dict[str, list[list[int]]] = {}
-
         rects: list[PalletRect] = []
-
-        # Loading doctrine: large pallets (≥8 SCU) load from the FAR end
-        # (forward) and stack toward the ramp; small pallets (<8 SCU)
-        # fill from the ramp end. They naturally meet in the middle.
-        LARGE_SIZES = {8, 16, 24, 32}
 
         # Group entries by zone so we place each zone's contents in a single
         # large→small pass.
@@ -771,37 +758,7 @@ class AppController(QObject):
                 for size in sizes:
                     placements.append((entry, size))
 
-            # Large pallets always go from the far end, biggest first.
-            large_first = sorted(
-                [p for p in placements if p[1] in LARGE_SIZES],
-                key=lambda p: -p[1],
-            )
-            small_pool = [p for p in placements if p[1] not in LARGE_SIZES]
-
-            # Try four orderings and pick the one that places the most
-            # pallets (preferring zero-overflow when possible):
-            #   1. smalls ASC, larges-first (default doctrine)
-            #   2. smalls DESC, larges-first (denser stacks)
-            #   3. smalls ASC, SMALLS-first (rare zone shapes where
-            #      smalls at the ramp end keep large-pallet rows aligned
-            #      — e.g. Starlancer RB's odd 11-cube length)
-            #   4. smalls DESC, smalls-first
-            # If none fully fits, the best-by-overflow pass is rendered
-            # anyway so the user sees what we *could* pack and a warning
-            # surfaces the leftover.
-            small_asc = sorted(small_pool, key=lambda p: p[1])
-            small_desc = sorted(small_pool, key=lambda p: -p[1])
-            attempts = [
-                _try_place_zone(zw, zl, zh, large_first, small_asc, boxes),
-                _try_place_zone(zw, zl, zh, large_first, small_desc, boxes),
-                _try_place_zone(zw, zl, zh, large_first, small_asc, boxes,
-                                smalls_first=True),
-                _try_place_zone(zw, zl, zh, large_first, small_desc, boxes,
-                                smalls_first=True),
-            ]
-            # Lowest overflow wins; tiebreak by most placements.
-            attempts.sort(key=lambda r: (len(r[2]), -len(r[0])))
-            placement_result, grid, overflow = attempts[0]
+            placement_result, overflow = best_pack(zw, zl, zh, placements)
             if overflow:
                 lost_scu = sum(size for _, size in overflow)
                 _log.warning(
@@ -812,7 +769,6 @@ class AppController(QObject):
                     [f"{size} SCU (cl#{e.cargo_line_id})"
                      for e, size in overflow],
                 )
-            zone_grids[zone_label] = grid
 
             for (entry, size, w, l, h, cell_x, cell_y, cell_z) in placement_result or []:
                 color = color_map.get(entry.delivery_station_name, "#888888")
@@ -1450,111 +1406,6 @@ class AppController(QObject):
 
 
 # ── module-level helpers ──────────────────────────────────────────────────
-
-def _load_box_footprints() -> dict[int, dict]:
-    """Return {scu: {width, length, height}} from data/scu_boxes.json."""
-    boxes_path = Path(__file__).resolve().parents[1] / "data" / "scu_boxes.json"
-    data = json.loads(boxes_path.read_text(encoding="utf-8"))
-    return {b["scu"]: b for b in data["boxes"]}
-
-
-def _try_place_zone(
-    zone_w: int,
-    zone_l: int,
-    zone_h: int,
-    large_first: list,            # [(entry, size), ...] biggest first
-    smalls_in_order: list,        # [(entry, size), ...] caller-chosen order
-    boxes: dict,
-    *,
-    smalls_first: bool = False,
-) -> tuple[list, list[list[int]], list]:
-    """Run a single placement pass with the given small-pallet ordering.
-
-    placements is a list of tuples:
-        (entry, size, w, l, h, cell_x, cell_y, cell_z).
-
-    Returns (placements, grid, overflow). overflow lists pallets that
-    couldn't be placed at all; callers can compare passes by overflow
-    length to pick the best one. The placements list still represents
-    a valid (non-overlapping) layout even when overflow is non-empty.
-    """
-    grid = [[0] * zone_l for _ in range(zone_w)]
-    placements: list = []
-    overflow: list = []
-
-    def _place(entry, size, *, from_far: bool) -> bool:
-        box = boxes.get(size, {"width": 1, "length": 1, "height": 1})
-        w, l, h = box["width"], box["length"], box["height"]
-        if w > zone_w and box.get("rotatable") and l <= zone_w:
-            w, l = l, w
-        spot = _place_in_grid(grid, w, l, h, zone_w, zone_l, zone_h,
-                              from_far_end=from_far)
-        if spot is None:
-            overflow.append((entry, size))
-            return False
-        x, y, z = spot
-        placements.append((entry, size, w, l, h, x, y, z))
-        return True
-
-    # Smalls-first variant: pack the ramp end first with the small
-    # pallets, then drop larges from the far end. Useful when the zone
-    # length isn't divisible by the large-pallet length (e.g.
-    # Starlancer RB is 4x11x2: 10 large 8-SCU pads fill y=0..9 leaving
-    # a 4x1 strip that's too shallow for a 2x2 small pallet — but a
-    # 2x2 small at y=0..1 first, then 10 larges in y=2..11, fits).
-    passes = (
-        ((smalls_in_order, False), (large_first, True))
-        if smalls_first else
-        ((large_first, True), (smalls_in_order, False))
-    )
-    for batch, from_far in passes:
-        for entry, size in batch:
-            _place(entry, size, from_far=from_far)
-    return placements, grid, overflow
-
-
-def _place_in_grid(
-    grid: list[list[int]],
-    w: int, l: int, h: int,
-    zone_w: int, zone_l: int,
-    stack_limit: int,
-    *,
-    from_far_end: bool = False,
-) -> tuple[int, int, int] | None:
-    """Best-fit placement requiring uniform support.
-
-    Returns (x, y, z) of the placement or None if it doesn't fit.
-    The z is needed by the renderer so it can draw each pallet at its
-    actual height instead of guessing from cumulative stack-order.
-    """
-    candidates: list[tuple[int, int, int]] = []   # (y, x, z)
-    for y in range(zone_l - l + 1):
-        for x in range(zone_w - w + 1):
-            heights = [
-                grid[x + dx][y + dy]
-                for dx in range(w)
-                for dy in range(l)
-            ]
-            if len(set(heights)) != 1:
-                continue
-            z = heights[0]
-            if z + h > stack_limit:
-                continue
-            candidates.append((y, x, z))
-
-    if not candidates:
-        return None
-
-    if from_far_end:
-        candidates.sort(key=lambda c: (-c[0], -c[2], c[1]))
-    else:
-        candidates.sort(key=lambda c: (c[0], c[2], c[1]))
-
-    y, x, z = candidates[0]
-    for dx in range(w):
-        for dy in range(l):
-            grid[x + dx][y + dy] = z + h
-    return (x, y, z)
 
 
 def _parse_breakdown(text: str | None) -> list[int]:

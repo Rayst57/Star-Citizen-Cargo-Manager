@@ -47,6 +47,7 @@ from dataclasses import dataclass, field
 
 from .loadout import LoadoutEntry, Snapshot
 from .palletizer import palletize, palletize_summary
+from .physical_packer import can_fit, max_fitting_subset
 from .route import RouteStop
 
 
@@ -103,6 +104,9 @@ class _ZoneState:
     bay_label: str
     scu_capacity: int
     unload_priority: int
+    width_units: int
+    length_units: int
+    height_units: int
     placed: list[_PlacedCargo] = field(default_factory=list)
 
     @property
@@ -121,13 +125,28 @@ class _ZoneState:
     def is_empty(self) -> bool:
         return not self.placed
 
+    def existing_pallet_sizes(self) -> list[int]:
+        return [s for c in self.placed for s in c.pallet_sizes]
+
+    def can_physically_fit(self, additional_sizes: list[int]) -> bool:
+        """Would *additional_sizes* still pack given what's already
+        placed? Uses the same packer the renderer uses, so the planner
+        never commits a layout the canvas can't draw."""
+        if not additional_sizes:
+            return True
+        return can_fit(
+            self.width_units, self.length_units, self.height_units,
+            self.existing_pallet_sizes() + additional_sizes,
+        )
+
 
 # ── DB helpers (mostly inherited verbatim) ───────────────────────────────
 
 def _load_zones(ship_id: int, conn: sqlite3.Connection) -> list[_ZoneState]:
     rows = conn.execute(
         """
-        SELECT zone_label, bay_label, scu_capacity, unload_priority
+        SELECT zone_label, bay_label, scu_capacity, unload_priority,
+               width_units, length_units, height_units
         FROM ship_zones
         WHERE ship_id = ?
         ORDER BY unload_priority ASC
@@ -140,6 +159,9 @@ def _load_zones(ship_id: int, conn: sqlite3.Connection) -> list[_ZoneState]:
             bay_label=r["bay_label"],
             scu_capacity=r["scu_capacity"],
             unload_priority=r["unload_priority"],
+            width_units=r["width_units"],
+            length_units=r["length_units"],
+            height_units=r["height_units"],
         )
         for r in rows
     ]
@@ -197,25 +219,20 @@ def _place_whole(zone: _ZoneState, c: _PlacedCargo) -> None:
 
 
 def _split_into_zone(
-    c: _PlacedCargo, zone: _ZoneState, scu_room: int,
+    c: _PlacedCargo, zone: _ZoneState,
 ) -> tuple[_PlacedCargo, _PlacedCargo]:
-    """Split *c* into a piece that fits *scu_room* and a remainder.
+    """Split *c* into a piece that physically fits *zone* (given its
+    current contents) and a remainder.
 
-    Walks pallets largest-first into the "fits" piece until adding the
-    next pallet would overflow. Returns (placed_piece, remainder); the
-    placed_piece may be empty if not even the smallest pallet fits.
+    Uses the same packer the renderer uses, so the placed_piece is
+    guaranteed to draw without overflow. The placed_piece may be empty
+    if not even the smallest pallet fits.
     """
-    remaining = sorted(c.pallet_sizes, reverse=True)
-    placed_sizes: list[int] = []
-    placed_scu = 0
-    leftover_sizes: list[int] = []
-    for size in remaining:
-        if placed_scu + size <= scu_room:
-            placed_sizes.append(size)
-            placed_scu += size
-        else:
-            leftover_sizes.append(size)
-
+    fitting, leftover = max_fitting_subset(
+        zone.width_units, zone.length_units, zone.height_units,
+        zone.existing_pallet_sizes(),
+        c.pallet_sizes,
+    )
     placed_piece = _PlacedCargo(
         cargo_line_id=c.cargo_line_id,
         contract_id=c.contract_id,
@@ -224,8 +241,8 @@ def _split_into_zone(
         commodity_name=c.commodity_name,
         delivery_station_id=c.delivery_station_id,
         delivery_station_name=c.delivery_station_name,
-        scu=placed_scu,
-        pallet_sizes=placed_sizes,
+        scu=sum(fitting),
+        pallet_sizes=fitting,
     )
     leftover_piece = _PlacedCargo(
         cargo_line_id=c.cargo_line_id,
@@ -235,8 +252,8 @@ def _split_into_zone(
         commodity_name=c.commodity_name,
         delivery_station_id=c.delivery_station_id,
         delivery_station_name=c.delivery_station_name,
-        scu=sum(leftover_sizes),
-        pallet_sizes=leftover_sizes,
+        scu=sum(leftover),
+        pallet_sizes=leftover,
     )
     return placed_piece, leftover_piece
 
@@ -246,10 +263,13 @@ def _split_into_zone(
 def _pick_topoff_zone(
     zones: list[_ZoneState], c: _PlacedCargo,
 ) -> _ZoneState | None:
-    """Smallest-remaining same-destination zone that fits *c* whole."""
+    """Smallest-remaining same-destination zone where *c* both fits by
+    SCU AND physically packs given current contents."""
     dest = c.delivery_station_id
     fits = [z for z in zones
-            if dest in z.occupants and z.remaining_scu >= c.scu]
+            if dest in z.occupants
+            and z.remaining_scu >= c.scu
+            and z.can_physically_fit(c.pallet_sizes)]
     if not fits:
         return None
     fits.sort(key=lambda z: z.remaining_scu)
@@ -259,13 +279,17 @@ def _pick_topoff_zone(
 def _pick_fresh_zone(
     zones: list[_ZoneState], c: _PlacedCargo,
 ) -> _ZoneState | None:
-    """Empty zone that fits *c* whole, lowest unload_priority first.
+    """Empty zone, lowest unload_priority first, that fits *c* whole
+    both by SCU and physically.
 
-    Sorting by `unload_priority` (not capacity) is what keeps RB last:
-    on the Starlancer the priorities are R1=1, R2=2, F1=3, F2=4, RB=5,
-    so we drain R1/R2/F1/F2 before RB regardless of cargo size.
+    Sorting by `unload_priority` keeps RB last: on the Starlancer the
+    priorities are R1=1, R2=2, F1=3, F2=4, RB=5, so we drain
+    R1/R2/F1/F2 before RB regardless of cargo size.
     """
-    fits = [z for z in zones if z.is_empty and z.scu_capacity >= c.scu]
+    fits = [z for z in zones
+            if z.is_empty
+            and z.scu_capacity >= c.scu
+            and z.can_physically_fit(c.pallet_sizes)]
     if not fits:
         return None
     fits.sort(key=lambda z: z.unload_priority)
@@ -275,14 +299,14 @@ def _pick_fresh_zone(
 def _pick_mixed_zone(
     zones: list[_ZoneState], c: _PlacedCargo,
 ) -> _ZoneState | None:
-    """Last-resort: zone with capacity that's already holding ANOTHER
-    destination. Prefer no narrow conflict, then lowest unload_priority.
-    """
+    """Last-resort: zone already holding ANOTHER destination, with
+    room. Prefer no narrow conflict, then lowest unload_priority."""
     dest = c.delivery_station_id
     fits = [z for z in zones
             if (not z.is_empty)
             and dest not in z.occupants
-            and z.remaining_scu >= c.scu]
+            and z.remaining_scu >= c.scu
+            and z.can_physically_fit(c.pallet_sizes)]
     if not fits:
         return None
     fits.sort(key=lambda z: (
@@ -295,7 +319,9 @@ def _pick_mixed_zone(
 def _pick_zone_for_whole_cargo(
     zones: list[_ZoneState], c: _PlacedCargo,
 ) -> tuple[_ZoneState | None, str]:
-    """Best single zone for *c*. Returns (zone, reason)."""
+    """Best single zone for *c*. Returns (zone, reason). Every
+    candidate is checked for physical fit so the planner never
+    commits a layout that wouldn't actually pack."""
     z = _pick_topoff_zone(zones, c)
     if z is not None:
         return z, "topoff"
@@ -500,15 +526,23 @@ def _load_at_stop(
         # If the group total fits whole in one zone, take that zone
         # FIRST (reserving it for the destination's run) — this avoids
         # the small-fit-per-line trap that scatters same-dest cargo.
+        # Every candidate is also checked for PHYSICAL fit so the
+        # planner never reserves a zone that can't actually hold the
+        # group's pallets.
         anchor: _ZoneState | None = None
+        group_pallets = [s for c in group for s in c.pallet_sizes]
         topoff = [z for z in zones
-                  if did in z.occupants and z.remaining_scu >= group_total]
+                  if did in z.occupants
+                  and z.remaining_scu >= group_total
+                  and z.can_physically_fit(group_pallets)]
         if topoff:
             topoff.sort(key=lambda z: z.remaining_scu)
             anchor = topoff[0]
         else:
             fresh_fits = [z for z in zones
-                          if z.is_empty and z.scu_capacity >= group_total]
+                          if z.is_empty
+                          and z.scu_capacity >= group_total
+                          and z.can_physically_fit(group_pallets)]
             if fresh_fits:
                 fresh_fits.sort(key=lambda z: z.unload_priority)
                 anchor = fresh_fits[0]
@@ -547,7 +581,9 @@ def _load_at_stop(
                     z, reason = topoff, "topoff"
                 else:
                     fresh_fits = [zz for zz in zones
-                                  if zz.is_empty and zz.scu_capacity >= c.scu]
+                                  if zz.is_empty
+                                  and zz.scu_capacity >= c.scu
+                                  and zz.can_physically_fit(c.pallet_sizes)]
                     if fresh_fits:
                         fresh_fits.sort(
                             key=lambda zz: (-zz.scu_capacity, zz.unload_priority),
@@ -597,7 +633,8 @@ def _load_at_stop(
             while i < len(remaining_lines):
                 nxt = remaining_lines[i]
                 if (z.remaining_scu >= nxt.scu
-                        and not _would_narrow_conflict(z, nxt)):
+                        and not _would_narrow_conflict(z, nxt)
+                        and z.can_physically_fit(nxt.pallet_sizes)):
                     _place_whole(z, nxt)
                     initial_zones[nxt.cargo_line_id] = z.zone_label
                     _log.info(
@@ -616,24 +653,24 @@ def _load_at_stop(
 def _place_split(
     c: _PlacedCargo, zones: list[_ZoneState],
 ) -> tuple[int, str]:
-    """Split *c* pallet-by-pallet into the best zones available.
+    """Split *c* across zones using physical pack-fit.
 
-    Greedy: pick the best-ranked zone with room for the largest
-    remaining pallet, place as much of the line as fits there
-    (re-running the largest-fits-first pack), then move on with the
-    leftover. Returns (placed_total_scu, first_zone_label_used).
+    For each iteration, walks the ranked candidate list (topoff first,
+    then fresh by unload_priority, then mixed with narrow-conflict
+    deprioritized) and picks the FIRST zone that can physically hold
+    at least one of *c*'s remaining pallets. Places that subset, then
+    repeats with the leftover.
+
+    Returns (placed_total_scu, first_zone_label_used).
     """
     first_zone_label = ""
     placed_total = 0
     remaining = c
     while remaining.scu > 0:
-        # Best target: same-dest topoff with most room, else fresh
-        # lowest-priority with biggest room, else mixed.
-        # For SPLITS we want to *cram*, so within each tier pick the
-        # zone with the MOST remaining (largest splittable chunk).
         dest = remaining.delivery_station_id
 
-        topoff = [z for z in zones if dest in z.occupants and z.remaining_scu > 0]
+        topoff = [z for z in zones
+                  if dest in z.occupants and z.remaining_scu > 0]
         topoff.sort(key=lambda z: -z.remaining_scu)
         fresh = [z for z in zones if z.is_empty]
         fresh.sort(key=lambda z: z.unload_priority)
@@ -645,28 +682,38 @@ def _place_split(
             z.unload_priority,
         ))
 
-        candidate = (topoff + fresh + mixed)
-        if not candidate:
-            break
-        z = candidate[0]
-        if z.remaining_scu < min(remaining.pallet_sizes):
-            # Nothing big enough for even the smallest leftover pallet.
+        candidates = topoff + fresh + mixed
+        if not candidates:
             break
 
-        placed_piece, remaining = _split_into_zone(
-            remaining, z, z.remaining_scu,
-        )
-        if placed_piece.scu == 0:
-            # Couldn't fit anything in the best candidate; bail rather
-            # than loop forever.
+        # Scan candidates for the first one that physically holds
+        # something. The SCU-cap check alone isn't enough — a zone
+        # with 16 free SCU but only a 4x1 cube strip can't take an
+        # 8 SCU pallet (2x2 footprint).
+        placed_piece: _PlacedCargo | None = None
+        chosen: _ZoneState | None = None
+        next_remaining: _PlacedCargo = remaining
+        for z in candidates:
+            trial_placed, trial_remaining = _split_into_zone(remaining, z)
+            if trial_placed.scu > 0:
+                placed_piece = trial_placed
+                next_remaining = trial_remaining
+                chosen = z
+                break
+
+        if placed_piece is None or chosen is None:
+            # No candidate physically fits any pallet. Bail.
             break
-        _place_whole(z, placed_piece)
+
+        _place_whole(chosen, placed_piece)
         placed_total += placed_piece.scu
+        remaining = next_remaining
         if not first_zone_label:
-            first_zone_label = z.zone_label
+            first_zone_label = chosen.zone_label
         _log.info(
             "    cl#%d (split %d SCU into %s; %d SCU remaining)",
-            c.cargo_line_id, placed_piece.scu, z.zone_label, remaining.scu,
+            c.cargo_line_id, placed_piece.scu, chosen.zone_label,
+            remaining.scu,
         )
 
     return placed_total, first_zone_label

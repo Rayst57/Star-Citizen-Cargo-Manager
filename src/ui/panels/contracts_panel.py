@@ -38,11 +38,11 @@ class ContractsPanel(QWidget):
         title.setProperty("heading", True)
         header.addWidget(title)
         header.addStretch(1)
-        io_btn = QPushButton("Import/Export")
-        io_btn.setProperty("flat", True)
+        io_btn = QPushButton("Ext. Data")
         io_btn.setToolTip(
-            "Save this workday's contracts to a JSON file, or load "
-            "contracts from a previously-exported file."
+            "Import or export contract data — save this workday's "
+            "contracts to a JSON file, or load contracts from a "
+            "previously-exported file."
         )
         io_btn.clicked.connect(self.import_export_requested.emit)
         header.addWidget(io_btn)
