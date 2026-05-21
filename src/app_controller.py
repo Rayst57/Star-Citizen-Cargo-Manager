@@ -246,7 +246,8 @@ class AppController(QObject):
 
     def resume_workday(self, workday_id: int) -> None:
         row = self.conn.execute(
-            "SELECT id FROM workdays WHERE id = ? AND ended_at IS NULL",
+            "SELECT id, plan_dirty FROM workdays "
+            "WHERE id = ? AND ended_at IS NULL",
             (workday_id,),
         ).fetchone()
         if not row:
@@ -256,6 +257,11 @@ class AppController(QObject):
         self.contracts_changed.emit()
         self.route_changed.emit()
         self._emit_progress()
+        # Resume needs to fire plan_dirty_changed so the Recompute
+        # banner appears. Without this signal the banner stays
+        # hidden — the user sees the contracts but has no button to
+        # trigger a (re)compute.
+        self.plan_dirty_changed.emit(bool(row["plan_dirty"]))
 
     def list_ships(self) -> list[sqlite3.Row]:
         """All selectable ships, ordered for the workday picker."""
@@ -1373,6 +1379,11 @@ class AppController(QObject):
         self.conn.commit()
         self.plan_dirty_changed.emit(True)
         self.scu_usage.emit(self.total_scu_in_use(), self.total_scu_capacity())
+
+    def export_plan_pdf(self, path: str) -> None:
+        """Write the current computed plan to *path* as a PDF."""
+        from .pdf_export import export_plan_pdf
+        export_plan_pdf(self, path)
 
     def _emit_progress(self) -> None:
         total = len(self._last_result.route_stops) if self._last_result else 0

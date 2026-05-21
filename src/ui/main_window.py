@@ -125,6 +125,7 @@ class MainWindow(QMainWindow):
 
         # Recompute banner
         self.banner.recompute_clicked.connect(self.controller.recompute)
+        self.banner.export_clicked.connect(self._export_plan_pdf)
 
         # Status bar
         self.status.settings_clicked.connect(self._open_settings)
@@ -196,6 +197,31 @@ class MainWindow(QMainWindow):
         self.banner.set_dirty(
             dirty,
             first_run=not self.controller.has_been_computed(),
+        )
+
+    def _export_plan_pdf(self) -> None:
+        """Save the current computed plan as a stop-by-stop PDF."""
+        ship_row = self.controller.conn.execute(
+            "SELECT s.name FROM ships s "
+            "JOIN workdays w ON w.ship_id = s.id "
+            "WHERE w.id = ?",
+            (self.controller.workday_id,),
+        ).fetchone()
+        ship_name = ship_row["name"] if ship_row else "workday"
+        default = f"{ship_name.replace(' ', '_')}_loading_plan.pdf"
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Plan as PDF", default, "PDF files (*.pdf)",
+        )
+        if not path:
+            return
+        try:
+            self.controller.export_plan_pdf(path)
+        except Exception as e:  # noqa: BLE001 - surface to user
+            QMessageBox.warning(self, "Export failed", str(e))
+            return
+        QMessageBox.information(
+            self, "PDF saved",
+            f"Loading plan exported to:\n{path}",
         )
 
     def _open_import_export(self) -> None:
