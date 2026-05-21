@@ -42,6 +42,27 @@ from PySide6.QtWidgets import (
 )
 
 
+def _primary_label_zones(zones):
+    """Return the subset of zones that should display a label at the
+    bay end.
+
+    When two zones share the same (cube_offset_x, width_units) — e.g.
+    Starlancer's RB and RBS, both centered on the bulk floor x-range
+    but stacked lengthwise — drawing both labels at the bay-end slot
+    collides them into garbage like "FREBS". Only the longer of the
+    two is labeled; the shorter supplemental zone still shows up
+    correctly in tooltips and the Zone Detail dropdown.
+    """
+    by_slot: dict[tuple[int, int], object] = {}
+    for z in zones:
+        key = (z.cube_offset_x, z.width_units)
+        cur = by_slot.get(key)
+        if cur is None or z.length_units > cur.length_units:
+            by_slot[key] = z
+    primary = set(id(z) for z in by_slot.values())
+    return [z for z in zones if id(z) in primary]
+
+
 def _local_y_to_screen_y(
     bay_top_y: int,
     local_y: int,
@@ -290,7 +311,7 @@ class BayCanvasViewport(QWidget):
             o = self._bay_origins.get(b.bay_label)
             if o is None:
                 continue
-            for z in b.zones:
+            for z in _primary_label_zones(b.zones):
                 if b.ramp_at_top:
                     rect = QRect(o.x() + z.cube_offset_x * cp,
                                  o.y() + b.length_cells * cp + 4,
@@ -521,7 +542,7 @@ class ZoneStripsViewport(QWidget):
             o = self._bay_origins.get(b.bay_label)
             if o is None:
                 continue
-            for z in b.zones:
+            for z in _primary_label_zones(b.zones):
                 if b.ramp_at_top:
                     rect = QRect(o.x() + z.cube_offset_x * cp,
                                  o.y() + b.length_cells * cp + 4,
@@ -618,6 +639,15 @@ class ZoneStripsViewport(QWidget):
         # read along the length of the strip. SCU usage is shown by the
         # fill ratio plus the bay totals below the canvas, so no number
         # is rendered inside the strip.
+        #
+        # Skip text rendering entirely for tiny strips (e.g. Starlancer's
+        # RBS, the 1-cube ramp-edge stub). At that size the rotated text
+        # fragments and overflows into neighbors as "s H"-style garbage.
+        # The destination is still visible via hover tooltip + Zone
+        # Detail dialog.
+        if rect.height() < 40 or rect.width() < 14:
+            return
+
         if is_mixed:
             name_label = "MIXED"
         else:
