@@ -76,6 +76,18 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
         )
         conn.commit()
 
+    # Front/back adjacency. Optional companions to left/right that let
+    # a seed declare two zones as physically continuous (no bulkhead).
+    # Default NULL = structural separation (matches C2/Starlancer).
+    if not _has_column(conn, "ship_zones", "front_zone_label"):
+        conn.execute(
+            "ALTER TABLE ship_zones ADD COLUMN front_zone_label TEXT"
+        )
+        conn.execute(
+            "ALTER TABLE ship_zones ADD COLUMN back_zone_label TEXT"
+        )
+        conn.commit()
+
     # Re-sync reference data. load_all_seeds() only runs on first init,
     # so without this an existing DB never sees stations or ships added
     # (or layouts corrected) after it was created. Both loaders are

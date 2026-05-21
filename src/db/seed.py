@@ -167,8 +167,9 @@ def load_ship(conn: sqlite3.Connection, filename: str) -> None:
                  cube_offset_x, cube_offset_y,
                  scu_capacity, load_order, unload_priority,
                  left_zone_label, right_zone_label,
+                 front_zone_label, back_zone_label,
                  ramp_side, ship_forward_y, notes)
-            VALUES (?, ?, ?, 'STRUCTURED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, 'STRUCTURED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(ship_id, zone_label) DO UPDATE SET
                 bay_label       = excluded.bay_label,
                 width_units     = excluded.width_units,
@@ -181,6 +182,8 @@ def load_ship(conn: sqlite3.Connection, filename: str) -> None:
                 unload_priority = excluded.unload_priority,
                 left_zone_label = excluded.left_zone_label,
                 right_zone_label = excluded.right_zone_label,
+                front_zone_label = excluded.front_zone_label,
+                back_zone_label  = excluded.back_zone_label,
                 ramp_side       = excluded.ramp_side,
                 ship_forward_y  = excluded.ship_forward_y,
                 notes           = excluded.notes
@@ -199,6 +202,8 @@ def load_ship(conn: sqlite3.Connection, filename: str) -> None:
                 z.get("unload_priority"),
                 z.get("left_zone_label"),
                 z.get("right_zone_label"),
+                z.get("front_zone_label"),
+                z.get("back_zone_label"),
                 z.get("ramp_side", "low_y"),
                 z.get("ship_forward_y", "high"),
                 z.get("notes"),

@@ -227,3 +227,79 @@ def test_dispatch_add_contract_via_tool(controller):
 def test_dispatch_unknown_tool_raises(controller):
     with pytest.raises(ToolError):
         controller.dispatch_tool("bogus_tool", {})
+
+
+# ── BayCanvas physical packing ────────────────────────────────────────
+
+def test_full_starlancer_rb_renders_pallets_even_when_overflowing(controller):
+    """Regression: a Starlancer RB carrying 71 + 17 = 88 SCU
+    (10x8 SCU + 1x4 + 1x2 + 2x1) can't be packed perfectly into the
+    4x11x2 cube grid (10 large pallets fill y=0..9 leaving only a 4x1
+    strip too shallow for a 2x2 small pallet). Before the partial-fit
+    fix, the BayCanvas returned zero PalletRects for that zone and the
+    Zone Detail dialog rendered empty.
+
+    The fix tries more orderings and accepts a partial layout, so the
+    user always sees what could be packed.
+    """
+    starlancer = controller.conn.execute(
+        "SELECT id FROM ships WHERE name LIKE 'Starlancer%'"
+    ).fetchone()
+    if not starlancer:
+        pytest.skip("Starlancer not seeded in this environment")
+
+    seraphim = controller.conn.execute(
+        "SELECT id FROM stations WHERE name = 'Seraphim Station'"
+    ).fetchone()["id"]
+    wid = controller.start_workday(seraphim, None, False)
+    controller.conn.execute(
+        "UPDATE workdays SET ship_id = ? WHERE id = ?",
+        (starlancer["id"], wid),
+    )
+    controller.conn.commit()
+
+    # 71 SCU Baijini + 17 SCU Seraphim into the same zone via the
+    # manual-move path so they share RB at the same stop.
+    controller.add_contract({
+        "pickup_station": "Yellow Core",
+        "max_pallet_size": 8,
+        "deliveries": [
+            {"destination": "Baijini Point", "commodity": "Tungsten", "scu": 71},
+        ],
+    })
+    controller.add_contract({
+        "pickup_station": "Yellow Core",
+        "max_pallet_size": 8,
+        "deliveries": [
+            {"destination": "Seraphim Station", "commodity": "Tungsten", "scu": 17},
+        ],
+    })
+    result = run_recompute(wid, controller.conn)
+    controller._last_result = result
+    assign_destination_colors(wid, controller.conn)
+
+    # Force both lines into RB so we hit the 88/88 overcrowd case.
+    rows = controller.conn.execute(
+        "SELECT cargo_line_id FROM zone_assignments WHERE workday_id = ?",
+        (wid,),
+    ).fetchall()
+    for r in rows:
+        controller.move_cargo(r["cargo_line_id"], "RB")
+
+    # Snapshot any stop that has cargo onboard.
+    onboard_stops = [
+        s.stop_number for s in result.route_stops
+        if result.snapshots.get(s.stop_number)
+    ]
+    assert onboard_stops, "Expected at least one stop with cargo onboard"
+
+    for sn in onboard_stops:
+        rects = controller.get_pallet_rects(stop_number=sn)
+        rb_rects = [r for r in rects if r.zone_label == "RB"]
+        # Pre-fix the count here was 0 because the packer silently
+        # bailed. With the partial-fit fix the user should always see
+        # at least the large pallets.
+        assert rb_rects, (
+            f"Stop {sn}: no RB pallets rendered — the packer must "
+            f"return a partial layout rather than nothing."
+        )

@@ -778,22 +778,39 @@ class AppController(QObject):
             )
             small_pool = [p for p in placements if p[1] not in LARGE_SIZES]
 
-            # Try smalls SMALLEST-first (best layout when there's room —
-            # 1 SCU at the door, 4 SCU flat behind it, no awkward stacks).
-            # If anything in that pass overflows, retry with LARGEST-first
-            # (stacks 2 on 4, 1 on 2 — fits but uglier).
-            placement_result, grid = _try_place_zone(
-                zw, zl, zh,
-                large_first,
-                sorted(small_pool, key=lambda p: p[1]),       # ASCENDING
-                boxes,
-            )
-            if placement_result is None:
-                placement_result, grid = _try_place_zone(
-                    zw, zl, zh,
-                    large_first,
-                    sorted(small_pool, key=lambda p: -p[1]),  # DESCENDING fallback
-                    boxes,
+            # Try four orderings and pick the one that places the most
+            # pallets (preferring zero-overflow when possible):
+            #   1. smalls ASC, larges-first (default doctrine)
+            #   2. smalls DESC, larges-first (denser stacks)
+            #   3. smalls ASC, SMALLS-first (rare zone shapes where
+            #      smalls at the ramp end keep large-pallet rows aligned
+            #      — e.g. Starlancer RB's odd 11-cube length)
+            #   4. smalls DESC, smalls-first
+            # If none fully fits, the best-by-overflow pass is rendered
+            # anyway so the user sees what we *could* pack and a warning
+            # surfaces the leftover.
+            small_asc = sorted(small_pool, key=lambda p: p[1])
+            small_desc = sorted(small_pool, key=lambda p: -p[1])
+            attempts = [
+                _try_place_zone(zw, zl, zh, large_first, small_asc, boxes),
+                _try_place_zone(zw, zl, zh, large_first, small_desc, boxes),
+                _try_place_zone(zw, zl, zh, large_first, small_asc, boxes,
+                                smalls_first=True),
+                _try_place_zone(zw, zl, zh, large_first, small_desc, boxes,
+                                smalls_first=True),
+            ]
+            # Lowest overflow wins; tiebreak by most placements.
+            attempts.sort(key=lambda r: (len(r[2]), -len(r[0])))
+            placement_result, grid, overflow = attempts[0]
+            if overflow:
+                lost_scu = sum(size for _, size in overflow)
+                _log.warning(
+                    "zone packer: %s couldn't fit %d pallet(s) (%d SCU) "
+                    "into %dx%dx%d — rendering best partial fit. "
+                    "Overflow: %s",
+                    zone_label, len(overflow), lost_scu, zw, zl, zh,
+                    [f"{size} SCU (cl#{e.cargo_line_id})"
+                     for e, size in overflow],
                 )
             zone_grids[zone_label] = grid
 
@@ -1448,14 +1465,22 @@ def _try_place_zone(
     large_first: list,            # [(entry, size), ...] biggest first
     smalls_in_order: list,        # [(entry, size), ...] caller-chosen order
     boxes: dict,
-) -> tuple[list, list[list[int]]] | tuple[None, list[list[int]]]:
+    *,
+    smalls_first: bool = False,
+) -> tuple[list, list[list[int]], list]:
     """Run a single placement pass with the given small-pallet ordering.
 
     placements is a list of tuples:
         (entry, size, w, l, h, cell_x, cell_y, cell_z).
+
+    Returns (placements, grid, overflow). overflow lists pallets that
+    couldn't be placed at all; callers can compare passes by overflow
+    length to pick the best one. The placements list still represents
+    a valid (non-overlapping) layout even when overflow is non-empty.
     """
     grid = [[0] * zone_l for _ in range(zone_w)]
     placements: list = []
+    overflow: list = []
 
     def _place(entry, size, *, from_far: bool) -> bool:
         box = boxes.get(size, {"width": 1, "length": 1, "height": 1})
@@ -1465,18 +1490,27 @@ def _try_place_zone(
         spot = _place_in_grid(grid, w, l, h, zone_w, zone_l, zone_h,
                               from_far_end=from_far)
         if spot is None:
+            overflow.append((entry, size))
             return False
         x, y, z = spot
         placements.append((entry, size, w, l, h, x, y, z))
         return True
 
-    for entry, size in large_first:
-        if not _place(entry, size, from_far=True):
-            return None, grid
-    for entry, size in smalls_in_order:
-        if not _place(entry, size, from_far=False):
-            return None, grid
-    return placements, grid
+    # Smalls-first variant: pack the ramp end first with the small
+    # pallets, then drop larges from the far end. Useful when the zone
+    # length isn't divisible by the large-pallet length (e.g.
+    # Starlancer RB is 4x11x2: 10 large 8-SCU pads fill y=0..9 leaving
+    # a 4x1 strip that's too shallow for a 2x2 small pallet — but a
+    # 2x2 small at y=0..1 first, then 10 larges in y=2..11, fits).
+    passes = (
+        ((smalls_in_order, False), (large_first, True))
+        if smalls_first else
+        ((large_first, True), (smalls_in_order, False))
+    )
+    for batch, from_far in passes:
+        for entry, size in batch:
+            _place(entry, size, from_far=from_far)
+    return placements, grid, overflow
 
 
 def _place_in_grid(
