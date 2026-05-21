@@ -356,6 +356,7 @@ def _unload_at_stop(
 
 def _consolidate(
     zones: list[_ZoneState],
+    pinned_ids: set[int] | None = None,
 ) -> list[TransloadMove]:
     """Merge same-destination cargo into the fewest zones possible.
 
@@ -375,6 +376,7 @@ def _consolidate(
     consolidated layout is always renderable.
     """
     moves: list[TransloadMove] = []
+    pinned_ids = pinned_ids or set()
     all_dests = {c.delivery_station_id
                  for z in zones for c in z.placed}
 
@@ -408,6 +410,8 @@ def _consolidate(
                               if c.delivery_station_id == dest_id]
                     pieces.sort(key=lambda c: -c.scu)
                     for piece in pieces:
+                        if piece.cargo_line_id in pinned_ids:
+                            continue
                         if target.remaining_scu < piece.scu:
                             continue
                         if _would_narrow_conflict(target, piece):
@@ -432,13 +436,28 @@ def _consolidate(
                 # else fall through to topoff
 
             # ── (a) Existing same-dest topoff ──
+            # Pick the LOWEST-priority same-dest zone as the target so
+            # we always consolidate toward the ramp (drain-direction).
+            # The opposite — biggest-cluster target — fought
+            # _drain_to_lower_priority in earlier builds, producing
+            # ping-pong moves where _consolidate pulled cargo into F1
+            # and _drain immediately pushed it back to R2.
+            dest_zones.sort(key=lambda z: z.unload_priority)
             target = dest_zones[0]
             moved_this_pass = False
             for source in dest_zones[1:]:
+                # Source priority must be >= target priority. Moving
+                # toward HIGHER priority would just feed the
+                # ping-pong; _drain_to_lower_priority handles that
+                # direction already.
+                if source.unload_priority < target.unload_priority:
+                    continue
                 pieces = [c for c in source.placed
                           if c.delivery_station_id == dest_id]
                 pieces.sort(key=lambda c: -c.scu)
                 for piece in pieces:
+                    if piece.cargo_line_id in pinned_ids:
+                        continue
                     if target.remaining_scu < piece.scu:
                         continue
                     if _would_narrow_conflict(target, piece):
@@ -466,6 +485,7 @@ def _consolidate(
 
 def _drain_to_lower_priority(
     zones: list[_ZoneState],
+    pinned_ids: set[int] | None = None,
 ) -> list[TransloadMove]:
     """Pull cargo OUT of higher-priority zones into lower-priority
     same-destination zones whenever there's room.
@@ -485,11 +505,18 @@ def _drain_to_lower_priority(
     candidate move is physical-fit checked so the renderer agrees.
     """
     moves: list[TransloadMove] = []
+    pinned_ids = pinned_ids or set()
     # Process from the highest priority (bulk-most) downward so a
     # piece that hops RBF→RBA→F2 in one pass actually completes the
     # cascade.
     for source in sorted(zones, key=lambda z: -z.unload_priority):
         for piece in list(source.placed):
+            # Respect manual moves: a user-pinned cargo line stays
+            # where the user put it, even if a lower-priority same-
+            # dest target has room. Without this guard, recompute
+            # silently undoes "Move cargo to F1" by draining F1 → R2.
+            if piece.cargo_line_id in pinned_ids:
+                continue
             targets = [z for z in zones
                        if z is not source
                        and z.unload_priority < source.unload_priority
@@ -732,8 +759,18 @@ def _place_split(
         topoff = [z for z in zones
                   if dest in z.occupants and z.remaining_scu > 0]
         topoff.sort(key=lambda z: -z.remaining_scu)
+        # Fresh: prefer the zone that can fit the MOST of the
+        # remaining cargo. Without this, splitting a big line walked
+        # zones in priority order (R1→R2→F1) and used 3 zones for
+        # cargo that would have fit in 2 (R1+F1) had the algorithm
+        # picked the bigger zone first. Tiebreak by unload_priority
+        # ASC so same-fit-size ties still drain-first.
+        remaining_total = remaining.scu
         fresh = [z for z in zones if z.is_empty]
-        fresh.sort(key=lambda z: z.unload_priority)
+        fresh.sort(key=lambda z: (
+            -min(z.scu_capacity, remaining_total),
+            z.unload_priority,
+        ))
         mixed = [z for z in zones
                  if not z.is_empty and dest not in z.occupants
                  and z.remaining_scu > 0]
@@ -1060,13 +1097,14 @@ def build_zone_plan(
         # stop (everything's unloaded by then).
         moves: list[TransloadMove] = []
         if idx < len(route_stops) - 1:
-            moves = _consolidate(zones)
+            pinned_ids = set(manual_pins.keys())
+            moves = _consolidate(zones, pinned_ids=pinned_ids)
             # Drain bulk floor (highest-priority zones) into lower-
             # priority same-dest zones whenever there's now room.
             # Runs AFTER _consolidate so any merges into the largest
             # same-dest holder happen first, then this pulls anything
             # still stranded in RBA/RBF down to the F/R columns.
-            drain = _drain_to_lower_priority(zones)
+            drain = _drain_to_lower_priority(zones, pinned_ids=pinned_ids)
             moves = moves + drain
             if moves:
                 _log.info(
