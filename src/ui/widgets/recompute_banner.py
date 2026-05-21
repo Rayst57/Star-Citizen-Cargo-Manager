@@ -19,6 +19,7 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton
 
 class RecomputeBanner(QFrame):
     recompute_clicked = Signal()
+    export_clicked    = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -28,6 +29,13 @@ class RecomputeBanner(QFrame):
         self.label = QLabel("")
         layout.addWidget(self.label)
         layout.addStretch(1)
+        # Export PDF button — visible only when the plan is clean
+        # (no pending modifications). A computed-and-clean plan is
+        # the only state where a PDF would be meaningful.
+        self.export_btn = QPushButton("📄 Export Plan as PDF")
+        self.export_btn.clicked.connect(self.export_clicked.emit)
+        self.export_btn.hide()
+        layout.addWidget(self.export_btn)
         self.btn = QPushButton("Compute")
         self.btn.clicked.connect(self.recompute_clicked.emit)
         layout.addWidget(self.btn)
@@ -47,6 +55,7 @@ class RecomputeBanner(QFrame):
             self.label.setText("Ready to compute the plan.")
             self.btn.setText("Compute")
             self.setProperty("state", "first_run")
+            self.export_btn.hide()
         elif dirty:
             if n_changes:
                 self.label.setText(
@@ -56,12 +65,16 @@ class RecomputeBanner(QFrame):
                 self.label.setText("⚠  Modifications made — recompute required")
             self.btn.setText("↻ Recompute")
             self.setProperty("state", "dirty")
+            self.export_btn.hide()
         else:
             # Plan is current; banner stays visible so Recompute is
-            # always reachable (esp. after Resume Day).
+            # always reachable (esp. after Resume Day). Export PDF
+            # is only available in this state — if a compute is
+            # pending the exported plan would be stale.
             self.label.setText("Plan is current.")
             self.btn.setText("↻ Recompute")
             self.setProperty("state", "clean")
+            self.export_btn.show()
         # Re-polish to pick up the [state] style hook if the theme
         # uses it; harmless if not.
         self.style().unpolish(self)

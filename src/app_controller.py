@@ -1380,6 +1380,11 @@ class AppController(QObject):
         self.plan_dirty_changed.emit(True)
         self.scu_usage.emit(self.total_scu_in_use(), self.total_scu_capacity())
 
+    def export_plan_pdf(self, path: str) -> None:
+        """Write the current computed plan to *path* as a PDF."""
+        from .pdf_export import export_plan_pdf
+        export_plan_pdf(self, path)
+
     def _emit_progress(self) -> None:
         total = len(self._last_result.route_stops) if self._last_result else 0
         cur = min(self._current_stop_index + 1, total) if total else 0
