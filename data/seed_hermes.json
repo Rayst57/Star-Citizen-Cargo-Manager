@@ -1,0 +1,28 @@
+{
+  "_meta": {
+    "purpose": "Initial RSI Hermes ship + zone definitions.",
+    "axis_convention": "Width = port-to-starboard (X). Length = rear-ramp-edge to forward (Y). Height = floor up (Z). All units are 1.25 m cubes.",
+    "ramp_note": "Single rear ramp. All bays load via low-Y (rear) end. Ship-forward direction is high-Y.",
+    "load_doctrine_note": "Eight bays in four side-by-side columns. Each column has a Rear bay (R) at low-Y and a Forward bay (F) behind it at high-Y, so to access F the loader walks past R first. Loading direction = walk forward, deepest first: F1-F4 are loaded FIRST (and unload LAST), R1-R4 are loaded LAST (and unload FIRST). unload_priority encodes this: R1..R4 = 1..4 (drained first), F1..F4 = 5..8 (drained last). The planner naturally places early-delivery cargo in R bays and final/return cargo deep in F bays.",
+    "f_r_continuity_note": "Within a column, F and R bays are physically continuous (no bulkhead). The schema's left/right adjacency captures horizontal neighbors only; the F-to-R join is implicit in shared cube_offset_x.",
+    "column_break_note": "There is a physical break between columns 2 and 3 (between F2/R2 and F3/R3). Currently modeled as zero-width gap (cube_offset_x jumps from 2..4 with no zone in between). If the break turns out to be loadable as a bulk slot, add it as a new zone with unload_priority = 9 (absolute last resort).",
+    "side_pad_note": "Per the Hermes cargo grid diagram the ship has TWO additional 16-SCU pads (yellow) beyond the eight 32-SCU bays, taking the catalog total to 288 SCU. Their exact placement is TBD — likely standalone elevator pads at the rear ramp. Not modeled here; modeled capacity is 256 SCU until confirmed. ship.total_scu is set to the catalog 288 so the ships table matches the manufacturer spec; the planner uses the sum of ship_zones rows (256) as actual capacity.",
+    "scu_rating_note": "Each main bay is 2x9x2 = 36 cube units physically but rated 32 SCU practical (one row of cubes is lost to pallet/pad alignment, matching the in-game 4x8-SCU pads-per-bay layout). scu_capacity = 32 reflects what reliably loads."
+  },
+  "ship": {
+    "name": "RSI Hermes",
+    "manufacturer": "RSI",
+    "total_scu": 288,
+    "is_active": 1
+  },
+  "zones": [
+    { "zone_label": "F1", "bay_label": "forward", "width_units": 2, "length_units": 9, "height_units": 2, "cube_offset_x": 0, "cube_offset_y": 9, "scu_capacity": 32, "load_order": 1, "unload_priority": 5, "left_zone_label": null,  "right_zone_label": "F2",  "ramp_side": "low_y", "ship_forward_y": "high", "notes": "Forward bay, port column. Loaded FIRST (deepest) so cargo here unloads LAST — best place for return/final-destination cargo. 2x9x2 cube footprint, 32 SCU rated." },
+    { "zone_label": "F2", "bay_label": "forward", "width_units": 2, "length_units": 9, "height_units": 2, "cube_offset_x": 2, "cube_offset_y": 9, "scu_capacity": 32, "load_order": 2, "unload_priority": 6, "left_zone_label": "F1",   "right_zone_label": "F3",  "ramp_side": "low_y", "ship_forward_y": "high", "notes": "Forward bay, mid-port column." },
+    { "zone_label": "F3", "bay_label": "forward", "width_units": 2, "length_units": 9, "height_units": 2, "cube_offset_x": 4, "cube_offset_y": 9, "scu_capacity": 32, "load_order": 3, "unload_priority": 7, "left_zone_label": "F2",   "right_zone_label": "F4",  "ramp_side": "low_y", "ship_forward_y": "high", "notes": "Forward bay, mid-starboard column. Note: physical break separates F2/F3 columns from F3/F4." },
+    { "zone_label": "F4", "bay_label": "forward", "width_units": 2, "length_units": 9, "height_units": 2, "cube_offset_x": 6, "cube_offset_y": 9, "scu_capacity": 32, "load_order": 4, "unload_priority": 8, "left_zone_label": "F3",   "right_zone_label": null,  "ramp_side": "low_y", "ship_forward_y": "high", "notes": "Forward bay, starboard column." },
+    { "zone_label": "R1", "bay_label": "rear",    "width_units": 2, "length_units": 9, "height_units": 2, "cube_offset_x": 0, "cube_offset_y": 0, "scu_capacity": 32, "load_order": 5, "unload_priority": 1, "left_zone_label": null,  "right_zone_label": "R2",  "ramp_side": "low_y", "ship_forward_y": "high", "notes": "Rear bay, port column. Loaded LAST (nearest ramp) so cargo here unloads FIRST — best place for early-delivery cargo." },
+    { "zone_label": "R2", "bay_label": "rear",    "width_units": 2, "length_units": 9, "height_units": 2, "cube_offset_x": 2, "cube_offset_y": 0, "scu_capacity": 32, "load_order": 6, "unload_priority": 2, "left_zone_label": "R1",   "right_zone_label": "R3",  "ramp_side": "low_y", "ship_forward_y": "high", "notes": "Rear bay, mid-port column." },
+    { "zone_label": "R3", "bay_label": "rear",    "width_units": 2, "length_units": 9, "height_units": 2, "cube_offset_x": 4, "cube_offset_y": 0, "scu_capacity": 32, "load_order": 7, "unload_priority": 3, "left_zone_label": "R2",   "right_zone_label": "R4",  "ramp_side": "low_y", "ship_forward_y": "high", "notes": "Rear bay, mid-starboard column." },
+    { "zone_label": "R4", "bay_label": "rear",    "width_units": 2, "length_units": 9, "height_units": 2, "cube_offset_x": 6, "cube_offset_y": 0, "scu_capacity": 32, "load_order": 8, "unload_priority": 4, "left_zone_label": "R3",   "right_zone_label": null,  "ramp_side": "low_y", "ship_forward_y": "high", "notes": "Rear bay, starboard column." }
+  ]
+}
