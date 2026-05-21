@@ -370,7 +370,9 @@ def _consolidate(
          split across several smaller zones at load time.
 
     Conservative: cargo lines move as whole pieces (no re-splitting).
-    Won't relocate other destinations' cargo to make room.
+    Won't relocate other destinations' cargo to make room. Every
+    candidate move is checked against the physical packer so the
+    consolidated layout is always renderable.
     """
     moves: list[TransloadMove] = []
     all_dests = {c.delivery_station_id
@@ -410,6 +412,8 @@ def _consolidate(
                             continue
                         if _would_narrow_conflict(target, piece):
                             continue
+                        if not target.can_physically_fit(piece.pallet_sizes):
+                            continue
                         source.placed.remove(piece)
                         target.placed.append(piece)
                         moves.append(TransloadMove(
@@ -439,6 +443,8 @@ def _consolidate(
                         continue
                     if _would_narrow_conflict(target, piece):
                         continue
+                    if not target.can_physically_fit(piece.pallet_sizes):
+                        continue
                     source.placed.remove(piece)
                     target.placed.append(piece)
                     moves.append(TransloadMove(
@@ -455,6 +461,60 @@ def _consolidate(
             if not moved_this_pass:
                 break
 
+    return moves
+
+
+def _drain_to_lower_priority(
+    zones: list[_ZoneState],
+) -> list[TransloadMove]:
+    """Pull cargo OUT of higher-priority zones into lower-priority
+    same-destination zones whenever there's room.
+
+    The user-facing intent: keep the bulk floor (RBA/RBF, which carry
+    the highest unload_priority numbers) empty whenever possible.
+    Anything that lands there because no other zone could take it at
+    load time should migrate back into a primary bay as soon as a
+    same-destination topoff target opens up — typically right after an
+    unload frees room. The same rule applies across all priority
+    tiers, so a piece in F2 that could topoff into F1 (lower priority,
+    drains first) also migrates.
+
+    Topoff only — never moves cargo into an EMPTY lower-priority zone,
+    which would preempt that zone for later short-hop placements.
+    Same-destination only (no narrow-conflict creation), and every
+    candidate move is physical-fit checked so the renderer agrees.
+    """
+    moves: list[TransloadMove] = []
+    # Process from the highest priority (bulk-most) downward so a
+    # piece that hops RBF→RBA→F2 in one pass actually completes the
+    # cascade.
+    for source in sorted(zones, key=lambda z: -z.unload_priority):
+        for piece in list(source.placed):
+            targets = [z for z in zones
+                       if z is not source
+                       and z.unload_priority < source.unload_priority
+                       and piece.delivery_station_id in z.occupants
+                       and z.remaining_scu >= piece.scu
+                       and not _would_narrow_conflict(z, piece)
+                       and z.can_physically_fit(piece.pallet_sizes)]
+            if not targets:
+                continue
+            # Prefer the smallest-capacity fit so we don't burn a big
+            # bay (R1/R2) for a small drain when an F-bay would do.
+            targets.sort(key=lambda z: (z.scu_capacity, z.unload_priority))
+            target = targets[0]
+            source.placed.remove(piece)
+            target.placed.append(piece)
+            moves.append(TransloadMove(
+                cargo_line_id=piece.cargo_line_id,
+                contract_number=piece.contract_number,
+                commodity_name=piece.commodity_name,
+                scu_amount=piece.scu,
+                from_zone=source.zone_label,
+                to_zone=target.zone_label,
+                delivery_station_name=piece.delivery_station_name,
+                pallet_breakdown=palletize_summary(piece.pallet_sizes),
+            ))
     return moves
 
 
@@ -1001,6 +1061,13 @@ def build_zone_plan(
         moves: list[TransloadMove] = []
         if idx < len(route_stops) - 1:
             moves = _consolidate(zones)
+            # Drain bulk floor (highest-priority zones) into lower-
+            # priority same-dest zones whenever there's now room.
+            # Runs AFTER _consolidate so any merges into the largest
+            # same-dest holder happen first, then this pulls anything
+            # still stranded in RBA/RBF down to the F/R columns.
+            drain = _drain_to_lower_priority(zones)
+            moves = moves + drain
             if moves:
                 _log.info(
                     "    transload: %d move(s) to consolidate same-dest cargo",
