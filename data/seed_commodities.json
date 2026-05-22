@@ -1,19 +1,1284 @@
 {
   "_meta": {
-    "purpose": "Initial commodity seed. Carried over from the original spreadsheet.",
-    "note": "Aliases are matched case-insensitively by the parser when interpreting voice/manual input."
+    "purpose": "Commodity seed. Loaded on first launch; re-synced on every launch (additive).",
+    "note": "Aliases are matched case-insensitively by the parser. Aliases that duplicate a canonical name or another commodity's alias are stripped to keep lookups deterministic.",
+    "as_of": "Patch 4.x - May 2026",
+    "count": 151
   },
   "commodities": [
-    { "name": "Processed Food",   "category": "Consumer",   "legality": "Legal", "aliases": ["Food"] },
-    { "name": "Pressurized Ice",  "category": "Industrial", "legality": "Legal", "aliases": ["Ice"] },
-    { "name": "Titanium Ore",     "category": "Ore",        "legality": "Legal", "aliases": ["Titanium"] },
-    { "name": "Titanium",         "category": "Metal",      "legality": "Legal", "aliases": ["Titanium Ore"] },
-    { "name": "Aluminum",         "category": "Metal",      "legality": "Legal", "aliases": ["Aluminium", "Alum"] },
-    { "name": "Tungsten",         "category": "Metal",      "legality": "Legal", "aliases": ["Tung"] },
-    { "name": "Corundum",         "category": "Mineral",    "legality": "Legal", "aliases": ["Curandum"] },
-    { "name": "Quartz",           "category": "Mineral",    "legality": "Legal", "aliases": [] },
-    { "name": "Scrap",            "category": "Industrial", "legality": "Legal", "aliases": [] },
-    { "name": "Waste",            "category": "Industrial", "legality": "Legal", "aliases": [] },
-    { "name": "Cargo",            "category": "Generic",    "legality": "Legal", "aliases": ["Generic Cargo"] }
+    {
+      "name": "AcryliPlex Composite",
+      "category": "Consumer Goods",
+      "legality": "Legal",
+      "aliases": [
+        "AcrylicPlex",
+        "AcryliPlex",
+        "ACCO"
+      ]
+    },
+    {
+      "name": "Agricium",
+      "category": "Metal",
+      "legality": "Legal",
+      "aliases": [
+        "AGRI"
+      ]
+    },
+    {
+      "name": "Agricium (Ore)",
+      "category": "Metal Ore",
+      "legality": "Legal",
+      "aliases": [
+        "Agricium Ore",
+        "Raw Agricium"
+      ]
+    },
+    {
+      "name": "Agricultural Supplies",
+      "category": "Agricultural Supply",
+      "legality": "Legal",
+      "aliases": [
+        "Ag Supplies",
+        "AGRS"
+      ]
+    },
+    {
+      "name": "Altruciatoxin",
+      "category": "Vice",
+      "legality": "Contraband/Restricted",
+      "aliases": [
+        "AUTR"
+      ]
+    },
+    {
+      "name": "Aluminum",
+      "category": "Metal",
+      "legality": "Legal",
+      "aliases": [
+        "Aluminium",
+        "ALUM"
+      ]
+    },
+    {
+      "name": "Aluminum (Ore)",
+      "category": "Metal Ore",
+      "legality": "Legal",
+      "aliases": [
+        "Aluminum Ore",
+        "Aluminium Ore",
+        "Raw Aluminum"
+      ]
+    },
+    {
+      "name": "Amioshi Plague",
+      "category": "Natural",
+      "legality": "Legal",
+      "aliases": [
+        "AMIP"
+      ]
+    },
+    {
+      "name": "Ammonia",
+      "category": "Gas",
+      "legality": "Legal",
+      "aliases": [
+        "AMMO"
+      ]
+    },
+    {
+      "name": "Aphorite",
+      "category": "Mineral",
+      "legality": "Legal",
+      "aliases": [
+        "APHO"
+      ]
+    },
+    {
+      "name": "Argon",
+      "category": "Gas",
+      "legality": "Legal",
+      "aliases": [
+        "ARGO"
+      ]
+    },
+    {
+      "name": "Aslarite",
+      "category": "Mineral",
+      "legality": "Legal",
+      "aliases": [
+        "ASLAR"
+      ]
+    },
+    {
+      "name": "Astatine",
+      "category": "Gas",
+      "legality": "Legal",
+      "aliases": [
+        "ASTA"
+      ]
+    },
+    {
+      "name": "Atlasium",
+      "category": "Alloy",
+      "legality": "Legal",
+      "aliases": [
+        "ATLA"
+      ]
+    },
+    {
+      "name": "Audio Visual Equipment",
+      "category": "Consumer Goods",
+      "legality": "Legal",
+      "aliases": [
+        "AV Equipment",
+        "Audio-Visual Equipment",
+        "AUDI"
+      ]
+    },
+    {
+      "name": "Beradom",
+      "category": "Alloy",
+      "legality": "Legal",
+      "aliases": [
+        "BERA"
+      ]
+    },
+    {
+      "name": "Beryl",
+      "category": "Mineral",
+      "legality": "Legal",
+      "aliases": [
+        "BERY"
+      ]
+    },
+    {
+      "name": "Beryl (Raw)",
+      "category": "Raw Mineral",
+      "legality": "Legal",
+      "aliases": [
+        "Raw Beryl",
+        "Beryl Raw"
+      ]
+    },
+    {
+      "name": "Bexalite",
+      "category": "Mineral",
+      "legality": "Legal",
+      "aliases": [
+        "BEXA"
+      ]
+    },
+    {
+      "name": "Bexalite (Raw)",
+      "category": "Raw Mineral",
+      "legality": "Legal",
+      "aliases": [
+        "Raw Bexalite",
+        "Bexalite Raw"
+      ]
+    },
+    {
+      "name": "Bioplastic",
+      "category": "Consumer Goods",
+      "legality": "Legal",
+      "aliases": [
+        "Bio Plastic",
+        "BIOPL"
+      ]
+    },
+    {
+      "name": "Borase",
+      "category": "Metal",
+      "legality": "Legal",
+      "aliases": [
+        "BORA"
+      ]
+    },
+    {
+      "name": "Borase (Ore)",
+      "category": "Metal Ore",
+      "legality": "Legal",
+      "aliases": [
+        "Borase Ore",
+        "Raw Borase"
+      ]
+    },
+    {
+      "name": "Carbon",
+      "category": "Metal",
+      "legality": "Legal",
+      "aliases": [
+        "CARB"
+      ]
+    },
+    {
+      "name": "Carbon-Silk",
+      "category": "Consumer Goods",
+      "legality": "Legal",
+      "aliases": [
+        "Carbon Silk",
+        "CSIL"
+      ]
+    },
+    {
+      "name": "Carinite",
+      "category": "Mineral",
+      "legality": "Legal",
+      "aliases": [
+        "CARI"
+      ]
+    },
+    {
+      "name": "Cave Kopion Horn",
+      "category": "Wildlife/Harvestable",
+      "legality": "Legal",
+      "aliases": [
+        "Cave Kopion Horns",
+        "CAVEK"
+      ]
+    },
+    {
+      "name": "Chlorine",
+      "category": "Gas",
+      "legality": "Legal",
+      "aliases": [
+        "CHLO"
+      ]
+    },
+    {
+      "name": "CK13-GID Seed Blend",
+      "category": "Agricultural Supply",
+      "legality": "Legal",
+      "aliases": [
+        "CK13",
+        "CK13 Seed Blend"
+      ]
+    },
+    {
+      "name": "Cobalt",
+      "category": "Metal",
+      "legality": "Legal",
+      "aliases": [
+        "COBA"
+      ]
+    },
+    {
+      "name": "Compboard",
+      "category": "Scrap",
+      "legality": "Legal",
+      "aliases": [
+        "Composite Board",
+        "COMP"
+      ]
+    },
+    {
+      "name": "Construction Materials",
+      "category": "Consumer Goods",
+      "legality": "Legal",
+      "aliases": [
+        "Construction Mats",
+        "CMAT"
+      ]
+    },
+    {
+      "name": "Copper",
+      "category": "Metal",
+      "legality": "Legal",
+      "aliases": [
+        "COPP"
+      ]
+    },
+    {
+      "name": "Copper (Ore)",
+      "category": "Metal Ore",
+      "legality": "Legal",
+      "aliases": [
+        "Copper Ore",
+        "Raw Copper"
+      ]
+    },
+    {
+      "name": "Corundum",
+      "category": "Mineral",
+      "legality": "Legal",
+      "aliases": [
+        "CORU"
+      ]
+    },
+    {
+      "name": "Corundum (Raw)",
+      "category": "Raw Mineral",
+      "legality": "Legal",
+      "aliases": [
+        "Raw Corundum",
+        "Corundum Raw"
+      ]
+    },
+    {
+      "name": "DCSR2",
+      "category": "Agricultural Supply",
+      "legality": "Legal",
+      "aliases": [
+        "DCSR"
+      ]
+    },
+    {
+      "name": "Decari Pod",
+      "category": "Natural",
+      "legality": "Legal",
+      "aliases": [
+        "Decari Pods",
+        "DECA"
+      ]
+    },
+    {
+      "name": "Degnous Root",
+      "category": "Natural",
+      "legality": "Legal",
+      "aliases": [
+        "Degnous",
+        "DEGR"
+      ]
+    },
+    {
+      "name": "Diamond",
+      "category": "Mineral",
+      "legality": "Legal",
+      "aliases": [
+        "DIAM"
+      ]
+    },
+    {
+      "name": "Diamond (Raw)",
+      "category": "Raw Mineral",
+      "legality": "Legal",
+      "aliases": [
+        "Raw Diamond",
+        "Diamond Raw"
+      ]
+    },
+    {
+      "name": "Diamond Laminate",
+      "category": "Consumer Goods",
+      "legality": "Legal",
+      "aliases": [
+        "Diamond Lam",
+        "DIAL"
+      ]
+    },
+    {
+      "name": "Distilled Spirits",
+      "category": "Vice",
+      "legality": "Contraband/Restricted",
+      "aliases": [
+        "Spirits",
+        "DIST"
+      ]
+    },
+    {
+      "name": "Dolivine",
+      "category": "Mineral",
+      "legality": "Legal",
+      "aliases": [
+        "DOLI"
+      ]
+    },
+    {
+      "name": "Dymantium",
+      "category": "Alloy",
+      "legality": "Legal",
+      "aliases": [
+        "DYMA"
+      ]
+    },
+    {
+      "name": "DynaFlex",
+      "category": "Consumer Goods",
+      "legality": "Legal",
+      "aliases": [
+        "DYNF"
+      ]
+    },
+    {
+      "name": "E'tam",
+      "category": "Vice",
+      "legality": "Contraband/Restricted",
+      "aliases": [
+        "Etam",
+        "E Tam"
+      ]
+    },
+    {
+      "name": "Feynmaline",
+      "category": "Alloy",
+      "legality": "Legal",
+      "aliases": [
+        "FEYN"
+      ]
+    },
+    {
+      "name": "Fluorine",
+      "category": "Gas",
+      "legality": "Legal",
+      "aliases": [
+        "FLUO"
+      ]
+    },
+    {
+      "name": "Fresh Food",
+      "category": "Food",
+      "legality": "Legal",
+      "aliases": [
+        "FFOO"
+      ]
+    },
+    {
+      "name": "Gasping Weevil Eggs",
+      "category": "Vice",
+      "legality": "Contraband/Restricted",
+      "aliases": [
+        "Weevil Eggs",
+        "GAWE"
+      ]
+    },
+    {
+      "name": "Glacosite",
+      "category": "Alloy",
+      "legality": "Legal",
+      "aliases": [
+        "GLAC"
+      ]
+    },
+    {
+      "name": "Gold",
+      "category": "Metal",
+      "legality": "Legal",
+      "aliases": []
+    },
+    {
+      "name": "Gold (Ore)",
+      "category": "Metal Ore",
+      "legality": "Legal",
+      "aliases": [
+        "Gold Ore",
+        "Raw Gold"
+      ]
+    },
+    {
+      "name": "Golden Medmons",
+      "category": "Natural",
+      "legality": "Legal",
+      "aliases": [
+        "Golden Medmon",
+        "GOLM"
+      ]
+    },
+    {
+      "name": "Hadanite",
+      "category": "Mineral",
+      "legality": "Legal",
+      "aliases": [
+        "HADA"
+      ]
+    },
+    {
+      "name": "Heart of the Woods",
+      "category": "Natural",
+      "legality": "Legal",
+      "aliases": [
+        "HOTW"
+      ]
+    },
+    {
+      "name": "Helium",
+      "category": "Gas",
+      "legality": "Legal",
+      "aliases": [
+        "HELI"
+      ]
+    },
+    {
+      "name": "Hephaestanite",
+      "category": "Mineral",
+      "legality": "Legal",
+      "aliases": [
+        "HEPH"
+      ]
+    },
+    {
+      "name": "Hephaestanite (Raw)",
+      "category": "Raw Mineral",
+      "legality": "Legal",
+      "aliases": [
+        "Raw Hephaestanite",
+        "Hephaestanite Raw"
+      ]
+    },
+    {
+      "name": "HexaPolyMesh Coating",
+      "category": "Consumer Goods",
+      "legality": "Legal",
+      "aliases": [
+        "HexaPolyMesh",
+        "HPMC"
+      ]
+    },
+    {
+      "name": "Human Food Bars",
+      "category": "Food",
+      "legality": "Legal",
+      "aliases": [
+        "Food Bars",
+        "HFBA"
+      ]
+    },
+    {
+      "name": "Hydrogen",
+      "category": "Gas",
+      "legality": "Legal",
+      "aliases": [
+        "HYDR"
+      ]
+    },
+    {
+      "name": "Hydrogen Fuel",
+      "category": "Fuel",
+      "legality": "Legal",
+      "aliases": [
+        "Hydrogen Fuel Pods",
+        "HYDF"
+      ]
+    },
+    {
+      "name": "Inert Materials",
+      "category": "Mixed Mining",
+      "legality": "Legal",
+      "aliases": [
+        "Inerts"
+      ]
+    },
+    {
+      "name": "Iodine",
+      "category": "Gas",
+      "legality": "Legal",
+      "aliases": [
+        "IODI"
+      ]
+    },
+    {
+      "name": "Iron",
+      "category": "Metal",
+      "legality": "Legal",
+      "aliases": []
+    },
+    {
+      "name": "Iron (Ore)",
+      "category": "Metal Ore",
+      "legality": "Legal",
+      "aliases": [
+        "Iron Ore",
+        "Raw Iron"
+      ]
+    },
+    {
+      "name": "Irradiated Kopion Horn",
+      "category": "Wildlife/Harvestable",
+      "legality": "Legal",
+      "aliases": [
+        "Irradiated Kopion Horns",
+        "IKOP"
+      ]
+    },
+    {
+      "name": "Jaclium Ore",
+      "category": "Metal Ore",
+      "legality": "Legal",
+      "aliases": [
+        "Jaclium",
+        "JACL"
+      ]
+    },
+    {
+      "name": "Janalite",
+      "category": "Mineral",
+      "legality": "Legal",
+      "aliases": [
+        "JANA"
+      ]
+    },
+    {
+      "name": "Jumping Limes",
+      "category": "Natural",
+      "legality": "Legal",
+      "aliases": [
+        "Jumping Lime"
+      ]
+    },
+    {
+      "name": "Kopion Horn",
+      "category": "Consumer Goods",
+      "legality": "Legal",
+      "aliases": [
+        "Kopion Horns",
+        "KOPH"
+      ]
+    },
+    {
+      "name": "Krypton",
+      "category": "Gas",
+      "legality": "Legal",
+      "aliases": [
+        "KRYP"
+      ]
+    },
+    {
+      "name": "Laranite",
+      "category": "Mineral",
+      "legality": "Legal",
+      "aliases": [
+        "LARA"
+      ]
+    },
+    {
+      "name": "Laranite (Raw)",
+      "category": "Raw Mineral",
+      "legality": "Legal",
+      "aliases": [
+        "Raw Laranite",
+        "Laranite Raw"
+      ]
+    },
+    {
+      "name": "Lindinium",
+      "category": "Mineral",
+      "legality": "Legal",
+      "aliases": [
+        "LIND"
+      ]
+    },
+    {
+      "name": "Luminalia Gift",
+      "category": "Event/Special",
+      "legality": "Legal",
+      "aliases": [
+        "Luminalia",
+        "LUMG"
+      ]
+    },
+    {
+      "name": "Luminalia Gift Box",
+      "category": "Event/Special",
+      "legality": "Legal",
+      "aliases": []
+    },
+    {
+      "name": "Marok Gem",
+      "category": "Consumer Goods",
+      "legality": "Legal",
+      "aliases": [
+        "Marok",
+        "MARG"
+      ]
+    },
+    {
+      "name": "Maze",
+      "category": "Vice",
+      "legality": "Contraband/Restricted",
+      "aliases": []
+    },
+    {
+      "name": "Medical Supplies",
+      "category": "Medical Supply",
+      "legality": "Legal",
+      "aliases": [
+        "Meds"
+      ]
+    },
+    {
+      "name": "Mercury",
+      "category": "Metal",
+      "legality": "Legal",
+      "aliases": [
+        "MERC"
+      ]
+    },
+    {
+      "name": "Methane",
+      "category": "Gas",
+      "legality": "Legal",
+      "aliases": [
+        "METH"
+      ]
+    },
+    {
+      "name": "Neograph",
+      "category": "Consumer Goods",
+      "legality": "Legal",
+      "aliases": [
+        "NEOG"
+      ]
+    },
+    {
+      "name": "Neon",
+      "category": "Vice",
+      "legality": "Contraband/Restricted",
+      "aliases": []
+    },
+    {
+      "name": "Nitrogen",
+      "category": "Gas",
+      "legality": "Legal",
+      "aliases": [
+        "NITR"
+      ]
+    },
+    {
+      "name": "Omnapoxy",
+      "category": "Consumer Goods",
+      "legality": "Legal",
+      "aliases": [
+        "OMPO"
+      ]
+    },
+    {
+      "name": "Organics",
+      "category": "Natural",
+      "legality": "Legal",
+      "aliases": [
+        "Organic Material",
+        "ORGN"
+      ]
+    },
+    {
+      "name": "Osoian Hides",
+      "category": "Vice",
+      "legality": "Contraband/Restricted",
+      "aliases": [
+        "Osoian Hide",
+        "OSOH"
+      ]
+    },
+    {
+      "name": "Ouratite",
+      "category": "Mineral",
+      "legality": "Legal",
+      "aliases": [
+        "OURAT"
+      ]
+    },
+    {
+      "name": "Partillium",
+      "category": "Gas",
+      "legality": "Legal",
+      "aliases": [
+        "PRTL"
+      ]
+    },
+    {
+      "name": "Party Favors",
+      "category": "Consumer Goods",
+      "legality": "Legal",
+      "aliases": [
+        "PART"
+      ]
+    },
+    {
+      "name": "Pitambu",
+      "category": "Natural",
+      "legality": "Legal",
+      "aliases": [
+        "PITA"
+      ]
+    },
+    {
+      "name": "Potassium",
+      "category": "Mineral",
+      "legality": "Legal",
+      "aliases": [
+        "POTA"
+      ]
+    },
+    {
+      "name": "Pressurized Ice",
+      "category": "Gas",
+      "legality": "Legal",
+      "aliases": [
+        "Ice",
+        "PICE"
+      ]
+    },
+    {
+      "name": "Processed Food",
+      "category": "Food",
+      "legality": "Legal",
+      "aliases": [
+        "PFOO"
+      ]
+    },
+    {
+      "name": "Prota",
+      "category": "Natural",
+      "legality": "Legal",
+      "aliases": [
+        "PROT"
+      ]
+    },
+    {
+      "name": "Quantainium",
+      "category": "Mineral",
+      "legality": "Legal",
+      "aliases": [
+        "QUAN"
+      ]
+    },
+    {
+      "name": "Quantainium (Raw)",
+      "category": "Raw Mineral",
+      "legality": "Legal",
+      "aliases": [
+        "Raw Quantainium",
+        "Quantainium Raw"
+      ]
+    },
+    {
+      "name": "Quantum Fuel",
+      "category": "Fuel",
+      "legality": "Legal",
+      "aliases": [
+        "QFuel",
+        "QFUE"
+      ]
+    },
+    {
+      "name": "Quartz",
+      "category": "Mineral",
+      "legality": "Legal",
+      "aliases": [
+        "QUAR"
+      ]
+    },
+    {
+      "name": "Quartz (Raw)",
+      "category": "Raw Mineral",
+      "legality": "Legal",
+      "aliases": [
+        "Raw Quartz",
+        "Quartz Raw"
+      ]
+    },
+    {
+      "name": "Ranta Dung",
+      "category": "Agricultural Supply",
+      "legality": "Legal",
+      "aliases": [
+        "RAND"
+      ]
+    },
+    {
+      "name": "Recycled Material Composite",
+      "category": "Recycled Material",
+      "legality": "Legal",
+      "aliases": [
+        "RMC"
+      ]
+    },
+    {
+      "name": "Red Festival Envelope",
+      "category": "Event/Special",
+      "legality": "Legal",
+      "aliases": [
+        "Red Envelope",
+        "Festival Envelope"
+      ]
+    },
+    {
+      "name": "Revenant Pod",
+      "category": "Natural",
+      "legality": "Legal",
+      "aliases": [
+        "REVE"
+      ]
+    },
+    {
+      "name": "Revenant Pods",
+      "category": "Natural",
+      "legality": "Legal",
+      "aliases": []
+    },
+    {
+      "name": "Revenant Tree Pollen",
+      "category": "Vice",
+      "legality": "Contraband/Restricted",
+      "aliases": [
+        "Tree Pollen",
+        "REVP"
+      ]
+    },
+    {
+      "name": "Riccite",
+      "category": "Mineral",
+      "legality": "Legal",
+      "aliases": [
+        "RICC"
+      ]
+    },
+    {
+      "name": "Sadaryx",
+      "category": "Mineral",
+      "legality": "Legal",
+      "aliases": [
+        "SADA"
+      ]
+    },
+    {
+      "name": "Saldynium (Ore)",
+      "category": "Metal Ore",
+      "legality": "Legal",
+      "aliases": [
+        "Saldynium Ore",
+        "SALD"
+      ]
+    },
+    {
+      "name": "Savrilium",
+      "category": "Mineral",
+      "legality": "Legal",
+      "aliases": [
+        "SAVR"
+      ]
+    },
+    {
+      "name": "Scrap",
+      "category": "Scrap",
+      "legality": "Legal",
+      "aliases": [
+        "SCRA"
+      ]
+    },
+    {
+      "name": "Ship Ammunition",
+      "category": "Ship Supplies",
+      "legality": "Legal",
+      "aliases": [
+        "Ammunition",
+        "SHPA"
+      ]
+    },
+    {
+      "name": "Ship Ammunition Size 1",
+      "category": "Ship Supplies",
+      "legality": "Legal",
+      "aliases": [
+        "S1 Ammo",
+        "Size 1 Ammo",
+        "SHPA1"
+      ]
+    },
+    {
+      "name": "Ship Ammunition Size 2",
+      "category": "Ship Supplies",
+      "legality": "Legal",
+      "aliases": [
+        "S2 Ammo",
+        "Size 2 Ammo",
+        "SHPA2"
+      ]
+    },
+    {
+      "name": "Ship Ammunition Size 3",
+      "category": "Ship Supplies",
+      "legality": "Legal",
+      "aliases": [
+        "S3 Ammo",
+        "Size 3 Ammo",
+        "SHPA3"
+      ]
+    },
+    {
+      "name": "Ship Ammunition Size 4",
+      "category": "Ship Supplies",
+      "legality": "Legal",
+      "aliases": [
+        "S4 Ammo",
+        "Size 4 Ammo",
+        "SHPA4"
+      ]
+    },
+    {
+      "name": "Ship Ammunition Size 5",
+      "category": "Ship Supplies",
+      "legality": "Legal",
+      "aliases": [
+        "S5 Ammo",
+        "Size 5 Ammo",
+        "SHPA5"
+      ]
+    },
+    {
+      "name": "Ship Ammunition Size 6",
+      "category": "Ship Supplies",
+      "legality": "Legal",
+      "aliases": [
+        "S6 Ammo",
+        "Size 6 Ammo",
+        "SHPA6"
+      ]
+    },
+    {
+      "name": "Ship Ammunition Size 7",
+      "category": "Ship Supplies",
+      "legality": "Legal",
+      "aliases": [
+        "S7 Ammo",
+        "Size 7 Ammo",
+        "SHPA7"
+      ]
+    },
+    {
+      "name": "Ship Decoy Countermeasures",
+      "category": "Ship Supplies",
+      "legality": "Legal",
+      "aliases": [
+        "Decoys",
+        "Flares",
+        "SHPDC"
+      ]
+    },
+    {
+      "name": "Ship Noise Countermeasures",
+      "category": "Ship Supplies",
+      "legality": "Legal",
+      "aliases": [
+        "Noise",
+        "Chaff",
+        "SHPNC"
+      ]
+    },
+    {
+      "name": "Silicon",
+      "category": "Metal",
+      "legality": "Legal",
+      "aliases": [
+        "SILI"
+      ]
+    },
+    {
+      "name": "SLAM",
+      "category": "Vice",
+      "legality": "Contraband/Restricted",
+      "aliases": []
+    },
+    {
+      "name": "Souvenirs",
+      "category": "Consumer Goods",
+      "legality": "Legal",
+      "aliases": [
+        "SOUV"
+      ]
+    },
+    {
+      "name": "Steel",
+      "category": "Alloy",
+      "legality": "Legal",
+      "aliases": [
+        "STEE"
+      ]
+    },
+    {
+      "name": "Stileron",
+      "category": "Mineral",
+      "legality": "Legal",
+      "aliases": [
+        "STIL"
+      ]
+    },
+    {
+      "name": "Stims",
+      "category": "Vice",
+      "legality": "Legal",
+      "aliases": [
+        "Stim"
+      ]
+    },
+    {
+      "name": "Sunset Berries",
+      "category": "Natural",
+      "legality": "Legal",
+      "aliases": [
+        "Sunset Berry",
+        "SUNB"
+      ]
+    },
+    {
+      "name": "Taranite",
+      "category": "Mineral",
+      "legality": "Legal",
+      "aliases": [
+        "TARA"
+      ]
+    },
+    {
+      "name": "Taranite (Raw)",
+      "category": "Raw Mineral",
+      "legality": "Legal",
+      "aliases": [
+        "Raw Taranite",
+        "Taranite Raw"
+      ]
+    },
+    {
+      "name": "Thermalfoam",
+      "category": "Consumer Goods",
+      "legality": "Legal",
+      "aliases": [
+        "Thermal Foam",
+        "FOAM"
+      ]
+    },
+    {
+      "name": "Tin",
+      "category": "Metal",
+      "legality": "Legal",
+      "aliases": []
+    },
+    {
+      "name": "Titanium",
+      "category": "Metal",
+      "legality": "Legal",
+      "aliases": [
+        "TITA"
+      ]
+    },
+    {
+      "name": "Titanium (Ore)",
+      "category": "Metal Ore",
+      "legality": "Legal",
+      "aliases": [
+        "Titanium Ore",
+        "Raw Titanium"
+      ]
+    },
+    {
+      "name": "Torite",
+      "category": "Mineral",
+      "legality": "Legal",
+      "aliases": [
+        "TORI"
+      ]
+    },
+    {
+      "name": "Tungsten",
+      "category": "Metal",
+      "legality": "Legal",
+      "aliases": [
+        "TUNG"
+      ]
+    },
+    {
+      "name": "Tungsten (Ore)",
+      "category": "Metal Ore",
+      "legality": "Legal",
+      "aliases": [
+        "Tungsten Ore",
+        "Raw Tungsten"
+      ]
+    },
+    {
+      "name": "Waste",
+      "category": "Waste",
+      "legality": "Legal",
+      "aliases": [
+        "WAST"
+      ]
+    },
+    {
+      "name": "WiDoW",
+      "category": "Vice",
+      "legality": "Contraband/Restricted",
+      "aliases": [
+        "WIDO"
+      ]
+    },
+    {
+      "name": "Wuotan Seed",
+      "category": "Agricultural Supply",
+      "legality": "Legal",
+      "aliases": [
+        "Wuotan",
+        "WUOT"
+      ]
+    },
+    {
+      "name": "Xa'Pyen",
+      "category": "Mineral",
+      "legality": "Legal",
+      "aliases": [
+        "Xa' Pyen",
+        "XAPY"
+      ]
+    },
+    {
+      "name": "Year of the Dog Envelope",
+      "category": "Event/Special",
+      "legality": "Legal",
+      "aliases": [
+        "Dog Envelope",
+        "Lunar New Year Dog"
+      ]
+    },
+    {
+      "name": "Year of the Monkey Envelope",
+      "category": "Event/Special",
+      "legality": "Legal",
+      "aliases": [
+        "Monkey Envelope",
+        "Lunar New Year Monkey"
+      ]
+    },
+    {
+      "name": "Year of the Pig Envelope",
+      "category": "Event/Special",
+      "legality": "Legal",
+      "aliases": [
+        "Year of the Pig",
+        "Pig Envelope",
+        "YTPO"
+      ]
+    },
+    {
+      "name": "Year of the Ram Envelope",
+      "category": "Event/Special",
+      "legality": "Legal",
+      "aliases": [
+        "Ram Envelope",
+        "Lunar New Year Ram"
+      ]
+    },
+    {
+      "name": "Year of the Rat Envelope",
+      "category": "Event/Special",
+      "legality": "Legal",
+      "aliases": [
+        "Rat Envelope",
+        "Lunar New Year Rat"
+      ]
+    },
+    {
+      "name": "Year of the Rooster Envelope",
+      "category": "Event/Special",
+      "legality": "Legal",
+      "aliases": [
+        "Rooster Envelope",
+        "Lunar New Year Rooster"
+      ]
+    },
+    {
+      "name": "Cargo",
+      "category": "Generic",
+      "legality": "Legal",
+      "aliases": [
+        "Generic Cargo"
+      ]
+    }
   ]
 }

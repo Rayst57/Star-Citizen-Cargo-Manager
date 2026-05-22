@@ -46,10 +46,15 @@ def load_stations(conn: sqlite3.Connection) -> None:
         sid = system_id[sys_name]
         conn.execute(
             """
-            INSERT OR IGNORE INTO stations
+            INSERT INTO stations
                 (system_id, name, parent_body, station_type,
                  is_gateway, sort_order, is_active)
             VALUES (?, ?, ?, ?, ?, ?, 1)
+            ON CONFLICT(system_id, name) DO UPDATE SET
+                parent_body  = excluded.parent_body,
+                station_type = excluded.station_type,
+                is_gateway   = excluded.is_gateway,
+                sort_order   = excluded.sort_order
             """,
             (
                 sid,
@@ -98,11 +103,17 @@ def load_commodities(conn: sqlite3.Connection) -> None:
     data = _load_json("seed_commodities.json")
 
     for c in data["commodities"]:
+        # Upsert (not INSERT OR IGNORE) so seed corrections — e.g. a
+        # legality or category fix — propagate to databases that
+        # already seeded the commodity on an earlier launch.
         conn.execute(
             """
-            INSERT OR IGNORE INTO commodities
+            INSERT INTO commodities
                 (name, category, legality, is_active)
             VALUES (?, ?, ?, 1)
+            ON CONFLICT(name) DO UPDATE SET
+                category = excluded.category,
+                legality = excluded.legality
             """,
             (c["name"], c.get("category"), c.get("legality", "Legal")),
         )

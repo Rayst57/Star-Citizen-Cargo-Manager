@@ -8,7 +8,7 @@ when accepted; cancelled = exit app.
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
-    QComboBox, QDialog, QFrame, QHBoxLayout, QLabel,
+    QComboBox, QDialog, QFrame, QHBoxLayout, QLabel, QMessageBox,
     QPushButton, QVBoxLayout,
 )
 
@@ -115,11 +115,14 @@ class WorkdayScreen(QDialog):
         ship_row.addWidget(self.ship_combo, 1)
         layout.addLayout(ship_row)
 
-        # Origin combo
+        # Origin combo — starts blank so the user must consciously
+        # pick a departure facility (no silent default).
         origin_row = QHBoxLayout()
         origin_row.addWidget(QLabel("Origin"))
         self.origin_combo = QComboBox()
-        self._populate_stations(self.origin_combo, include_round_robin=False)
+        self._populate_stations(
+            self.origin_combo, include_round_robin=False, blank_first=True,
+        )
         origin_row.addWidget(self.origin_combo, 1)
         layout.addLayout(origin_row)
 
@@ -143,14 +146,22 @@ class WorkdayScreen(QDialog):
 
         root.addWidget(card)
 
-    def _populate_stations(self, combo: QComboBox, *, include_round_robin: bool) -> None:
+    def _populate_stations(
+        self, combo: QComboBox, *,
+        include_round_robin: bool,
+        blank_first: bool = False,
+    ) -> None:
+        # blank_first: prepend an empty, unselectable-by-default entry
+        # so the combo opens with no station chosen.
+        if blank_first:
+            combo.addItem("— Select departure facility —", userData=None)
         if include_round_robin:
             combo.addItem("Round Robin (return to origin)", userData=None)
         rows = self.controller.conn.execute(
             """
             SELECT id, name FROM stations
             WHERE is_active = 1 AND is_gateway = 0
-            ORDER BY sort_order
+            ORDER BY name COLLATE NOCASE
             """
         ).fetchall()
         for r in rows:
@@ -172,6 +183,13 @@ class WorkdayScreen(QDialog):
 
     def _on_start_new(self) -> None:
         origin_id = self.origin_combo.currentData()
+        if origin_id is None:
+            QMessageBox.warning(
+                self, "Pick a departure facility",
+                "Select the station you're departing from before "
+                "starting the workday.",
+            )
+            return
         final_id = self.final_combo.currentData()
         ship_id = self.ship_combo.currentData()
         # Round Robin is the dropdown entry whose userData is None.
