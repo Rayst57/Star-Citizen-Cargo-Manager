@@ -1242,14 +1242,18 @@ class AppController(QObject):
             "DELETE FROM zone_assignments WHERE cargo_line_id = ? AND workday_id = ?",
             (cargo_line_id, self.workday_id),
         )
+        # The whole line is pinned to one zone — record it as a single
+        # partial-pin piece covering every pallet so move_cargo and
+        # move_cargo_pallets share one representation.
+        pin_zones = json.dumps([{"zone": target_zone, "sizes": list(pallets)}])
         self.conn.execute(
             """
             INSERT INTO zone_assignments
               (workday_id, cargo_line_id, primary_zone_label,
-               pallet_breakdown, is_manual_override, notes)
-            VALUES (?, ?, ?, ?, 1, 'Moved by user from Zone Detail')
+               pallet_breakdown, is_manual_override, pin_zones, notes)
+            VALUES (?, ?, ?, ?, 1, ?, 'Moved by user from Zone Detail')
             """,
-            (self.workday_id, cargo_line_id, target_zone, summary),
+            (self.workday_id, cargo_line_id, target_zone, summary, pin_zones),
         )
         self.conn.commit()
 
@@ -1259,6 +1263,127 @@ class AppController(QObject):
             for entries in self._last_result.snapshots.values():
                 for e in entries:
                     if e.cargo_line_id == cargo_line_id:
+                        e.zone_label = target_zone
+
+        self._set_dirty()
+        self.contracts_changed.emit()
+        self.route_changed.emit()
+
+    def move_cargo_pallets(
+        self, cargo_line_id: int, source_zone: str, target_zone: str,
+    ) -> None:
+        """Move only the portion of a cargo line currently sitting in
+        *source_zone* into *target_zone*, as a partial pin.
+
+        Unlike move_cargo (which pins the WHOLE line to one zone), this
+        lets the rest of a split line stay auto-placed. Multiple
+        partial pins per line are allowed.
+        """
+        self._require_workday()
+        cl = self.conn.execute(
+            """
+            SELECT cl.scu_amount, ct.max_pallet_size
+            FROM cargo_lines cl
+            JOIN contracts ct ON ct.id = cl.contract_id
+            WHERE cl.id = ?
+            """,
+            (cargo_line_id,),
+        ).fetchone()
+        if not cl:
+            return
+
+        # Which pallets of this line currently sit in source_zone?
+        moved_sizes: list[int] | None = None
+        if self._last_result:
+            for entries in self._last_result.snapshots.values():
+                for e in entries:
+                    if (e.cargo_line_id == cargo_line_id
+                            and e.zone_label == source_zone):
+                        moved_sizes = _parse_breakdown(e.pallet_breakdown)
+                        break
+                if moved_sizes is not None:
+                    break
+        if not moved_sizes:
+            raise ToolError(f"No cargo from this line is in {source_zone}.")
+
+        # Validate the moved piece physically fits the target zone.
+        zone = self.conn.execute(
+            """
+            SELECT z.scu_capacity, z.width_units, z.length_units,
+                   z.height_units
+            FROM ship_zones z
+            JOIN workdays w ON w.ship_id = z.ship_id
+            WHERE w.id = ? AND z.zone_label = ?
+            """,
+            (self.workday_id, target_zone),
+        ).fetchone()
+        if zone is None:
+            raise ToolError(f"Zone {target_zone} not found on this ship.")
+        if sum(moved_sizes) > zone["scu_capacity"]:
+            raise ToolError(
+                f"The pallets from {source_zone} total {sum(moved_sizes)} "
+                f"SCU — bigger than zone {target_zone}'s "
+                f"{zone['scu_capacity']} SCU capacity."
+            )
+        from .planner.physical_packer import can_fit
+        if not can_fit(zone["width_units"], zone["length_units"],
+                       zone["height_units"], moved_sizes):
+            raise ToolError(
+                f"These pallets don't physically pack into zone "
+                f"{target_zone} "
+                f"({zone['width_units']}x{zone['length_units']}x"
+                f"{zone['height_units']}). Pick a zone with a better fit."
+            )
+
+        # Build the new pin_zones list from any existing partial pins.
+        existing_rows = self.conn.execute(
+            "SELECT pin_zones FROM zone_assignments "
+            "WHERE cargo_line_id = ? AND workday_id = ?",
+            (cargo_line_id, self.workday_id),
+        ).fetchall()
+        pieces: list[dict] = []
+        for r in existing_rows:
+            if r["pin_zones"]:
+                try:
+                    pieces = json.loads(r["pin_zones"])
+                except (ValueError, TypeError):
+                    pieces = []
+                break
+        # Redefine the source and target zones — drop their old pieces.
+        pieces = [
+            p for p in pieces
+            if p.get("zone") not in (source_zone, target_zone)
+        ]
+        pieces.append({"zone": target_zone, "sizes": list(moved_sizes)})
+
+        from .planner.palletizer import palletize, palletize_summary
+        full_pallets = palletize(cl["scu_amount"], cl["max_pallet_size"])
+        summary = palletize_summary(full_pallets)
+
+        self.conn.execute(
+            "DELETE FROM zone_assignments WHERE cargo_line_id = ? AND workday_id = ?",
+            (cargo_line_id, self.workday_id),
+        )
+        self.conn.execute(
+            """
+            INSERT INTO zone_assignments
+              (workday_id, cargo_line_id, primary_zone_label,
+               pallet_breakdown, is_manual_override, pin_zones, notes)
+            VALUES (?, ?, ?, ?, 1, ?,
+                    'Partial move by user from Zone Detail')
+            """,
+            (self.workday_id, cargo_line_id, target_zone, summary,
+             json.dumps(pieces)),
+        )
+        self.conn.commit()
+
+        # Patch in-memory snapshots: move only this line's source_zone
+        # piece to target_zone so the bay canvas updates immediately.
+        if self._last_result:
+            for entries in self._last_result.snapshots.values():
+                for e in entries:
+                    if (e.cargo_line_id == cargo_line_id
+                            and e.zone_label == source_zone):
                         e.zone_label = target_zone
 
         self._set_dirty()

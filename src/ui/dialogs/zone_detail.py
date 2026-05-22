@@ -945,7 +945,9 @@ class ZoneDetailDialog(QDialog):
         if not target or target == self.zone_label:
             return
         try:
-            self.controller.move_cargo(pallet.cargo_line_id, target)
+            self.controller.move_cargo_pallets(
+                pallet.cargo_line_id, self.zone_label, target,
+            )
         except Exception as e:  # noqa: BLE001 - surface to the user
             QMessageBox.warning(self, "Move not possible", str(e))
             return

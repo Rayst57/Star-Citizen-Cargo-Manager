@@ -351,3 +351,112 @@ def test_drain_skips_when_only_target_is_empty():
 
     assert moves == []
     assert rba.used_scu == 16
+
+
+def test_partial_pin_moves_only_one_zones_pallets(controller):
+    """move_cargo_pallets pins only the portion of a split cargo line
+    that sits in one zone, leaving the rest auto-placed.
+
+    A 96 SCU line on the Starlancer is bigger than any single zone, so
+    it splits across 2+ zones. Pinning one zone's piece to a different
+    zone should: (a) empty the source zone of this line, (b) put some
+    of the line in the target zone, and (c) keep the line's total SCU
+    on board unchanged.
+    """
+    starlancer = controller.conn.execute(
+        "SELECT id FROM ships WHERE name LIKE 'Starlancer%'"
+    ).fetchone()
+    if not starlancer:
+        pytest.skip("Starlancer not seeded in this environment")
+
+    wid = controller.start_workday(_seraphim(controller), None, False)
+    controller.conn.execute(
+        "UPDATE workdays SET ship_id = ? WHERE id = ?",
+        (starlancer["id"], wid),
+    )
+    controller.conn.commit()
+
+    controller.add_contract({
+        "pickup_station": "Wide Forest",
+        "max_pallet_size": 8,
+        "deliveries": [
+            {"destination": "Baijini Point", "commodity": "Tungsten",
+             "scu": 96},
+        ],
+    })
+    result = run_recompute(wid, controller.conn)
+    controller._last_result = result
+    assign_destination_colors(wid, controller.conn)
+
+    cl_id = controller.conn.execute(
+        "SELECT cl.id FROM cargo_lines cl "
+        "JOIN contracts ct ON ct.id = cl.contract_id "
+        "WHERE ct.workday_id = ?",
+        (wid,),
+    ).fetchone()["id"]
+
+    # Find a stop where this line occupies >= 2 zones.
+    source = target = None
+    chosen_stop = None
+    for stop in result.route_stops:
+        zones = sorted({
+            e.zone_label
+            for e in result.snapshots.get(stop.stop_number, [])
+            if e.cargo_line_id == cl_id
+        })
+        if len(zones) >= 2:
+            chosen_stop = stop.stop_number
+            source = zones[0]
+            # Target: a different zone the line is NOT already in.
+            all_zones = [
+                r["zone_label"] for r in controller.conn.execute(
+                    "SELECT zone_label FROM ship_zones WHERE ship_id = ?",
+                    (starlancer["id"],),
+                ).fetchall()
+            ]
+            target = next(z for z in all_zones if z not in zones)
+            break
+    assert source is not None, (
+        "Expected the 96 SCU line to split across >= 2 zones at some "
+        f"stop. snapshots={result.snapshots}"
+    )
+
+    total_before = sum(
+        e.scu_amount
+        for e in result.snapshots[chosen_stop]
+        if e.cargo_line_id == cl_id
+    )
+
+    controller.move_cargo_pallets(cl_id, source, target)
+
+    result2 = run_recompute(wid, controller.conn)
+    controller._last_result = result2
+
+    # After recompute the source zone must no longer hold this line at
+    # the chosen stop, and the target zone must hold some of it.
+    src_after = [
+        e for e in result2.snapshots.get(chosen_stop, [])
+        if e.cargo_line_id == cl_id and e.zone_label == source
+    ]
+    tgt_after = [
+        e for e in result2.snapshots.get(chosen_stop, [])
+        if e.cargo_line_id == cl_id and e.zone_label == target
+    ]
+    assert not src_after, (
+        f"Line should have vacated {source} after the partial pin; "
+        f"still found {src_after}"
+    )
+    assert tgt_after, (
+        f"Target zone {target} should hold the pinned piece of the "
+        f"line after recompute. snapshots={result2.snapshots[chosen_stop]}"
+    )
+
+    total_after = sum(
+        e.scu_amount
+        for e in result2.snapshots[chosen_stop]
+        if e.cargo_line_id == cl_id
+    )
+    assert total_after == total_before, (
+        f"Partial move lost cargo: {total_before} SCU before, "
+        f"{total_after} SCU after."
+    )
