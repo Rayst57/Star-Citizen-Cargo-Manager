@@ -285,5 +285,5 @@ def test_two_pickups_two_groups(db):
     groups = detect_conflicts(wid, db)
     assert len(groups) == 2
     pickup_names = {g.pickup_station_name for g in groups}
-    assert "Yellow Core" in pickup_names
-    assert "Shallow Fields" in pickup_names
+    assert any("Yellow Core" in n for n in pickup_names)
+    assert any("Shallow Fields" in n for n in pickup_names)

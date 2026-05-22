@@ -88,10 +88,53 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
         )
         conn.commit()
 
+    # Station renames. The core trade stations were re-canonicalised
+    # to full Lagrange names (e.g. "Ambitious Dream" → "CRU-L1
+    # Ambitious Dream Station"), and two were relocated to different
+    # L-points. Rename in place so existing DBs update their rows
+    # instead of the seed re-sync inserting a second copy under the
+    # new name. FK references (contracts, workdays, cargo_lines) are
+    # by station id, so an in-place rename keeps all of them intact.
+    # Idempotent: once renamed the old name is gone, so re-runs skip.
+    _STATION_RENAMES = [
+        ("Ambitious Dream",  "CRU-L1 Ambitious Dream Station"),
+        ("Beautiful Glen",   "CRU-L5 Beautiful Glen Station"),
+        ("Shallow Fields",   "CRU-L4 Shallow Fields Station"),
+        ("Shallow Frontier", "MIC-L1 Shallow Frontier Station"),
+        ("Yellow Core",      "ARC-L5 Yellow Core Station"),
+        ("Wide Forest",      "ARC-L1 Wide Forest Station"),
+        ("Lively Pathway",   "ARC-L2 Lively Pathway Station"),
+        ("Long Forest",      "MIC-L2 Long Forest Station"),
+        ("Faint Glen",       "ARC-L4 Faint Glen Station"),
+        ("Modern Express",   "ARC-L3 Modern Express Station"),
+        ("Pyro Jump Point",  "Pyro Gateway (Stanton)"),
+    ]
+    for old_name, new_name in _STATION_RENAMES:
+        # Only rename when the old row exists and the new name is free
+        # — avoids a UNIQUE(system_id, name) clash on a DB that
+        # somehow already has both.
+        old_row = conn.execute(
+            "SELECT id, system_id FROM stations WHERE name = ?",
+            (old_name,),
+        ).fetchone()
+        if old_row is None:
+            continue
+        clash = conn.execute(
+            "SELECT 1 FROM stations WHERE system_id = ? AND name = ?",
+            (old_row["system_id"], new_name),
+        ).fetchone()
+        if clash:
+            continue
+        conn.execute(
+            "UPDATE stations SET name = ? WHERE id = ?",
+            (new_name, old_row["id"]),
+        )
+    conn.commit()
+
     # Re-sync reference data. load_all_seeds() only runs on first init,
     # so without this an existing DB never sees stations or ships added
     # (or layouts corrected) after it was created. Both loaders are
-    # idempotent — load_stations() is additive INSERT OR IGNORE,
+    # idempotent — load_stations() upserts on (system_id, name),
     # sync_ships() is a declarative upsert — so this is safe every launch.
     from .seed import load_stations, sync_ships
 

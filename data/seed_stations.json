@@ -1,9 +1,9 @@
 {
   "_meta": {
-    "purpose": "Initial seed data for the stations / systems / gateways tables. Loaded by the app on first launch when the DB is empty.",
-    "scope": "Stanton system as the proof-of-concept focus. Pyro is included as a placeholder for the cross-system gateway test path; populate with real Pyro stations later.",
-    "distance_units": "km (placeholder)",
-    "as_of": "Patch 4.x — May 2026"
+    "purpose": "Station / system / gateway seed. Loaded on first launch; re-synced (upsert) every launch.",
+    "scope": "Stanton system, full facility list. Pyro is a gateway-only placeholder.",
+    "as_of": "Patch 4.x - May 2026",
+    "station_count": 324
   },
   "systems": [
     {
@@ -13,7 +13,7 @@
     {
       "name": "Pyro",
       "is_active": 1,
-      "notes": "Placeholder; expand station list later"
+      "notes": "Gateway-only placeholder; expand station list later"
     }
   ],
   "stations": [
@@ -30,58 +30,66 @@
     },
     {
       "system": "Stanton",
-      "name": "Ambitious Dream",
+      "name": "CRU-L1 Ambitious Dream Station",
       "parent_body": "CRU-L1",
       "station_type": "lagrange",
       "is_gateway": 0,
       "sort_order": 20,
       "aliases": [
-        "CRU-L1 Ambitious Dream Station",
-        "Ambitious"
+        "Ambitious",
+        "Ambitious Dream",
+        "CRU-L1"
       ]
     },
     {
       "system": "Stanton",
-      "name": "Beautiful Glen",
+      "name": "CRU-L5 Beautiful Glen Station",
       "parent_body": "CRU-L5",
       "station_type": "lagrange",
       "is_gateway": 0,
       "sort_order": 30,
       "aliases": [
-        "CRU-L5 Beautiful Glen Station"
+        "Beautiful Glen",
+        "CRU-L5"
       ]
     },
     {
       "system": "Stanton",
-      "name": "Shallow Fields",
+      "name": "CRU-L4 Shallow Fields Station",
       "parent_body": "CRU-L4",
       "station_type": "lagrange",
       "is_gateway": 0,
       "sort_order": 40,
       "aliases": [
+        "CRU-L4",
         "Shallow Field",
+        "Shallow Fields",
         "Shallow Fields Station"
       ]
     },
     {
       "system": "Stanton",
-      "name": "Shallow Frontier",
-      "parent_body": "HUR-L1",
+      "name": "MIC-L1 Shallow Frontier Station",
+      "parent_body": "MIC-L1",
       "station_type": "lagrange",
       "is_gateway": 0,
       "sort_order": 50,
       "aliases": [
+        "MIC-L1",
+        "Shallow Frontier",
         "Shallow Frontier Station"
       ]
     },
     {
       "system": "Stanton",
-      "name": "Yellow Core",
-      "parent_body": "HUR-L4",
+      "name": "ARC-L5 Yellow Core Station",
+      "parent_body": "ARC-L5",
       "station_type": "lagrange",
       "is_gateway": 0,
       "sort_order": 60,
       "aliases": [
+        "ARC-L5",
+        "Yellow Core",
         "Yellow Core Station"
       ]
     },
@@ -117,25 +125,27 @@
     },
     {
       "system": "Stanton",
-      "name": "Wide Forest",
+      "name": "ARC-L1 Wide Forest Station",
       "parent_body": "ARC-L1",
       "station_type": "lagrange",
       "is_gateway": 0,
       "sort_order": 90,
       "aliases": [
-        "ARC-L1 Wide Forest Station",
+        "ARC-L1",
+        "Wide Forest",
         "Wild Forest"
       ]
     },
     {
       "system": "Stanton",
-      "name": "Lively Pathway",
+      "name": "ARC-L2 Lively Pathway Station",
       "parent_body": "ARC-L2",
       "station_type": "lagrange",
       "is_gateway": 0,
       "sort_order": 100,
       "aliases": [
-        "ARC-L2 Lively Pathway Station"
+        "ARC-L2",
+        "Lively Pathway"
       ]
     },
     {
@@ -152,49 +162,31 @@
     },
     {
       "system": "Stanton",
-      "name": "Long Forest",
+      "name": "MIC-L2 Long Forest Station",
       "parent_body": "MIC-L2",
       "station_type": "lagrange",
       "is_gateway": 0,
       "sort_order": 120,
       "aliases": [
-        "MIC-L2 Long Forest Station",
-        "Long Force"
+        "Long Force",
+        "Long Forest",
+        "MIC-L2"
       ]
     },
     {
       "system": "Stanton",
-      "name": "Faint Glen",
-      "parent_body": "ARC-L4",
-      "station_type": "lagrange",
-      "is_gateway": 0,
-      "sort_order": 130,
-      "aliases": [
-        "ARC-L4 Faint Glen Station",
-        "Faint Glenn"
-      ]
-    },
-    {
-      "system": "Stanton",
-      "name": "Modern Express",
-      "parent_body": "ARC-L3",
-      "station_type": "lagrange",
-      "is_gateway": 0,
-      "sort_order": 140,
-      "aliases": [
-        "ARC-L3 Modern Express Station"
-      ]
-    },
-    {
-      "system": "Stanton",
-      "name": "Pyro Jump Point",
-      "parent_body": null,
+      "name": "Pyro Gateway (Stanton)",
+      "parent_body": "Pyro Jump Point",
       "station_type": "gateway",
       "is_gateway": 1,
       "sort_order": 900,
       "aliases": [
+        "Pyro Gateway",
+        "Pyro Jump Point",
+        "Stanton Gateway",
+        "Stanton-Pyro Gate",
         "Stanton-Pyro Gate (Stanton side)",
-        "Stanton Gateway"
+        "Stanton-Pyro Gateway"
       ]
     },
     {
@@ -841,12 +833,14 @@
     },
     {
       "system": "Stanton",
-      "name": "Area18",
+      "name": "Area 18",
       "parent_body": "ArcCorp",
       "station_type": "major_location",
       "is_gateway": 0,
       "sort_order": 10010,
-      "aliases": []
+      "aliases": [
+        "Area18"
+      ]
     },
     {
       "system": "Stanton",
@@ -2308,12 +2302,16 @@
     },
     {
       "system": "Stanton",
-      "name": "GrimHEX",
+      "name": "Grim HEX",
       "parent_body": "Yela",
       "station_type": "artificial_satellite",
       "is_gateway": 0,
       "sort_order": 9260,
-      "aliases": []
+      "aliases": [
+        "GH",
+        "Green Imperial Housing Exchange",
+        "GrimHEX"
+      ]
     },
     {
       "system": "Stanton",
@@ -2461,12 +2459,14 @@
     },
     {
       "system": "Stanton",
-      "name": "Shady Glen Farms",
+      "name": "Shady Glen",
       "parent_body": "Wala",
       "station_type": "farm",
       "is_gateway": 0,
       "sort_order": 12010,
-      "aliases": []
+      "aliases": [
+        "Shady Glen Farms"
+      ]
     },
     {
       "system": "Stanton",
@@ -2737,6 +2737,319 @@
       "is_gateway": 0,
       "sort_order": 13015,
       "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Nyx Gateway (Stanton)",
+      "parent_body": "Nyx Jump Point",
+      "station_type": "gateway",
+      "is_gateway": 1,
+      "sort_order": 17000,
+      "aliases": [
+        "Nyx Gateway",
+        "Nyx Jump Point",
+        "Stanton-Nyx Gateway"
+      ]
+    },
+    {
+      "system": "Stanton",
+      "name": "Terra Gateway (Stanton)",
+      "parent_body": "Terra Jump Point",
+      "station_type": "gateway",
+      "is_gateway": 1,
+      "sort_order": 17010,
+      "aliases": [
+        "Terra Gateway",
+        "Terra Jump Point",
+        "Stanton-Terra Gateway"
+      ]
+    },
+    {
+      "system": "Stanton",
+      "name": "Wikelo Emporium Dasi Station",
+      "parent_body": "Other",
+      "station_type": "orbital",
+      "is_gateway": 0,
+      "sort_order": 17020,
+      "aliases": [
+        "Wikelo Dasi",
+        "Dasi Station"
+      ]
+    },
+    {
+      "system": "Stanton",
+      "name": "Wikelo Emporium Kinga Station",
+      "parent_body": "Other",
+      "station_type": "orbital",
+      "is_gateway": 0,
+      "sort_order": 17030,
+      "aliases": [
+        "Wikelo Kinga",
+        "Kinga Station"
+      ]
+    },
+    {
+      "system": "Stanton",
+      "name": "Wikelo Emporium Selo Station",
+      "parent_body": "Other",
+      "station_type": "orbital",
+      "is_gateway": 0,
+      "sort_order": 17040,
+      "aliases": [
+        "Wikelo Selo",
+        "Selo Station"
+      ]
+    },
+    {
+      "system": "Stanton",
+      "name": "ARC-L3 Modern Express Station",
+      "parent_body": "ARC-L3",
+      "station_type": "lagrange",
+      "is_gateway": 0,
+      "sort_order": 17050,
+      "aliases": [
+        "Modern Express",
+        "ARC-L3"
+      ]
+    },
+    {
+      "system": "Stanton",
+      "name": "ARC-L4 Faint Glen Station",
+      "parent_body": "ARC-L4",
+      "station_type": "lagrange",
+      "is_gateway": 0,
+      "sort_order": 17060,
+      "aliases": [
+        "Faint Glen",
+        "ARC-L4"
+      ]
+    },
+    {
+      "system": "Stanton",
+      "name": "Port Olisar",
+      "parent_body": "Crusader",
+      "station_type": "orbital",
+      "is_gateway": 0,
+      "sort_order": 17070,
+      "aliases": [
+        "PO",
+        "Olisar"
+      ]
+    },
+    {
+      "system": "Stanton",
+      "name": "HUR-L1 Green Glade Station",
+      "parent_body": "HUR-L1",
+      "station_type": "lagrange",
+      "is_gateway": 0,
+      "sort_order": 17080,
+      "aliases": [
+        "Green Glade",
+        "HUR-L1"
+      ]
+    },
+    {
+      "system": "Stanton",
+      "name": "HUR-L2 Faithful Dream Station",
+      "parent_body": "HUR-L2",
+      "station_type": "lagrange",
+      "is_gateway": 0,
+      "sort_order": 17090,
+      "aliases": [
+        "Faithful Dream",
+        "HUR-L2"
+      ]
+    },
+    {
+      "system": "Stanton",
+      "name": "HUR-L3 Thundering Express Station",
+      "parent_body": "HUR-L3",
+      "station_type": "lagrange",
+      "is_gateway": 0,
+      "sort_order": 17100,
+      "aliases": [
+        "Thundering Express",
+        "HUR-L3"
+      ]
+    },
+    {
+      "system": "Stanton",
+      "name": "HUR-L4 Melodic Fields Station",
+      "parent_body": "HUR-L4",
+      "station_type": "lagrange",
+      "is_gateway": 0,
+      "sort_order": 17110,
+      "aliases": [
+        "Melodic Fields",
+        "HUR-L4"
+      ]
+    },
+    {
+      "system": "Stanton",
+      "name": "HUR-L5 High Course Station",
+      "parent_body": "HUR-L5",
+      "station_type": "lagrange",
+      "is_gateway": 0,
+      "sort_order": 17120,
+      "aliases": [
+        "High Course",
+        "HUR-L5"
+      ]
+    },
+    {
+      "system": "Stanton",
+      "name": "INS Jericho",
+      "parent_body": "MIC-L1",
+      "station_type": "orbital",
+      "is_gateway": 0,
+      "sort_order": 17130,
+      "aliases": [
+        "Jericho"
+      ]
+    },
+    {
+      "system": "Stanton",
+      "name": "MIC-L3 Endless Odyssey Station",
+      "parent_body": "MIC-L3",
+      "station_type": "lagrange",
+      "is_gateway": 0,
+      "sort_order": 17140,
+      "aliases": [
+        "Endless Odyssey",
+        "MIC-L3"
+      ]
+    },
+    {
+      "system": "Stanton",
+      "name": "MIC-L4 Red Crossroads Station",
+      "parent_body": "MIC-L4",
+      "station_type": "lagrange",
+      "is_gateway": 0,
+      "sort_order": 17150,
+      "aliases": [
+        "Red Crossroads",
+        "MIC-L4"
+      ]
+    },
+    {
+      "system": "Stanton",
+      "name": "MIC-L5 Modern Icarus Station",
+      "parent_body": "MIC-L5",
+      "station_type": "lagrange",
+      "is_gateway": 0,
+      "sort_order": 17160,
+      "aliases": [
+        "Modern Icarus",
+        "MIC-L5"
+      ]
+    },
+    {
+      "system": "Stanton",
+      "name": "The Orphanage",
+      "parent_body": "Lyria",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 17170,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Paradise Cove",
+      "parent_body": "Wala",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 17180,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Outpost 54",
+      "parent_body": "microTech",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 17190,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Raven's Roost",
+      "parent_body": "microTech",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 17200,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "The Necropolis",
+      "parent_body": "microTech",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 17210,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Astor's Clearing",
+      "parent_body": "microTech",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 17220,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Harper's Point",
+      "parent_body": "microTech",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 17230,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Dunboro",
+      "parent_body": "microTech",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 17240,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Bloodshot Ridge",
+      "parent_body": "microTech",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 17250,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Frostbite",
+      "parent_body": "microTech",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 17260,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Moreland Hills",
+      "parent_body": "microTech",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 17270,
+      "aliases": []
+    },
+    {
+      "system": "Stanton",
+      "name": "Razor's Edge",
+      "parent_body": "microTech",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 17280,
+      "aliases": []
     }
   ],
   "station_distances": [],
@@ -2744,14 +3057,14 @@
     {
       "from_gateway": {
         "system": "Stanton",
-        "name": "Pyro Jump Point"
+        "name": "Pyro Gateway (Stanton)"
       },
       "to_gateway": {
         "system": "Pyro",
         "name": "Stanton Jump Point"
       },
       "distance_km": null,
-      "notes": "Bidirectional gateway link; populate distance later"
+      "notes": "Stanton -> Pyro gateway link; populate distance later"
     },
     {
       "from_gateway": {
@@ -2760,10 +3073,10 @@
       },
       "to_gateway": {
         "system": "Stanton",
-        "name": "Pyro Jump Point"
+        "name": "Pyro Gateway (Stanton)"
       },
       "distance_km": null,
-      "notes": "Reverse direction"
+      "notes": "Pyro -> Stanton gateway link; populate distance later"
     }
   ]
 }

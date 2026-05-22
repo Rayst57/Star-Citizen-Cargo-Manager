@@ -104,7 +104,7 @@ def test_loads_drain_lowest_priority_bay_first(controller):
     # The load happens at Yellow Core (stop 2). Snapshot AFTER that
     # stop should show the cargo in F1.
     yc_stop = next(s for s in result.route_stops
-                   if s.station_name == "Yellow Core")
+                   if "Yellow Core" in s.station_name)
     snap = result.snapshots.get(yc_stop.stop_number, [])
     assert snap, "Expected cargo on board after Yellow Core load"
     used = {e.zone_label for e in snap}
@@ -144,7 +144,7 @@ def test_same_destination_consolidates_via_transload(controller):
     # Pre-final stop should have at most ONE zone holding Long Forest
     # cargo (the two loads should have been merged).
     long_forest_stops = [
-        s for s in result.route_stops if s.station_name == "Long Forest"
+        s for s in result.route_stops if "Long Forest" in s.station_name
     ]
     assert long_forest_stops, "Long Forest not in the route"
     delivery_stop = long_forest_stops[-1]
@@ -152,7 +152,7 @@ def test_same_destination_consolidates_via_transload(controller):
     pre_delivery = delivery_stop.stop_number - 1
     snap = result.snapshots.get(pre_delivery, [])
     lf_zones = {e.zone_label for e in snap
-                if e.delivery_station_name == "Long Forest"}
+                if "Long Forest" in e.delivery_station_name}
     # Either a transload move was emitted, or the planner placed both
     # lines in the same zone to begin with. Either way: one zone.
     assert len(lf_zones) <= 1, (
@@ -212,7 +212,7 @@ def test_transload_moves_recorded_when_consolidation_helps(controller):
     # Find any transload move involving Long Forest cargo.
     lf_moves = [m for stop_moves in result.transload_moves.values()
                 for m in stop_moves
-                if m.delivery_station_name == "Long Forest"]
+                if "Long Forest" in m.delivery_station_name]
     assert lf_moves, (
         "Expected a transload move for Long Forest cargo specifically. "
         f"All moves: {result.transload_moves}"
