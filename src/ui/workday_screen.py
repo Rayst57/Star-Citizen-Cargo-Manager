@@ -7,9 +7,10 @@ when accepted; cancelled = exit app.
 
 from __future__ import annotations
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QComboBox, QDialog, QFrame, QHBoxLayout, QLabel, QMessageBox,
-    QPushButton, QVBoxLayout,
+    QComboBox, QCompleter, QDialog, QFrame, QHBoxLayout, QLabel,
+    QMessageBox, QPushButton, QVBoxLayout,
 )
 
 from ..app_controller import AppController
@@ -151,10 +152,12 @@ class WorkdayScreen(QDialog):
         include_round_robin: bool,
         blank_first: bool = False,
     ) -> None:
-        # blank_first: prepend an empty, unselectable-by-default entry
-        # so the combo opens with no station chosen.
-        if blank_first:
-            combo.addItem("— Select departure facility —", userData=None)
+        # Editable + type-to-filter: with 300+ stations a plain
+        # scrolling combo is unusable. A QCompleter in MatchContains
+        # mode narrows the popup as the user types — same behaviour
+        # as the contract dialog's station pickers.
+        combo.setEditable(True)
+        combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         if include_round_robin:
             combo.addItem("Round Robin (return to origin)", userData=None)
         rows = self.controller.conn.execute(
@@ -166,6 +169,29 @@ class WorkdayScreen(QDialog):
         ).fetchall()
         for r in rows:
             combo.addItem(r["name"], userData=r["id"])
+
+        completer = combo.completer()
+        completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+
+        if blank_first:
+            # Origin opens empty so the user must consciously pick a
+            # departure facility — no silent default.
+            combo.setCurrentIndex(-1)
+            combo.lineEdit().setPlaceholderText(
+                "Pick or type a departure facility…"
+            )
+
+    def _resolve_station_id(self, combo: QComboBox):
+        """An editable combo's currentData() can lag the typed text —
+        match the text to an item first, then fall back."""
+        idx = combo.findText(
+            combo.currentText().strip(), Qt.MatchFlag.MatchFixedString,
+        )
+        if idx >= 0:
+            return combo.itemData(idx)
+        return combo.currentData()
 
     # ── actions ────────────────────────────────────────────────────────
 
@@ -182,7 +208,7 @@ class WorkdayScreen(QDialog):
         self.reject()  # caller can re-show; see app.py
 
     def _on_start_new(self) -> None:
-        origin_id = self.origin_combo.currentData()
+        origin_id = self._resolve_station_id(self.origin_combo)
         if origin_id is None:
             QMessageBox.warning(
                 self, "Pick a departure facility",
@@ -190,7 +216,7 @@ class WorkdayScreen(QDialog):
                 "starting the workday.",
             )
             return
-        final_id = self.final_combo.currentData()
+        final_id = self._resolve_station_id(self.final_combo)
         ship_id = self.ship_combo.currentData()
         # Round Robin is the dropdown entry whose userData is None.
         rr = final_id is None
