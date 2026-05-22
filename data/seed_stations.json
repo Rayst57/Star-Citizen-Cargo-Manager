@@ -164,6 +164,29 @@
     },
     {
       "system": "Stanton",
+      "name": "Faint Glen",
+      "parent_body": "ARC-L4",
+      "station_type": "lagrange",
+      "is_gateway": 0,
+      "sort_order": 130,
+      "aliases": [
+        "ARC-L4 Faint Glen Station",
+        "Faint Glenn"
+      ]
+    },
+    {
+      "system": "Stanton",
+      "name": "Modern Express",
+      "parent_body": "ARC-L3",
+      "station_type": "lagrange",
+      "is_gateway": 0,
+      "sort_order": 140,
+      "aliases": [
+        "ARC-L3 Modern Express Station"
+      ]
+    },
+    {
+      "system": "Stanton",
       "name": "Pyro Jump Point",
       "parent_body": null,
       "station_type": "gateway",

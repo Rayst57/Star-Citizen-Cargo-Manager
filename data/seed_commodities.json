@@ -14,6 +14,7 @@
     { "name": "Quartz",           "category": "Mineral",    "legality": "Legal", "aliases": [] },
     { "name": "Scrap",            "category": "Industrial", "legality": "Legal", "aliases": [] },
     { "name": "Waste",            "category": "Industrial", "legality": "Legal", "aliases": [] },
+    { "name": "Stims",            "category": "Medical",    "legality": "Legal", "aliases": ["Stim", "Stimulants"] },
     { "name": "Cargo",            "category": "Generic",    "legality": "Legal", "aliases": ["Generic Cargo"] }
   ]
 }
