@@ -136,6 +136,14 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
     # (or layouts corrected) after it was created. Both loaders are
     # idempotent — load_stations() upserts on (system_id, name),
     # sync_ships() is a declarative upsert — so this is safe every launch.
+    # Partial pins: a zone_assignments row can carry a JSON description
+    # of which pallets of a cargo line are pinned to which zones, so a
+    # cargo line bigger than any single zone can still have part of it
+    # pinned. NULL = no partial-pin data (whole-line / auto-placed).
+    if not _has_column(conn, "zone_assignments", "pin_zones"):
+        conn.execute("ALTER TABLE zone_assignments ADD COLUMN pin_zones TEXT")
+        conn.commit()
+
     from .seed import load_stations, sync_ships
 
     load_stations(conn)

@@ -545,10 +545,30 @@ def _drain_to_lower_priority(
     return moves
 
 
+def _clone_placed(c: _PlacedCargo, sizes: list[int]) -> _PlacedCargo:
+    """Clone *c* keeping every field except pallet_sizes/scu, which are
+    taken from *sizes*. Preserves the _max_pallet_size tag."""
+    piece = _PlacedCargo(
+        cargo_line_id=c.cargo_line_id,
+        contract_id=c.contract_id,
+        contract_number=c.contract_number,
+        commodity_id=c.commodity_id,
+        commodity_name=c.commodity_name,
+        delivery_station_id=c.delivery_station_id,
+        delivery_station_name=c.delivery_station_name,
+        scu=sum(sizes),
+        pallet_sizes=list(sizes),
+    )
+    mps = getattr(c, "_max_pallet_size", None)
+    if mps is not None:
+        piece._max_pallet_size = mps  # type: ignore[attr-defined]
+    return piece
+
+
 def _load_at_stop(
     zones: list[_ZoneState],
     new_cargo: list[_PlacedCargo],
-    manual_pins: dict[int, str],
+    pinned_pieces: dict[int, list[tuple[str, list[int] | None]]],
     workday_id: int,
     conn: sqlite3.Connection,
     delivery_priority: dict[int, int],
@@ -556,26 +576,58 @@ def _load_at_stop(
     """Place every line in *new_cargo* into a zone.
 
     Pinned cargo (manual override) is placed first into its pinned
-    zone. Remaining cargo is grouped by destination: when several
-    lines at this stop share a destination, the planner reserves a
-    zone big enough for the GROUP rather than picking smallest-fit
-    line-by-line, which would scatter same-dest cargo. Destination
-    groups are processed earliest-unloaded first.
+    zone. Partially-pinned lines are carved into one piece per pinned
+    zone plus a residual piece, so the rest of this function treats
+    each piece as an independent (smaller) cargo line. Remaining cargo
+    is grouped by destination: when several lines at this stop share a
+    destination, the planner reserves a zone big enough for the GROUP
+    rather than picking smallest-fit line-by-line, which would scatter
+    same-dest cargo. Destination groups are processed earliest-unloaded
+    first.
 
     Returns cargo_line_id → initial_zone_label for placed lines.
     """
     initial_zones: dict[int, str] = {}
     by_label = {z.zone_label: z for z in zones}
 
+    # ── Carve partially-pinned lines into (pinned piece, residual)
+    # _PlacedCargo objects so the rest of the function's logic is
+    # unchanged. piece_pin maps a carved piece's id() to its zone.
+    expanded: list[_PlacedCargo] = []
+    piece_pin: dict[int, str] = {}
+    for c in new_cargo:
+        pieces = pinned_pieces.get(c.cargo_line_id)
+        if not pieces:
+            expanded.append(c)
+            continue
+        residual = list(c.pallet_sizes)
+        for zone_label, sizes in pieces:
+            if sizes is None:        # legacy whole-line pin
+                carved = list(residual)
+                residual = []
+            else:
+                carved = []
+                for s in sizes:
+                    if s in residual:
+                        residual.remove(s)
+                        carved.append(s)
+            if carved:
+                piece = _clone_placed(c, carved)
+                piece_pin[id(piece)] = zone_label
+                expanded.append(piece)
+        if residual:
+            expanded.append(_clone_placed(c, residual))
+    new_cargo = expanded
+
     # ── Apply pins first so subsequent grouping sees their footprint ──
     pinned, auto = [], []
     for c in new_cargo:
-        if manual_pins.get(c.cargo_line_id) in by_label:
+        if piece_pin.get(id(c)) in by_label:
             pinned.append(c)
         else:
             auto.append(c)
     for c in pinned:
-        z = by_label[manual_pins[c.cargo_line_id]]
+        z = by_label[piece_pin[id(c)]]
         if z.remaining_scu >= c.scu:
             _place_whole(z, c)
             initial_zones[c.cargo_line_id] = z.zone_label
@@ -771,11 +823,20 @@ def _place_split(
             -min(z.scu_capacity, remaining_total),
             z.unload_priority,
         ))
+        # Mixed: same fit-most preference as fresh. Earlier this
+        # sorted by unload_priority alone, which fragmented a big
+        # split line across many low-priority zones that each had
+        # only a sliver of free space — e.g. a 39 SCU line crammed
+        # 1+6+16+16 into R1..R4 instead of dropping 34 into an F-bay
+        # that had a single large opening. Avoid narrow conflicts
+        # first, then pick the zone that swallows the most, then
+        # fall back to unload_priority.
         mixed = [z for z in zones
                  if not z.is_empty and dest not in z.occupants
                  and z.remaining_scu > 0]
         mixed.sort(key=lambda z: (
             1 if _would_narrow_conflict(z, remaining) else 0,
+            -min(z.remaining_scu, remaining_total),
             z.unload_priority,
         ))
 
@@ -945,10 +1006,15 @@ def build_zone_plan(
         (workday_id,),
     )
 
-    # Manual pins: cargo_line_id → pinned zone_label.
+    # Manual pins. A pinned cargo line may be pinned WHOLE (legacy —
+    # pin_zones is NULL) or carved into per-zone PARTIAL pins (pin_zones
+    # holds a JSON list of pieces). pinned_pieces maps a cargo line to
+    # a list of (zone_label, sizes) pieces; sizes is None for a legacy
+    # whole-line pin (meaning "all pallets").
+    import json as _json
     manual_rows = conn.execute(
         """
-        SELECT cl.id AS cargo_line_id, za.primary_zone_label
+        SELECT cl.id AS cargo_line_id, za.primary_zone_label, za.pin_zones
         FROM zone_assignments za
         JOIN cargo_lines cl ON cl.id = za.cargo_line_id
         JOIN contracts   ct ON ct.id = cl.contract_id
@@ -958,9 +1024,20 @@ def build_zone_plan(
         """,
         (workday_id,),
     ).fetchall()
-    manual_pins: dict[int, str] = {
-        r["cargo_line_id"]: r["primary_zone_label"] for r in manual_rows
-    }
+    pinned_pieces: dict[int, list[tuple[str, list[int] | None]]] = {}
+    for r in manual_rows:
+        cl_id = r["cargo_line_id"]
+        bucket = pinned_pieces.setdefault(cl_id, [])
+        if r["pin_zones"]:
+            try:
+                parsed = _json.loads(r["pin_zones"])
+            except (ValueError, TypeError):
+                parsed = []
+            for piece in parsed:
+                bucket.append((piece["zone"], list(piece["sizes"])))
+        else:
+            # Legacy whole-line pin — no per-zone size data.
+            bucket.append((r["primary_zone_label"], None))
 
     # Build cargo meta for every cargo line in the workday.
     cargo_rows = conn.execute(
@@ -1076,7 +1153,7 @@ def build_zone_plan(
                 cp._max_pallet_size = src._max_pallet_size  # type: ignore[attr-defined]
                 new_cargo.append(cp)
             placed_by_id = _load_at_stop(
-                zones, new_cargo, manual_pins, workday_id, conn,
+                zones, new_cargo, pinned_pieces, workday_id, conn,
                 delivery_priority,
             )
             for cl_id, label in placed_by_id.items():
@@ -1097,7 +1174,7 @@ def build_zone_plan(
         # stop (everything's unloaded by then).
         moves: list[TransloadMove] = []
         if idx < len(route_stops) - 1:
-            pinned_ids = set(manual_pins.keys())
+            pinned_ids = set(pinned_pieces.keys())
             moves = _consolidate(zones, pinned_ids=pinned_ids)
             # Drain bulk floor (highest-priority zones) into lower-
             # priority same-dest zones whenever there's now room.
@@ -1126,7 +1203,7 @@ def build_zone_plan(
     _persist_assignments(
         workday_id, initial_zone, cargo_meta,
         line_total_scu, placed_total_scu,
-        set(manual_pins.keys()), conn,
+        set(pinned_pieces.keys()), conn,
     )
 
     _log.info("zone_assignment: %d cargo line(s) placed, %d transload moves",

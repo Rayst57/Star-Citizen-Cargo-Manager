@@ -218,6 +218,7 @@ CREATE TABLE zone_assignments (
     cube_y              INTEGER,                 -- placement origin (ramp edge)
     cube_z              INTEGER,                 -- placement origin (floor)
     is_manual_override  INTEGER NOT NULL DEFAULT 0,
+    pin_zones           TEXT,                    -- JSON list of partial-pin pieces, e.g. [{"zone":"F1","sizes":[8,8]}]
     notes               TEXT
 );
 
