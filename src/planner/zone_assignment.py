@@ -771,11 +771,20 @@ def _place_split(
             -min(z.scu_capacity, remaining_total),
             z.unload_priority,
         ))
+        # Mixed: same fit-most preference as fresh. Earlier this
+        # sorted by unload_priority alone, which fragmented a big
+        # split line across many low-priority zones that each had
+        # only a sliver of free space — e.g. a 39 SCU line crammed
+        # 1+6+16+16 into R1..R4 instead of dropping 34 into an F-bay
+        # that had a single large opening. Avoid narrow conflicts
+        # first, then pick the zone that swallows the most, then
+        # fall back to unload_priority.
         mixed = [z for z in zones
                  if not z.is_empty and dest not in z.occupants
                  and z.remaining_scu > 0]
         mixed.sort(key=lambda z: (
             1 if _would_narrow_conflict(z, remaining) else 0,
+            -min(z.remaining_scu, remaining_total),
             z.unload_priority,
         ))
 

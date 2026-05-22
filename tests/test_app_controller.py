@@ -231,16 +231,11 @@ def test_dispatch_unknown_tool_raises(controller):
 
 # ── BayCanvas physical packing ────────────────────────────────────────
 
-def test_full_starlancer_rb_renders_pallets_even_when_overflowing(controller):
-    """Regression: a Starlancer RB carrying 71 + 17 = 88 SCU
-    (10x8 SCU + 1x4 + 1x2 + 2x1) can't be packed perfectly into the
-    4x11x2 cube grid (10 large pallets fill y=0..9 leaving only a 4x1
-    strip too shallow for a 2x2 small pallet). Before the partial-fit
-    fix, the BayCanvas returned zero PalletRects for that zone and the
-    Zone Detail dialog rendered empty.
-
-    The fix tries more orderings and accepts a partial layout, so the
-    user always sees what could be packed.
+def test_move_cargo_rejects_line_too_big_for_target_zone(controller):
+    """move_cargo relocates the WHOLE cargo line into one zone. A line
+    bigger than the target zone's capacity can't physically live there,
+    so the move must be refused with a clear error — not silently
+    accepted into an overflowing pin that the next recompute discards.
     """
     starlancer = controller.conn.execute(
         "SELECT id FROM ships WHERE name LIKE 'Starlancer%'"
@@ -258,8 +253,7 @@ def test_full_starlancer_rb_renders_pallets_even_when_overflowing(controller):
     )
     controller.conn.commit()
 
-    # 71 SCU Baijini + 17 SCU Seraphim into the same zone via the
-    # manual-move path so they share RB at the same stop.
+    # 71 SCU line — bigger than every Starlancer zone (RBA is 64).
     controller.add_contract({
         "pickup_station": "Yellow Core",
         "max_pallet_size": 8,
@@ -267,39 +261,32 @@ def test_full_starlancer_rb_renders_pallets_even_when_overflowing(controller):
             {"destination": "Baijini Point", "commodity": "Tungsten", "scu": 71},
         ],
     })
-    controller.add_contract({
-        "pickup_station": "Yellow Core",
-        "max_pallet_size": 8,
-        "deliveries": [
-            {"destination": "Seraphim Station", "commodity": "Tungsten", "scu": 17},
-        ],
-    })
     result = run_recompute(wid, controller.conn)
     controller._last_result = result
     assign_destination_colors(wid, controller.conn)
 
-    # Force both lines into RB so we hit the 88/88 overcrowd case.
-    rows = controller.conn.execute(
+    cl_id = controller.conn.execute(
         "SELECT cargo_line_id FROM zone_assignments WHERE workday_id = ?",
         (wid,),
-    ).fetchall()
-    for r in rows:
-        controller.move_cargo(r["cargo_line_id"], "RBA")
+    ).fetchone()["cargo_line_id"]
 
-    # Snapshot any stop that has cargo onboard.
-    onboard_stops = [
-        s.stop_number for s in result.route_stops
-        if result.snapshots.get(s.stop_number)
-    ]
-    assert onboard_stops, "Expected at least one stop with cargo onboard"
+    # Pinning a 71 SCU line into the 64 SCU RBA must raise.
+    with pytest.raises(ToolError, match="bigger than"):
+        controller.move_cargo(cl_id, "RBA")
 
-    for sn in onboard_stops:
-        rects = controller.get_pallet_rects(stop_number=sn)
-        rb_rects = [r for r in rects if r.zone_label == "RBA"]
-        # Pre-fix the count here was 0 because the packer silently
-        # bailed. With the partial-fit fix the user should always see
-        # at least the large pallets.
-        assert rb_rects, (
-            f"Stop {sn}: no RB pallets rendered — the packer must "
-            f"return a partial layout rather than nothing."
-        )
+    # A line that DOES fit should still move fine.
+    controller.add_contract({
+        "pickup_station": "Yellow Core",
+        "max_pallet_size": 8,
+        "deliveries": [
+            {"destination": "Baijini Point", "commodity": "Tungsten", "scu": 16},
+        ],
+    })
+    result = run_recompute(wid, controller.conn)
+    controller._last_result = result
+    small_cl = controller.conn.execute(
+        "SELECT cargo_line_id FROM zone_assignments WHERE workday_id = ? "
+        "ORDER BY cargo_line_id DESC LIMIT 1",
+        (wid,),
+    ).fetchone()["cargo_line_id"]
+    controller.move_cargo(small_cl, "RBA")  # 16 SCU into 64 SCU zone — fine

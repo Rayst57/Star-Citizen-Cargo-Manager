@@ -1201,6 +1201,40 @@ class AppController(QObject):
         pallets = palletize(cl["scu_amount"], cl["max_pallet_size"])
         summary = palletize_summary(pallets)
 
+        # move_cargo relocates the WHOLE cargo line — a line split
+        # across several zones collapses into the one target. Reject
+        # the move up front when the line can't physically live in a
+        # single zone, instead of silently producing an overflowing
+        # pin that the next recompute just discards.
+        zone = self.conn.execute(
+            """
+            SELECT z.scu_capacity, z.width_units, z.length_units,
+                   z.height_units
+            FROM ship_zones z
+            JOIN workdays w ON w.ship_id = z.ship_id
+            WHERE w.id = ? AND z.zone_label = ?
+            """,
+            (self.workday_id, target_zone),
+        ).fetchone()
+        if zone is None:
+            raise ToolError(f"Zone {target_zone} not found on this ship.")
+        if cl["scu_amount"] > zone["scu_capacity"]:
+            raise ToolError(
+                f"This cargo line is {cl['scu_amount']} SCU — bigger than "
+                f"zone {target_zone}'s {zone['scu_capacity']} SCU capacity. "
+                f"It's too large to pin to a single zone; it has to stay "
+                f"split across multiple zones."
+            )
+        from .planner.physical_packer import can_fit
+        if not can_fit(zone["width_units"], zone["length_units"],
+                       zone["height_units"], pallets):
+            raise ToolError(
+                f"This cargo line's pallets don't physically pack into "
+                f"zone {target_zone} "
+                f"({zone['width_units']}x{zone['length_units']}x"
+                f"{zone['height_units']}). Pick a zone with a better fit."
+            )
+
         # Wipe any previous rows for this cargo line (it might have
         # been split across zones via overflow). Replace with a single
         # row in the new zone.
