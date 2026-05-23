@@ -107,6 +107,8 @@ class _ZoneState:
     width_units: int
     length_units: int
     height_units: int
+    front_zone_label: str | None = None
+    back_zone_label: str | None = None
     placed: list[_PlacedCargo] = field(default_factory=list)
 
     @property
@@ -146,7 +148,8 @@ def _load_zones(ship_id: int, conn: sqlite3.Connection) -> list[_ZoneState]:
     rows = conn.execute(
         """
         SELECT zone_label, bay_label, scu_capacity, unload_priority,
-               width_units, length_units, height_units
+               width_units, length_units, height_units,
+               front_zone_label, back_zone_label
         FROM ship_zones
         WHERE ship_id = ?
         ORDER BY unload_priority ASC
@@ -162,6 +165,8 @@ def _load_zones(ship_id: int, conn: sqlite3.Connection) -> list[_ZoneState]:
             width_units=r["width_units"],
             length_units=r["length_units"],
             height_units=r["height_units"],
+            front_zone_label=r["front_zone_label"],
+            back_zone_label=r["back_zone_label"],
         )
         for r in rows
     ]
@@ -818,8 +823,18 @@ def _place_split(
         # picked the bigger zone first. Tiebreak by unload_priority
         # ASC so same-fit-size ties still drain-first.
         remaining_total = remaining.scu
+        # Zones whose column partner ALREADY holds this destination get a
+        # bump — overflow within a column is preferred (no bulkhead between
+        # F1<->R1, F2<->R2, etc. on the Hermes).
+        partner_zones: set[str] = set()
+        for z in zones:
+            if dest in z.occupants:
+                for p in (z.front_zone_label, z.back_zone_label):
+                    if p:
+                        partner_zones.add(p)
         fresh = [z for z in zones if z.is_empty]
         fresh.sort(key=lambda z: (
+            0 if z.zone_label in partner_zones else 1,
             -min(z.scu_capacity, remaining_total),
             z.unload_priority,
         ))
@@ -836,6 +851,7 @@ def _place_split(
                  and z.remaining_scu > 0]
         mixed.sort(key=lambda z: (
             1 if _would_narrow_conflict(z, remaining) else 0,
+            0 if z.zone_label in partner_zones else 1,
             -min(z.remaining_scu, remaining_total),
             z.unload_priority,
         ))

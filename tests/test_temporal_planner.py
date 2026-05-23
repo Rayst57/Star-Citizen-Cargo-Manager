@@ -353,6 +353,98 @@ def test_drain_skips_when_only_target_is_empty():
     assert rba.used_scu == 16
 
 
+def test_manual_stop_insertion(controller):
+    """A manual stop should appear in the route at the requested
+    position AND retain the scheduled visit to the same station.
+
+    Build a contract delivering 16 SCU to Baijini Point (which sorts
+    late in the route). Add a manual stop forcing a visit to Baijini
+    after the first stop. After recompute the route must show Baijini
+    TWICE — once at the manual insertion point and once at its normal
+    scheduled position — with sequential stop_numbers. Onboard
+    Baijini cargo should drop at the manual stop because the
+    simulator's unload step is purely station-id-based.
+    """
+    wid = controller.start_workday(_seraphim(controller), None, False)
+    # Pick up at Yellow Core (which sorts before Baijini) so that by
+    # the time we hit Baijini there's actually cargo to unload.
+    controller.add_contract({
+        "pickup_station": "Yellow Core",
+        "max_pallet_size": 8,
+        "deliveries": [
+            {"destination": "Baijini Point", "commodity": "Tungsten",
+             "scu": 16},
+        ],
+    })
+
+    # Compute once to learn the scheduled stops, then add the manual
+    # stop anchored on a scheduled station that's NOT Baijini.
+    result = run_recompute(wid, controller.conn)
+    controller._last_result = result
+
+    baijini_id = controller.conn.execute(
+        "SELECT id FROM stations WHERE name = 'Baijini Point'"
+    ).fetchone()["id"]
+
+    # Pick the first scheduled stop other than Baijini as the anchor.
+    anchor_stop = next(
+        s for s in result.route_stops
+        if s.station_id != baijini_id
+    )
+    anchor_station_id = anchor_stop.station_id
+    anchor_position = anchor_stop.stop_number
+
+    controller.add_manual_stop(baijini_id, anchor_station_id)
+    result = run_recompute(wid, controller.conn)
+    controller._last_result = result
+
+    # ── Assertion 1: stop_numbers are contiguous 1..N ───────────────
+    expected = list(range(1, len(result.route_stops) + 1))
+    actual = [s.stop_number for s in result.route_stops]
+    assert actual == expected, (
+        f"stop_number must be a contiguous 1..N sequence after manual "
+        f"insertion; got {actual}"
+    )
+
+    # ── Assertion 2: Baijini appears AT LEAST twice ─────────────────
+    baijini_stops = [
+        s for s in result.route_stops if s.station_id == baijini_id
+    ]
+    assert len(baijini_stops) >= 2, (
+        f"Expected Baijini to appear at least twice (manual + "
+        f"scheduled), got {len(baijini_stops)} occurrence(s). "
+        f"Route: {[(s.stop_number, s.station_name) for s in result.route_stops]}"
+    )
+
+    # ── Assertion 3: the manual Baijini comes RIGHT AFTER the anchor.
+    # anchor_position is 1-based; the slot immediately after is
+    # anchor_position (the new stop's stop_number) → list index
+    # anchor_position (0-based).
+    manual_baijini = result.route_stops[anchor_position]
+    assert manual_baijini.station_id == baijini_id, (
+        f"Expected Baijini at position {anchor_position + 1}, got "
+        f"{manual_baijini.station_name} (id={manual_baijini.station_id})"
+    )
+    assert manual_baijini.action == "Manual Stop", (
+        f"Manual stop should be tagged 'Manual Stop'; got "
+        f"{manual_baijini.action!r}"
+    )
+
+    # ── Assertion 4: at the manual stop, onboard Baijini cargo has
+    # already been unloaded (the simulator's unload pass walks every
+    # stop's station_id, not just contract-driven ones).
+    snap_after_manual = result.snapshots.get(manual_baijini.stop_number, [])
+    leftover_baijini = [
+        e for e in snap_after_manual
+        if "Baijini" in e.delivery_station_name
+    ]
+    assert not leftover_baijini, (
+        f"Baijini cargo should be unloaded at the manual Baijini stop "
+        f"(stop {manual_baijini.stop_number}); still saw "
+        f"{[(e.zone_label, e.scu_amount) for e in leftover_baijini]}"
+    )
+
+
 def test_partial_pin_moves_only_one_zones_pallets(controller):
     """move_cargo_pallets pins only the portion of a split cargo line
     that sits in one zone, leaving the rest auto-placed.
@@ -459,4 +551,216 @@ def test_partial_pin_moves_only_one_zones_pallets(controller):
     assert total_after == total_before, (
         f"Partial move lost cargo: {total_before} SCU before, "
         f"{total_after} SCU after."
+    )
+
+
+def test_hermes_column_overflow_prefers_partner(controller):
+    """On the Hermes, F and R halves of the same column form one
+    continuous open bay (no bulkhead). When a cargo line splits across
+    two zones, the planner should prefer the column-partner of the
+    first zone for the overflow piece — keeping both halves in the
+    SAME physical column — rather than spilling into an unrelated
+    column's zone.
+    """
+    hermes = controller.conn.execute(
+        "SELECT id FROM ships WHERE name LIKE 'RSI Hermes%'"
+    ).fetchone()
+    if not hermes:
+        pytest.skip("Hermes not seeded in this environment")
+
+    wid = controller.start_workday(_seraphim(controller), None, False)
+    controller.conn.execute(
+        "UPDATE workdays SET ship_id = ? WHERE id = ?",
+        (hermes["id"], wid),
+    )
+    controller.conn.commit()
+
+    # 50 SCU > one zone (36 SCU) so it must split. Single destination,
+    # picked up at the origin.
+    controller.add_contract({
+        "pickup_station": "Seraphim Station",
+        "max_pallet_size": 8,
+        "deliveries": [
+            {"destination": "Long Forest", "commodity": "Tungsten",
+             "scu": 50},
+        ],
+    })
+    result = run_recompute(wid, controller.conn)
+    controller._last_result = result
+    assign_destination_colors(wid, controller.conn)
+
+    cl_id = controller.conn.execute(
+        "SELECT cl.id FROM cargo_lines cl "
+        "JOIN contracts ct ON ct.id = cl.contract_id "
+        "WHERE ct.workday_id = ?",
+        (wid,),
+    ).fetchone()["id"]
+
+    # Find a stop where this line is split across >= 2 zones.
+    zones_at_stop: list[str] = []
+    for stop in result.route_stops:
+        zones = sorted({
+            e.zone_label
+            for e in result.snapshots.get(stop.stop_number, [])
+            if e.cargo_line_id == cl_id
+        })
+        if len(zones) >= 2:
+            zones_at_stop = zones
+            break
+    assert zones_at_stop, (
+        "Expected the 50 SCU line to split across >= 2 zones. "
+        f"snapshots={result.snapshots}"
+    )
+
+    # Look up column-partner adjacency for all zones the line occupies.
+    partners: dict[str, set[str]] = {}
+    for label in zones_at_stop:
+        row = controller.conn.execute(
+            "SELECT front_zone_label, back_zone_label FROM ship_zones "
+            "WHERE ship_id = ? AND zone_label = ?",
+            (hermes["id"], label),
+        ).fetchone()
+        partners[label] = {p for p in (
+            row["front_zone_label"], row["back_zone_label"]
+        ) if p}
+
+    # At least one pair of occupied zones must be column partners.
+    occupied = set(zones_at_stop)
+    paired = any(
+        bool(partners[label] & occupied) for label in zones_at_stop
+    )
+    assert paired, (
+        "Expected the split line's two halves to sit in the same "
+        "column (e.g. R1+F1), but they spread across unrelated "
+        f"columns: {zones_at_stop}. Partner map: {partners}"
+    )
+
+
+def _use_hermes(controller, wid: int) -> int:
+    """Pin the workday's ship to the Hermes (288 SCU). Skip if not seeded."""
+    hermes = controller.conn.execute(
+        "SELECT id, total_scu FROM ships WHERE name LIKE '%Hermes%'"
+    ).fetchone()
+    if not hermes:
+        pytest.skip("Hermes not seeded in this environment")
+    controller.conn.execute(
+        "UPDATE workdays SET ship_id = ? WHERE id = ?",
+        (hermes["id"], wid),
+    )
+    controller.conn.commit()
+    return hermes["total_scu"]
+
+
+def test_auto_relief_inserts_unload_at_75pct(controller):
+    """Loading >75% of capacity before any unload should trigger an
+    automatic relief unload stop for the heaviest onboard destination.
+
+    Hermes is 288 SCU - 75% = 216. Four 80-SCU pickups (320 SCU total,
+    all bound for Long Forest) cross 216 by the third pickup; the
+    planner should splice in an "Auto Unload (75%+ relief)" stop at
+    Long Forest before the route continues.
+    """
+    wid = controller.start_workday(_seraphim(controller), None, False)
+    total = _use_hermes(controller, wid)
+    for pickup in (
+        "Yellow Core",      # ARC-L5 Yellow Core Station
+        "Wide Forest",      # ARC-L1 Wide Forest Station
+        "Lively Pathway",   # ARC-L2 Lively Pathway Station
+        "Port Tressler",
+    ):
+        controller.add_contract({
+            "pickup_station": pickup,
+            "max_pallet_size": 8,
+            "deliveries": [
+                {"destination": "Long Forest", "commodity": "Tungsten",
+                 "scu": 80},
+            ],
+        })
+
+    result = run_recompute(wid, controller.conn)
+
+    relief = [
+        s for s in result.route_stops
+        if s.action == "Auto Unload (75%+ relief)"
+    ]
+    assert relief, (
+        "Expected at least one auto-relief stop on a 320-SCU/288-cap "
+        f"route. Got actions: {[s.action for s in result.route_stops]}"
+    )
+
+    # Replay onboard SCU through the route and confirm that the first
+    # relief stop is preceded by a >75% peak and that the relief stop
+    # itself brings onboard back below 75%.
+    threshold_scu = 0.75 * total
+    onboard: dict[int, int] = {}  # cargo_line_id -> scu
+
+    relief_stop = relief[0]
+    relief_idx = result.route_stops.index(relief_stop)
+
+    # Simulate up to (but not including) the relief stop.
+    peak_before = 0
+    for s in result.route_stops[:relief_idx]:
+        for ref in s.loads:
+            onboard[ref.cargo_line_id] = ref.scu_amount
+        for ref in s.unloads:
+            onboard.pop(ref.cargo_line_id, None)
+        peak_before = max(peak_before, sum(onboard.values()))
+
+    assert peak_before > threshold_scu, (
+        f"Pre-relief peak {peak_before} SCU should exceed 75% of "
+        f"{total} ({threshold_scu})."
+    )
+
+    # Apply the relief stop's unloads and confirm we're back under 75%.
+    for ref in relief_stop.unloads:
+        onboard.pop(ref.cargo_line_id, None)
+    onboard_after = sum(onboard.values())
+    assert onboard_after < threshold_scu, (
+        f"After relief stop, onboard={onboard_after} SCU should be "
+        f"below 75% of {total} ({threshold_scu})."
+    )
+
+
+def test_auto_relief_idempotent(controller):
+    """Recomputing the same workday twice must not stack relief stops.
+
+    The helper strips prior auto-relief stops before re-simulating, so
+    the second pass should produce a route the same length as the
+    first.
+    """
+    wid = controller.start_workday(_seraphim(controller), None, False)
+    _use_hermes(controller, wid)
+    for pickup in (
+        "Yellow Core", "Wide Forest", "Lively Pathway", "Port Tressler",
+    ):
+        controller.add_contract({
+            "pickup_station": pickup,
+            "max_pallet_size": 8,
+            "deliveries": [
+                {"destination": "Long Forest", "commodity": "Tungsten",
+                 "scu": 80},
+            ],
+        })
+
+    first = run_recompute(wid, controller.conn)
+    first_len = len(first.route_stops)
+    first_relief = sum(
+        1 for s in first.route_stops
+        if s.action == "Auto Unload (75%+ relief)"
+    )
+
+    second = run_recompute(wid, controller.conn)
+    second_len = len(second.route_stops)
+    second_relief = sum(
+        1 for s in second.route_stops
+        if s.action == "Auto Unload (75%+ relief)"
+    )
+
+    assert first_len == second_len, (
+        f"Route grew on recompute: {first_len} -> {second_len}. "
+        f"Relief stops should be idempotent."
+    )
+    assert first_relief == second_relief and first_relief > 0, (
+        f"Relief-stop count changed on recompute: {first_relief} -> "
+        f"{second_relief}."
     )

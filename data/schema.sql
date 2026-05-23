@@ -246,6 +246,21 @@ CREATE TABLE validation_log (
     cargo_line_id   INTEGER REFERENCES cargo_lines(id) ON DELETE SET NULL
 );
 
+-- User-injected route stops. Lets the operator force an extra stop
+-- (e.g. an unscheduled "go to Baijini and unload") between scheduled
+-- contract stops without rewriting the contract list. The route
+-- builder reads these after computing the contract-driven stop list
+-- and splices them in at the requested positions.
+CREATE TABLE manual_stops (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    workday_id      INTEGER NOT NULL REFERENCES workdays(id) ON DELETE CASCADE,
+    station_id      INTEGER NOT NULL REFERENCES stations(id),
+    after_station_id INTEGER REFERENCES stations(id),   -- insert AFTER this scheduled station; NULL = insert at start
+    sort_order      INTEGER NOT NULL DEFAULT 0,
+    notes           TEXT
+);
+CREATE INDEX idx_manual_stops_workday ON manual_stops(workday_id);
+
 -- =========================================================
 -- Settings (key/value)
 -- =========================================================

@@ -1390,6 +1390,72 @@ class AppController(QObject):
         self.contracts_changed.emit()
         self.route_changed.emit()
 
+    # ── manual stops ────────────────────────────────────────────────────
+
+    def add_manual_stop(
+        self, station_id: int, after_station_id: int | None = None,
+    ) -> int:
+        """Insert a user-defined extra stop into the active workday's route.
+
+        *after_station_id* names the scheduled station the manual stop
+        should follow. Passing ``None`` inserts at the very start of
+        the route. Returns the new manual_stops.id.
+        """
+        self._require_workday()
+        cur = self.conn.execute(
+            """
+            INSERT INTO manual_stops
+                (workday_id, station_id, after_station_id, sort_order, notes)
+            VALUES (
+                ?, ?, ?,
+                COALESCE(
+                    (SELECT MAX(sort_order) + 1 FROM manual_stops
+                     WHERE workday_id = ?),
+                    0
+                ),
+                NULL
+            )
+            """,
+            (self.workday_id, station_id, after_station_id, self.workday_id),
+        )
+        ms_id = cur.lastrowid
+        self.conn.commit()
+        self._set_dirty()
+        self.route_changed.emit()
+        self.contracts_changed.emit()
+        return ms_id
+
+    def remove_manual_stop(self, manual_stop_id: int) -> None:
+        """Delete a manual stop from the active workday's route."""
+        self._require_workday()
+        self.conn.execute(
+            "DELETE FROM manual_stops WHERE id = ? AND workday_id = ?",
+            (manual_stop_id, self.workday_id),
+        )
+        self.conn.commit()
+        self._set_dirty()
+        self.route_changed.emit()
+        self.contracts_changed.emit()
+
+    def list_manual_stops(self) -> list[sqlite3.Row]:
+        """Manual stops for the active workday with joined station info."""
+        if not self.workday_id:
+            return []
+        return self.conn.execute(
+            """
+            SELECT ms.id, ms.station_id, ms.after_station_id, ms.sort_order,
+                   ms.notes,
+                   s.name AS station_name,
+                   ap.name AS after_station_name
+            FROM manual_stops ms
+            JOIN stations s ON s.id = ms.station_id
+            LEFT JOIN stations ap ON ap.id = ms.after_station_id
+            WHERE ms.workday_id = ?
+            ORDER BY ms.sort_order, ms.id
+            """,
+            (self.workday_id,),
+        ).fetchall()
+
     # ── voice tool dispatch ──────────────────────────────────────────────
 
     def dispatch_tool(self, tool_name: str, args: dict) -> str:

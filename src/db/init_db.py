@@ -144,6 +144,29 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE zone_assignments ADD COLUMN pin_zones TEXT")
         conn.commit()
 
+    # User-injected route stops. Operator-forced extras between
+    # contract stops (e.g. "fly to Baijini and unload"); the route
+    # builder splices them in after the contract-driven stops are
+    # assembled. Idempotent: CREATE-IF-NOT-EXISTS is a no-op once
+    # the table has been added.
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS manual_stops (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            workday_id      INTEGER NOT NULL REFERENCES workdays(id) ON DELETE CASCADE,
+            station_id      INTEGER NOT NULL REFERENCES stations(id),
+            after_station_id INTEGER REFERENCES stations(id),
+            sort_order      INTEGER NOT NULL DEFAULT 0,
+            notes           TEXT
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_manual_stops_workday "
+        "ON manual_stops(workday_id)"
+    )
+    conn.commit()
+
     from .seed import load_stations, sync_ships
 
     load_stations(conn)
