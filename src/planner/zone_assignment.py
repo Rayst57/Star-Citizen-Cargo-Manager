@@ -1041,8 +1041,14 @@ def build_zone_plan(
         (workday_id,),
     ).fetchall()
     pinned_pieces: dict[int, list[tuple[str, list[int] | None]]] = {}
+    # Cargo line ids that have a surviving is_manual_override=1
+    # zone_assignments row — these must NOT get an auto row written by
+    # _persist_assignments (would create a duplicate). Pallet-lock-only
+    # cargo lines DON'T have such a row, so they should still get one.
+    manual_pinned_cl_ids: set[int] = set()
     for r in manual_rows:
         cl_id = r["cargo_line_id"]
+        manual_pinned_cl_ids.add(cl_id)
         bucket = pinned_pieces.setdefault(cl_id, [])
         if r["pin_zones"]:
             try:
@@ -1054,6 +1060,38 @@ def build_zone_plan(
         else:
             # Legacy whole-line pin — no per-zone size data.
             bucket.append((r["primary_zone_label"], None))
+
+    # Per-pallet locks. A lock fixes a single pallet of a cargo line to
+    # a specific cube in a specific zone. We carry the (zone, x, y, z)
+    # quad here for the renderer; for the planner's placement decision
+    # only the zone matters. Convert each lock into an additional
+    # pinned_pieces entry so the carve-and-pin logic in _load_at_stop
+    # handles it just like a partial pin. A line with ANY pallet
+    # locked is also tagged in locked_cl_ids so _consolidate /
+    # _drain_to_lower_priority leave it alone (conservative: don't
+    # second-guess user-placed cargo).
+    lock_rows = conn.execute(
+        """
+        SELECT pl.cargo_line_id, pl.pallet_index,
+               pl.zone_label, pl.cube_x, pl.cube_y, pl.cube_z
+        FROM pallet_locks pl
+        JOIN cargo_lines cl ON cl.id = pl.cargo_line_id
+        JOIN contracts   ct ON ct.id = cl.contract_id
+        WHERE pl.workday_id = ?
+          AND ct.status != 'complete'
+        ORDER BY pl.cargo_line_id, pl.pallet_index
+        """,
+        (workday_id,),
+    ).fetchall()
+    # Keep a structure keyed by cargo_line_id for callers/tests.
+    pallet_locks: dict[int, list[tuple[int, str, int, int, int]]] = {}
+    locked_cl_ids: set[int] = set()
+    for r in lock_rows:
+        pallet_locks.setdefault(r["cargo_line_id"], []).append(
+            (r["pallet_index"], r["zone_label"],
+             r["cube_x"], r["cube_y"], r["cube_z"])
+        )
+        locked_cl_ids.add(r["cargo_line_id"])
 
     # Build cargo meta for every cargo line in the workday.
     cargo_rows = conn.execute(
@@ -1098,6 +1136,20 @@ def build_zone_plan(
         _log.info("zone_assignment: no cargo lines to place")
         conn.commit()
         return SimulationResult(snapshots={}, transload_moves={})
+
+    # Merge pallet_locks into pinned_pieces. Each lock turns into a
+    # single-pallet pin piece with sizes=[size_at_index]. Use the
+    # cargo line's deterministic palletize() output to translate
+    # pallet_index → size. Locks with out-of-range indices are
+    # silently dropped (defensive; the controller already validates).
+    for cl_id, locks in pallet_locks.items():
+        c = cargo_meta.get(cl_id)
+        if c is None:
+            continue
+        bucket = pinned_pieces.setdefault(cl_id, [])
+        for (pidx, zone_label, _x, _y, _z) in locks:
+            if 0 <= pidx < len(c.pallet_sizes):
+                bucket.append((zone_label, [c.pallet_sizes[pidx]]))
 
     total_cargo = sum(line_total_scu.values())
     _log.info(
@@ -1219,7 +1271,7 @@ def build_zone_plan(
     _persist_assignments(
         workday_id, initial_zone, cargo_meta,
         line_total_scu, placed_total_scu,
-        set(pinned_pieces.keys()), conn,
+        manual_pinned_cl_ids, conn,
     )
 
     _log.info("zone_assignment: %d cargo line(s) placed, %d transload moves",

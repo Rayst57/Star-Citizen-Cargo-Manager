@@ -764,3 +764,202 @@ def test_auto_relief_idempotent(controller):
         f"Relief-stop count changed on recompute: {first_relief} -> "
         f"{second_relief}."
     )
+
+
+# ── Per-pallet locks ────────────────────────────────────────────────────
+
+def _cargo_line_id(controller, wid: int) -> int:
+    return controller.conn.execute(
+        "SELECT cl.id FROM cargo_lines cl "
+        "JOIN contracts ct ON ct.id = cl.contract_id "
+        "WHERE ct.workday_id = ? LIMIT 1",
+        (wid,),
+    ).fetchone()["id"]
+
+
+def test_locked_pallet_stays_at_pinned_position(controller):
+    """Locking pallet 0 of a cargo line to a specific (zone, x, y, z)
+    should make the corresponding PalletRect render at exactly that
+    position after recompute.
+    """
+    from src.planner.recompute import recompute as run_recompute
+
+    wid = controller.start_workday(_seraphim(controller), None, False)
+    controller.add_contract({
+        "pickup_station": "Seraphim Station",
+        "max_pallet_size": 8,
+        "deliveries": [
+            {"destination": "Long Forest", "commodity": "Tungsten",
+             "scu": 32},
+        ],
+    })
+    result = run_recompute(wid, controller.conn)
+    controller._last_result = result
+    assign_destination_colors(wid, controller.conn)
+
+    cl_id = _cargo_line_id(controller, wid)
+
+    # Pick the first stop with this line onboard.
+    chosen_stop = None
+    for s in result.route_stops:
+        if any(e.cargo_line_id == cl_id
+               for e in result.snapshots.get(s.stop_number, [])):
+            chosen_stop = s.stop_number
+            break
+    assert chosen_stop is not None
+
+    # Verify the line gets at least one rendered pallet pre-lock so the
+    # rest of the test has something to compare against. Capture the
+    # zone it lands in.
+    pre_rects = controller.get_pallet_rects(stop_number=chosen_stop)
+    pre_pallets = [r for r in pre_rects if r.cargo_line_id == cl_id]
+    assert pre_pallets, "Cargo line should have rendered pallets pre-lock"
+    target_zone = pre_pallets[0].zone_label
+
+    # Lock pallet 0 to the (0,0,0) corner of the chosen zone (which is
+    # always a valid origin for an 8-SCU 2x2x2 pad on the C2 zones).
+    controller.lock_pallet(cl_id, 0, target_zone, 0, 0, 0)
+    result2 = run_recompute(wid, controller.conn)
+    controller._last_result = result2
+
+    post_rects = controller.get_pallet_rects(stop_number=chosen_stop)
+    locked_rects = [
+        r for r in post_rects
+        if r.cargo_line_id == cl_id and r.pallet_index == 0
+    ]
+    assert locked_rects, (
+        "Expected exactly one rendered pallet for pallet_index=0 "
+        f"after the lock. Got rects: {post_rects}"
+    )
+    locked = locked_rects[0]
+    # The renderer adds zone.cube_offset_x/cube_offset_y to the cube
+    # coordinates, so we have to add the offset to the expected
+    # position for the comparison.
+    zone_row = controller.conn.execute(
+        "SELECT z.cube_offset_x, z.cube_offset_y FROM ship_zones z "
+        "JOIN workdays w ON w.ship_id = z.ship_id "
+        "WHERE w.id = ? AND z.zone_label = ?",
+        (wid, target_zone),
+    ).fetchone()
+    expected_x = zone_row["cube_offset_x"] + 0
+    expected_y = zone_row["cube_offset_y"] + 0
+    assert locked.zone_label == target_zone
+    assert (locked.cell_x, locked.cell_y, locked.cell_z) == (
+        expected_x, expected_y, 0
+    ), (
+        f"Locked pallet rendered at ({locked.cell_x},{locked.cell_y},"
+        f"{locked.cell_z}); expected ({expected_x},{expected_y},0)."
+    )
+
+
+def test_unlocked_pallets_pack_around_locked(controller):
+    """When a pallet is locked at the (0,0,0) corner of a zone, the
+    other auto-placed pallets in that zone must not overlap the
+    locked cube.
+    """
+    from src.planner.recompute import recompute as run_recompute
+
+    wid = controller.start_workday(_seraphim(controller), None, False)
+    # 64 SCU = eight 8-SCU pads — enough to populate a 72-SCU zone.
+    controller.add_contract({
+        "pickup_station": "Seraphim Station",
+        "max_pallet_size": 8,
+        "deliveries": [
+            {"destination": "Long Forest", "commodity": "Tungsten",
+             "scu": 64},
+        ],
+    })
+    result = run_recompute(wid, controller.conn)
+    controller._last_result = result
+    assign_destination_colors(wid, controller.conn)
+
+    cl_id = _cargo_line_id(controller, wid)
+    chosen_stop = None
+    for s in result.route_stops:
+        if any(e.cargo_line_id == cl_id
+               for e in result.snapshots.get(s.stop_number, [])):
+            chosen_stop = s.stop_number
+            break
+    assert chosen_stop is not None
+
+    pre_rects = controller.get_pallet_rects(stop_number=chosen_stop)
+    pre_pallets = [r for r in pre_rects if r.cargo_line_id == cl_id]
+    assert pre_pallets, "Cargo line should have rendered pallets pre-lock"
+    target_zone = pre_pallets[0].zone_label
+
+    # Lock pallet 0 at the corner.
+    controller.lock_pallet(cl_id, 0, target_zone, 0, 0, 0)
+    result2 = run_recompute(wid, controller.conn)
+    controller._last_result = result2
+
+    post_rects = controller.get_pallet_rects(stop_number=chosen_stop)
+    zone_row = controller.conn.execute(
+        "SELECT z.cube_offset_x, z.cube_offset_y FROM ship_zones z "
+        "JOIN workdays w ON w.ship_id = z.ship_id "
+        "WHERE w.id = ? AND z.zone_label = ?",
+        (wid, target_zone),
+    ).fetchone()
+    locked_cube = (
+        target_zone,
+        zone_row["cube_offset_x"],
+        zone_row["cube_offset_y"],
+        0,
+    )
+
+    locked = [
+        r for r in post_rects
+        if r.cargo_line_id == cl_id and r.pallet_index == 0
+    ]
+    assert locked, "Locked pallet should render"
+    lr = locked[0]
+    assert (lr.zone_label, lr.cell_x, lr.cell_y, lr.cell_z) == locked_cube
+
+    # No OTHER rect in the same zone should cover the locked cube.
+    for r in post_rects:
+        if r.cargo_line_id == cl_id and r.pallet_index == 0:
+            continue
+        if r.zone_label != target_zone:
+            continue
+        for dx in range(r.cell_w):
+            for dy in range(r.cell_l):
+                for dz in range(r.cell_h):
+                    assert (r.zone_label,
+                            r.cell_x + dx, r.cell_y + dy,
+                            r.cell_z + dz) != locked_cube, (
+                        f"Auto-placed pallet (cl#{r.cargo_line_id}, "
+                        f"idx={r.pallet_index}, size={r.pallet_size}) "
+                        f"overlaps locked cube {locked_cube}"
+                    )
+
+
+def test_lock_validation_rejects_out_of_bounds(controller):
+    """lock_pallet with cube_x outside the zone's width should raise."""
+    from src.app_controller import ToolError
+    from src.planner.recompute import recompute as run_recompute
+
+    wid = controller.start_workday(_seraphim(controller), None, False)
+    controller.add_contract({
+        "pickup_station": "Seraphim Station",
+        "max_pallet_size": 8,
+        "deliveries": [
+            {"destination": "Long Forest", "commodity": "Tungsten",
+             "scu": 8},
+        ],
+    })
+    run_recompute(wid, controller.conn)
+
+    cl_id = _cargo_line_id(controller, wid)
+
+    # Pick any C2 zone and look up its width; cube_x = width is OOB.
+    zone_row = controller.conn.execute(
+        "SELECT z.zone_label, z.width_units FROM ship_zones z "
+        "JOIN workdays w ON w.ship_id = z.ship_id "
+        "WHERE w.id = ? LIMIT 1",
+        (wid,),
+    ).fetchone()
+    bad_x = zone_row["width_units"]  # one past the last valid index
+
+    with pytest.raises(ToolError):
+        controller.lock_pallet(
+            cl_id, 0, zone_row["zone_label"], bad_x, 0, 0,
+        )

@@ -167,6 +167,31 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
     )
     conn.commit()
 
+    # Per-pallet locks: pin a single pallet of a cargo line to a
+    # specific cube in a zone. Identity is (cargo_line_id,
+    # pallet_index) where pallet_index is the 0-based position in the
+    # deterministic palletize(...) output. Idempotent CREATE IF NOT
+    # EXISTS so re-launches are a no-op.
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS pallet_locks (
+            workday_id      INTEGER NOT NULL REFERENCES workdays(id) ON DELETE CASCADE,
+            cargo_line_id   INTEGER NOT NULL REFERENCES cargo_lines(id) ON DELETE CASCADE,
+            pallet_index    INTEGER NOT NULL,
+            zone_label      TEXT    NOT NULL,
+            cube_x          INTEGER NOT NULL,
+            cube_y          INTEGER NOT NULL,
+            cube_z          INTEGER NOT NULL,
+            PRIMARY KEY (workday_id, cargo_line_id, pallet_index)
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_pallet_locks_workday "
+        "ON pallet_locks(workday_id)"
+    )
+    conn.commit()
+
     from .seed import load_stations, sync_ships
 
     load_stations(conn)

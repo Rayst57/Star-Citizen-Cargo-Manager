@@ -222,6 +222,18 @@ CREATE TABLE zone_assignments (
     notes               TEXT
 );
 
+CREATE TABLE pallet_locks (
+    workday_id      INTEGER NOT NULL REFERENCES workdays(id) ON DELETE CASCADE,
+    cargo_line_id   INTEGER NOT NULL REFERENCES cargo_lines(id) ON DELETE CASCADE,
+    pallet_index    INTEGER NOT NULL,
+    zone_label      TEXT    NOT NULL,
+    cube_x          INTEGER NOT NULL,
+    cube_y          INTEGER NOT NULL,
+    cube_z          INTEGER NOT NULL,
+    PRIMARY KEY (workday_id, cargo_line_id, pallet_index)
+);
+CREATE INDEX idx_pallet_locks_workday ON pallet_locks(workday_id);
+
 CREATE TABLE pallet_conflicts (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     workday_id          INTEGER NOT NULL REFERENCES workdays(id) ON DELETE CASCADE,

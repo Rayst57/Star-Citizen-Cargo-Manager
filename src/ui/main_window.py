@@ -13,7 +13,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QFileDialog, QHBoxLayout, QLabel, QMainWindow, QMessageBox,
-    QStatusBar, QVBoxLayout, QWidget,
+    QPushButton, QStatusBar, QVBoxLayout, QWidget,
 )
 
 from ..app_controller import AppController, ToolError
@@ -25,6 +25,7 @@ from .dialogs.zone_detail import ZoneDetailDialog
 from .panels.bay_canvas import BayCanvas
 from .panels.contracts_panel import ContractsPanel
 from .panels.route_panel import RoutePanel
+from .widgets.iso_bay_canvas import open_iso_view
 from .widgets.mobiglass_corners import MobiglassCornerOverlay
 from .widgets.recompute_banner import RecomputeBanner
 from .widgets.status_bar import StatusBarWidget
@@ -165,8 +166,21 @@ class MainWindow(QMainWindow):
         row.addWidget(brand)
         row.addStretch(1)
 
+        # Iso "3D" view — birds-eye axonometric of the cargo bay with
+        # per-pallet drag-to-lock. Lives in a separate dialog so the
+        # tri-panel main view stays uncluttered.
+        iso_btn = QPushButton("Open 3D View")
+        iso_btn.setProperty("flat", True)
+        iso_btn.clicked.connect(self._open_iso_view)
+        row.addWidget(iso_btn)
+
         MobiglassCornerOverlay(bar)
         return bar
+
+    def _open_iso_view(self) -> None:
+        # Keep a reference so the dialog isn't garbage-collected as soon
+        # as the method returns. open_iso_view() is modeless.
+        self._iso_dlg = open_iso_view(self.controller, parent=self)
 
     # ── handlers ───────────────────────────────────────────────────────
 

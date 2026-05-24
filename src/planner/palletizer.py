@@ -63,3 +63,15 @@ def palletize_summary(pallets: list[int]) -> str:
 def pallet_sizes_set(pallets: list[int]) -> set[int]:
     """Unique set of pallet sizes present in a breakdown."""
     return set(pallets)
+
+
+def pallet_label(cargo_line_id: int, pallet_index: int) -> str:
+    """Stable short label for a single pallet — used in logs and PDFs.
+
+    A pallet's stable identity is (cargo_line_id, pallet_index), where
+    pallet_index is the 0-based position in the deterministic
+    ``palletize(cl.scu_amount, cl.max_pallet_size)`` output. So a
+    31-SCU line palletized to ``[8, 8, 8, 4, 2, 1]`` has pallets
+    0..5; pallet 3 is the 4-SCU pad.
+    """
+    return f"cl#{cargo_line_id}:p{pallet_index}"
