@@ -50,11 +50,19 @@ def place_in_grid(
     stack_limit: int,
     *,
     from_far_end: bool = False,
+    reserved_cubes: set[tuple[int, int, int]] | None = None,
 ) -> tuple[int, int, int] | None:
     """Best-fit placement requiring uniform support.
 
     Returns (x, y, z) of the spot or None. Mutates *grid* in-place
     when a spot is found.
+
+    ``reserved_cubes`` is an optional set of (x, y, z) cubes that
+    are pre-occupied by locked pallets. Any candidate footprint that
+    would overlap one of these cubes (at any of the z levels the
+    pallet would occupy) is rejected. The grid's height column is
+    still trusted as the single uniform-support level; reserved cubes
+    are an EXTRA exclusion on top.
     """
     candidates: list[tuple[int, int, int]] = []
     for y in range(zone_l - l + 1):
@@ -69,6 +77,20 @@ def place_in_grid(
             z = heights[0]
             if z + h > stack_limit:
                 continue
+            if reserved_cubes:
+                blocked = False
+                for dx in range(w):
+                    for dy in range(l):
+                        for dz in range(h):
+                            if (x + dx, y + dy, z + dz) in reserved_cubes:
+                                blocked = True
+                                break
+                        if blocked:
+                            break
+                    if blocked:
+                        break
+                if blocked:
+                    continue
             candidates.append((y, x, z))
     if not candidates:
         return None
@@ -91,6 +113,7 @@ def _try_place(
     zone_w: int, zone_l: int, zone_h: int,
     *,
     from_far: bool,
+    reserved_cubes: set[tuple[int, int, int]] | None = None,
 ) -> tuple[int, int, int, int, int, int] | None:
     """Place a single pallet, returning (w, l, h, x, y, z) or None."""
     box = box_for(size)
@@ -99,6 +122,7 @@ def _try_place(
         w, l = l, w
     spot = place_in_grid(
         grid, w, l, h, zone_w, zone_l, zone_h, from_far_end=from_far,
+        reserved_cubes=reserved_cubes,
     )
     if spot is None:
         return None
@@ -112,6 +136,8 @@ def try_pack_one_pass(
     keyed_small: list[tuple[Any, int]],
     *,
     smalls_first: bool = False,
+    reserved_cubes: set[tuple[int, int, int]] | None = None,
+    initial_grid: list[list[int]] | None = None,
 ) -> tuple[list[tuple], list[tuple[Any, int]]]:
     """Run one packing pass.
 
@@ -124,8 +150,14 @@ def try_pack_one_pass(
     pallets before the large ones, useful for awkward zone lengths
     where smalls at the ramp open up clean rows for larges from the
     far end.
+
+    ``reserved_cubes`` and ``initial_grid`` let the caller stamp in
+    locked pallets that the auto-pack must respect.
     """
-    grid = [[0] * zone_l for _ in range(zone_w)]
+    if initial_grid is not None:
+        grid = [list(col) for col in initial_grid]
+    else:
+        grid = [[0] * zone_l for _ in range(zone_w)]
     placements: list = []
     overflow: list[tuple[Any, int]] = []
 
@@ -138,6 +170,7 @@ def try_pack_one_pass(
         for key, size in batch:
             rec = _try_place(
                 grid, size, zone_w, zone_l, zone_h, from_far=from_far,
+                reserved_cubes=reserved_cubes,
             )
             if rec is None:
                 overflow.append((key, size))
@@ -150,12 +183,18 @@ def try_pack_one_pass(
 def best_pack(
     zone_w: int, zone_l: int, zone_h: int,
     keyed_pallets: list[tuple[Any, int]],
+    *,
+    reserved_cubes: set[tuple[int, int, int]] | None = None,
+    initial_grid: list[list[int]] | None = None,
 ) -> tuple[list[tuple], list[tuple[Any, int]]]:
     """Pack *keyed_pallets* using the best of four orderings:
        (large-first vs smalls-first) x (smalls ASC vs DESC).
 
     Returns the (placements, overflow) of the attempt with the
     fewest overflows; ties broken by most placements.
+
+    ``reserved_cubes`` and ``initial_grid`` thread locked-pallet
+    obstacles through to each one-pass attempt.
     """
     keyed_large = sorted(
         [p for p in keyed_pallets if p[1] in LARGE_SIZES],
@@ -167,18 +206,83 @@ def best_pack(
 
     attempts = [
         try_pack_one_pass(
-            zone_w, zone_l, zone_h, keyed_large, small_asc),
-        try_pack_one_pass(
-            zone_w, zone_l, zone_h, keyed_large, small_desc),
-        try_pack_one_pass(
             zone_w, zone_l, zone_h, keyed_large, small_asc,
-            smalls_first=True),
+            reserved_cubes=reserved_cubes, initial_grid=initial_grid),
         try_pack_one_pass(
             zone_w, zone_l, zone_h, keyed_large, small_desc,
-            smalls_first=True),
+            reserved_cubes=reserved_cubes, initial_grid=initial_grid),
+        try_pack_one_pass(
+            zone_w, zone_l, zone_h, keyed_large, small_asc,
+            smalls_first=True,
+            reserved_cubes=reserved_cubes, initial_grid=initial_grid),
+        try_pack_one_pass(
+            zone_w, zone_l, zone_h, keyed_large, small_desc,
+            smalls_first=True,
+            reserved_cubes=reserved_cubes, initial_grid=initial_grid),
     ]
     attempts.sort(key=lambda r: (len(r[1]), -len(r[0])))
     return attempts[0]
+
+
+def pack_with_locks(
+    zone_w: int, zone_l: int, zone_h: int,
+    locked: list[tuple[int, int, int, tuple[int, int, int]]],
+    free_keyed_sizes: list[tuple[Any, int]],
+    *,
+    locked_keys: list[Any] | None = None,
+) -> tuple[list[tuple], list[tuple[Any, int]]]:
+    """Pack *free_keyed_sizes* around fixed *locked* placements.
+
+    ``locked`` is a list of (pallet_w, pallet_l, pallet_h,
+    (cube_x, cube_y, cube_z)) records describing pallets that are
+    FIXED in place (e.g. by a user lock). The auto-packer treats
+    those cubes as occupied and packs everything in ``free_keyed_sizes``
+    around them.
+
+    ``locked_keys`` is an optional parallel list of key values to
+    associate with each locked placement in the returned placements
+    list (so the caller can identify which lock corresponds to which
+    rendered rect). When ``locked_keys`` is shorter than ``locked``,
+    missing positions get ``None``.
+
+    Returns ``(placements, overflow)`` matching ``best_pack``'s
+    signature, where placements is the union of locked + auto-placed.
+    """
+    # Build the seed grid with locked pallets stamped in. Each locked
+    # pallet raises every cube in its footprint up to z + h, matching
+    # the height-column convention place_in_grid expects.
+    grid = [[0] * zone_l for _ in range(zone_w)]
+    reserved: set[tuple[int, int, int]] = set()
+    locked_placements: list[tuple] = []
+    for idx, (lw, ll, lh, (lx, ly, lz)) in enumerate(locked):
+        for dx in range(lw):
+            for dy in range(ll):
+                # The top of this pallet defines the new free-surface
+                # height for the column. Multiple locks stacked in the
+                # same column should use the highest top so subsequent
+                # auto pallets can land on top.
+                top = lz + lh
+                if grid[lx + dx][ly + dy] < top:
+                    grid[lx + dx][ly + dy] = top
+                for dz in range(lh):
+                    reserved.add((lx + dx, ly + dy, lz + dz))
+        key = locked_keys[idx] if (locked_keys and idx < len(locked_keys)) else None
+        # Synthesize a placement record so the caller's downstream
+        # rendering loop sees the locked pallet alongside the auto-
+        # placed ones. The "size" slot is the SCU footprint inferred
+        # by the caller; we don't know it here, so emit the cubic
+        # footprint as 0 if not supplied — callers should pass
+        # locked_keys to attach their own (key, size) data via the
+        # parallel list when they need it. To keep this packer
+        # self-contained, we instead emit (key, None, w, l, h, x, y, z)
+        # and let the caller stitch in the size from its own data.
+        locked_placements.append((key, None, lw, ll, lh, lx, ly, lz))
+
+    auto_placements, overflow = best_pack(
+        zone_w, zone_l, zone_h, free_keyed_sizes,
+        reserved_cubes=reserved, initial_grid=grid,
+    )
+    return locked_placements + auto_placements, overflow
 
 
 # ── Convenience predicates for the planner ──────────────────────────────

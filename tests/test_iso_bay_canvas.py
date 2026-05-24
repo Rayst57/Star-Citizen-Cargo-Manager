@@ -1,0 +1,276 @@
+"""Tests for the isometric 3D-view widget.
+
+Run under ``QT_QPA_PLATFORM=offscreen`` like the other widget tests.
+The tests cover three things:
+    1. Pure-math round-trip of iso_project / iso_unproject_ground.
+    2. The widget instantiates and paints on a tiny workday without
+       raising.
+    3. A synthesised press-drag-release sequence calls
+       ``controller.lock_pallet`` with the expected arguments.
+
+The third test uses a hand-rolled fake controller so it doesn't depend
+on the foundation agent's lock_pallet landing first.
+"""
+
+from __future__ import annotations
+
+import os
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from dataclasses import dataclass, field
+
+import pytest
+
+pytest.importorskip("PySide6")
+
+from PySide6.QtCore import QPoint, QPointF, Qt, QEvent
+from PySide6.QtGui import QMouseEvent, QPixmap
+from PySide6.QtWidgets import QApplication
+
+from src.app_controller import AppController
+from src.db.init_db import initialize_database
+from src.palletizer_color import assign_destination_colors
+from src.planner.recompute import recompute as run_recompute
+from src.ui.widgets.iso_bay_canvas import (
+    IsoBayCanvas, iso_project, iso_unproject_ground,
+)
+
+
+@pytest.fixture(scope="session")
+def qapp():
+    return QApplication.instance() or QApplication([])
+
+
+@pytest.fixture
+def controller(qapp, tmp_path):
+    db_path = tmp_path / "test.db"
+    conn = initialize_database(db_path)
+    return AppController(conn, db_path)
+
+
+def _seraphim(controller) -> int:
+    return controller.conn.execute(
+        "SELECT id FROM stations WHERE name = 'Seraphim Station'"
+    ).fetchone()["id"]
+
+
+def _seed_tiny_workday(controller) -> int:
+    wid = controller.start_workday(_seraphim(controller), None, False)
+    controller.add_contract({
+        "pickup_station": "Yellow Core",
+        "max_pallet_size": 8,
+        "deliveries": [
+            {"destination": "Everus Harbor", "commodity": "Tungsten", "scu": 32},
+        ],
+    })
+    controller.add_contract({
+        "pickup_station": "Yellow Core",
+        "max_pallet_size": 8,
+        "deliveries": [
+            {"destination": "Baijini Point", "commodity": "Tungsten", "scu": 24},
+        ],
+    })
+    result = run_recompute(wid, controller.conn)
+    controller._last_result = result
+    assign_destination_colors(wid, controller.conn)
+    return wid
+
+
+# ── 1. Pure math ──────────────────────────────────────────────────────
+
+def test_iso_projection_round_trip():
+    """Projecting a ground-plane (z=0) cell to screen and reversing
+    must round-trip exactly (within 1 px of float error)."""
+    origin = (400.0, 300.0)
+    cell_w = 22.0
+    cell_h = 18.0
+    for wx, wy in [(0, 0), (1, 0), (0, 1), (3, 5), (10, 2), (7, 9)]:
+        sx, sy = iso_project(wx, wy, 0, *origin, cell_w, cell_h)
+        rx, ry = iso_unproject_ground(sx, sy, *origin, cell_w, cell_h)
+        assert abs(rx - wx) < 1e-6, f"({wx},{wy}) round-trip rx={rx}"
+        assert abs(ry - wy) < 1e-6, f"({wx},{wy}) round-trip ry={ry}"
+
+
+def test_iso_projection_z_goes_up_on_screen():
+    """Higher world_z must give SMALLER screen_y (axis points up)."""
+    origin = (200.0, 200.0)
+    _, sy0 = iso_project(0, 0, 0, *origin)
+    _, sy1 = iso_project(0, 0, 1, *origin)
+    _, sy2 = iso_project(0, 0, 2, *origin)
+    assert sy0 > sy1 > sy2
+
+
+# ── 2. Render ─────────────────────────────────────────────────────────
+
+def test_iso_canvas_renders_without_crashing(controller):
+    _seed_tiny_workday(controller)
+    canvas = IsoBayCanvas(controller)
+    canvas.resize(800, 600)
+    canvas.refresh()
+
+    pm = QPixmap(canvas.size())
+    pm.fill(Qt.GlobalColor.black)
+    canvas.render(pm)
+    # If we get here, no exception was raised during paint.
+    assert not pm.isNull()
+
+
+def test_iso_canvas_empty_workday_no_crash(qapp, tmp_path):
+    db_path = tmp_path / "empty.db"
+    conn = initialize_database(db_path)
+    ctrl = AppController(conn, db_path)
+    canvas = IsoBayCanvas(ctrl)
+    canvas.resize(600, 400)
+    canvas.refresh()
+    pm = QPixmap(canvas.size())
+    pm.fill(Qt.GlobalColor.black)
+    canvas.render(pm)
+    assert not pm.isNull()
+
+
+# ── 3. Drag-and-drop ──────────────────────────────────────────────────
+
+@dataclass
+class _FakeRect:
+    cargo_line_id: int
+    zone_label: str
+    bay: str
+    cell_x: int
+    cell_y: int
+    cell_z: int
+    cell_w: int
+    cell_l: int
+    cell_h: int
+    pallet_size: int = 8
+    color: str = "#3a7bd5"
+    is_conflicted: bool = False
+    label: str = "8"
+    delivery_station_name: str = "Everus Harbor"
+    commodity_name: str = "Tungsten"
+    contract_number: int = 1
+    ship_forward_y: str = "high"
+    conflict_partner_colors: list = field(default_factory=list)
+    pallet_index: int = 0
+
+
+@dataclass
+class _FakeZone:
+    zone_label: str
+    cube_offset_x: int = 0
+    cube_offset_y: int = 0
+    width_units: int = 4
+    length_units: int = 6
+
+
+@dataclass
+class _FakeBay:
+    bay_label: str = "main"
+    width_cells: int = 4
+    length_cells: int = 6
+    scu_capacity: int = 96
+    ship_forward_y: str = "high"
+    ramp_at_top: bool = False
+    ramp_label: str = "rear ramp"
+    zones: list = field(default_factory=list)
+
+
+class _FakeController:
+    """Minimal stand-in that exercises lock_pallet."""
+
+    def __init__(self):
+        self.bay = _FakeBay(zones=[
+            _FakeZone("RM", 0, 0, 4, 6),
+        ])
+        self.rect = _FakeRect(
+            cargo_line_id=42, zone_label="RM", bay="main",
+            cell_x=0, cell_y=0, cell_z=0,
+            cell_w=2, cell_l=2, cell_h=1,
+            pallet_index=3,
+        )
+        self.lock_calls: list[tuple] = []
+        self.unlock_calls: list[tuple] = []
+        self.clear_calls = 0
+
+    def get_bay_layout(self):
+        return [self.bay]
+
+    def get_pallet_rects(self, stop_number=None):
+        return [self.rect]
+
+    def get_last_result(self):
+        return None
+
+    def lock_pallet(self, cargo_line_id, pallet_index, zone, x, y, z):
+        self.lock_calls.append((cargo_line_id, pallet_index, zone, x, y, z))
+
+    def unlock_pallet(self, cargo_line_id, pallet_index):
+        self.unlock_calls.append((cargo_line_id, pallet_index))
+
+    def clear_pallet_locks(self):
+        self.clear_calls += 1
+
+    def list_pallet_locks(self):
+        return []
+
+
+def _make_mouse_event(kind, pos: QPoint) -> QMouseEvent:
+    return QMouseEvent(
+        kind,
+        QPointF(pos),
+        QPointF(pos),
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.LeftButton if kind != QEvent.Type.MouseMove
+        else Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+
+
+def test_drag_drop_calls_lock_pallet(qapp):
+    """Click the pallet at its known projected center, drag to another
+    cell within the same zone, release — controller.lock_pallet must
+    fire with the new (zone, x, y, z) coords."""
+    ctrl = _FakeController()
+    canvas = IsoBayCanvas(ctrl)
+    canvas.resize(800, 600)
+    canvas.refresh()
+    assert canvas._shapes, "geometry should have at least the seeded pallet"
+
+    shape = canvas._shapes[0]
+    # Pick the center of the top face of the only pallet as press pos.
+    cx = sum(pt.x() for pt in shape.top) / 4
+    cy = sum(pt.y() for pt in shape.top) / 4
+    press_pos = QPoint(int(cx), int(cy))
+
+    # Drop on a different ground cell within the same zone (RM is 4x6).
+    # Use the iso projection at (cell 2, cell 3, 0) — well inside the
+    # zone and not under any other pallet.
+    drop_sx, drop_sy = iso_project(
+        2.5, 3.5, 0, canvas._origin.x(), canvas._origin.y(),
+        canvas._cell_w, canvas._cell_h,
+    )
+    drop_pos = QPoint(int(drop_sx), int(drop_sy))
+
+    canvas.mousePressEvent(_make_mouse_event(QEvent.Type.MouseButtonPress, press_pos))
+    assert canvas._drag_shape is not None, "press should pick up pallet"
+
+    canvas.mouseMoveEvent(_make_mouse_event(QEvent.Type.MouseMove, drop_pos))
+    assert canvas._drag_target is not None, "drag move should resolve drop target"
+
+    canvas.mouseReleaseEvent(_make_mouse_event(QEvent.Type.MouseButtonRelease, drop_pos))
+
+    assert len(ctrl.lock_calls) == 1, f"expected one lock call, got {ctrl.lock_calls}"
+    cl_id, p_idx, zone, x, y, z = ctrl.lock_calls[0]
+    assert cl_id == 42
+    assert p_idx == 3
+    assert zone == "RM"
+    # The drop point was (2.5, 3.5) in world coords, so it lands in
+    # local cell (2, 3) at z=0 (no pallets in that column).
+    assert (x, y, z) == (2, 3, 0)
+
+
+def test_clear_locks_button_calls_controller(qapp):
+    ctrl = _FakeController()
+    canvas = IsoBayCanvas(ctrl)
+    canvas.refresh()
+    canvas._on_clear_locks()
+    assert ctrl.clear_calls == 1

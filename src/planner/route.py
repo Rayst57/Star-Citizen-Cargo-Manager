@@ -388,4 +388,259 @@ def build_simple_route(
     for i, st in enumerate(stops):
         st.stop_number = i + 1
 
+    # Splice in any user-injected manual stops. Done last so manual
+    # stops can reference any scheduled station (including
+    # return-visits and final-unloads).
+    _insert_manual_stops(workday_id, conn, stops)
+
+    # Auto-insert relief unload stops whenever the simulated onboard
+    # cargo crosses the configured capacity threshold (default 75%).
+    # Runs AFTER manual stops so user-explicit wishes are honoured
+    # first, then auto-relief is applied to the merged route.
+    stops = _inject_capacity_relief_stops(stops, workday_id, conn)
+
+    return stops
+
+
+def _insert_manual_stops(
+    workday_id: int,
+    conn: sqlite3.Connection,
+    stops: list[RouteStop],
+) -> None:
+    """Splice user-defined manual stops into *stops* in place.
+
+    Each manual_stops row says "insert a stop at <station_id> AFTER
+    <after_station_id>" (or at the start when after_station_id is
+    NULL). The new RouteStop has no contract-driven loads/unloads —
+    the temporal zone planner unloads by station id so any onboard
+    cargo bound for the manual station drops naturally.
+
+    When *after_station_id* matches multiple existing stops we pick the
+    LAST occurrence so the manual stop lands after the most recent
+    visit (matches operator intent: "after the next time we hit X").
+    """
+    rows = conn.execute(
+        """
+        SELECT ms.id, ms.station_id, ms.after_station_id, ms.notes,
+               s.name AS station_name
+        FROM manual_stops ms
+        JOIN stations s ON s.id = ms.station_id
+        WHERE ms.workday_id = ?
+        ORDER BY ms.sort_order, ms.id
+        """,
+        (workday_id,),
+    ).fetchall()
+    if not rows:
+        return
+
+    for row in rows:
+        station_id = row["station_id"]
+        after_id = row["after_station_id"]
+        # Find insertion index. NULL after_station_id → insert at start
+        # (index 0). Otherwise find the LAST stop whose station matches.
+        if after_id is None:
+            insert_at = 0
+        else:
+            insert_at = None
+            for idx in range(len(stops) - 1, -1, -1):
+                if stops[idx].station_id == after_id:
+                    insert_at = idx + 1
+                    break
+            if insert_at is None:
+                # Anchor station is no longer in the route; skip rather
+                # than silently dropping at an arbitrary position.
+                _log.warning(
+                    "manual stop %d: after_station_id=%s no longer in "
+                    "route, skipping insertion of station %d (%s)",
+                    row["id"], after_id, station_id, row["station_name"],
+                )
+                continue
+
+        manual = RouteStop(
+            stop_number=0,  # renumbered below
+            station_id=station_id,
+            station_name=row["station_name"],
+            action="Manual Stop",
+            loads=[],
+            unloads=[],
+            notes=row["notes"] or "Manual stop added by operator",
+        )
+        stops.insert(insert_at, manual)
+        _log.info(
+            "manual stop %d: inserted '%s' at position %d (after station=%s)",
+            row["id"], row["station_name"], insert_at + 1, after_id,
+        )
+
+    # Renumber so stop_number == position in the list.
+    for i, st in enumerate(stops):
+        st.stop_number = i + 1
+
+
+_AUTO_RELIEF_ACTION = "Auto Unload (75%+ relief)"
+
+
+def _inject_capacity_relief_stops(
+    stops: list[RouteStop],
+    workday_id: int,
+    conn: sqlite3.Connection,
+    threshold: float | None = None,
+) -> list[RouteStop]:
+    """Splice "relief" unload stops whenever onboard cargo crosses *threshold*.
+
+    Walks the route stop-by-stop tracking what's onboard. When the
+    onboard total after a stop hits ``threshold * ship.total_scu`` and
+    the NEXT planned stop wouldn't already bring it back below, we
+    insert a new RouteStop right after the offender that unloads
+    everything currently bound for the destination with the most cargo
+    onboard.
+
+    The function is idempotent — existing relief stops (action
+    ``"Auto Unload (75%+ relief)"``) are filtered out before the
+    simulation begins so re-running produces the same output.
+    """
+    if not stops:
+        return stops
+
+    # Idempotency: strip any prior auto-relief stops so we recompute
+    # from a clean baseline. Manual stops and contract-driven stops
+    # are preserved.
+    stops = [s for s in stops if s.action != _AUTO_RELIEF_ACTION]
+
+    ship = conn.execute(
+        "SELECT s.total_scu FROM ships s "
+        "JOIN workdays w ON w.ship_id = s.id WHERE w.id = ?",
+        (workday_id,),
+    ).fetchone()
+    if not ship or not ship["total_scu"]:
+        return stops
+    total_scu = int(ship["total_scu"])
+
+    # Resolve threshold — caller-supplied wins, else settings, else 0.75.
+    if threshold is None:
+        try:
+            from ..settings import AppSettings
+            threshold = float(AppSettings(conn).get("auto_relief_threshold"))
+        except Exception:
+            threshold = 0.75
+    capacity_limit = threshold * total_scu
+
+    # Helper: simulate the running onboard state through *stops*,
+    # tracking per-destination CargoLineRef lists. Returns a list of
+    # (onboard_after, per_dest_map_after_stop, per_dest_name_after_stop).
+    def _simulate(seq: list[RouteStop]) -> list[tuple[int, dict[int, list[CargoLineRef]], dict[int, str]]]:
+        onboard_by_dest: dict[int, list[CargoLineRef]] = {}
+        name_by_dest: dict[int, str] = {}
+        trace: list[tuple[int, dict[int, list[CargoLineRef]], dict[int, str]]] = []
+        for st in seq:
+            for ref in st.loads:
+                # Each ref's "destination" is the station where it
+                # eventually unloads. We don't store that on the ref
+                # itself, so we infer it from the route: it's the
+                # station_id of the stop where this cargo_line_id is
+                # listed under unloads. Pre-build a lookup once outside.
+                onboard_by_dest.setdefault(_dest_of_cargo[ref.cargo_line_id], []).append(ref)
+                name_by_dest[_dest_of_cargo[ref.cargo_line_id]] = _dest_name_of_cargo[ref.cargo_line_id]
+            # Remove anything that this stop is unloading.
+            for ref in st.unloads:
+                dest = _dest_of_cargo.get(ref.cargo_line_id)
+                if dest is None or dest not in onboard_by_dest:
+                    continue
+                onboard_by_dest[dest] = [
+                    r for r in onboard_by_dest[dest]
+                    if r.cargo_line_id != ref.cargo_line_id
+                ]
+                if not onboard_by_dest[dest]:
+                    del onboard_by_dest[dest]
+            onboard_scu = sum(
+                r.scu_amount for refs in onboard_by_dest.values() for r in refs
+            )
+            # Snapshot copies so the trace doesn't see future mutations.
+            trace.append((
+                onboard_scu,
+                {d: list(refs) for d, refs in onboard_by_dest.items()},
+                dict(name_by_dest),
+            ))
+        return trace
+
+    def _build_dest_lookups(seq: list[RouteStop]) -> tuple[dict[int, int], dict[int, str]]:
+        """Pre-compute cargo_line_id → (delivery_station_id, name)."""
+        dest_of: dict[int, int] = {}
+        name_of: dict[int, str] = {}
+        for st in seq:
+            for ref in st.unloads:
+                # First time we see this cargo line being unloaded,
+                # remember WHERE it's being delivered.
+                if ref.cargo_line_id not in dest_of:
+                    dest_of[ref.cargo_line_id] = st.station_id
+                    name_of[ref.cargo_line_id] = st.station_name
+        return dest_of, name_of
+
+    # Iterate: find the FIRST over-threshold stop, inject relief there,
+    # re-simulate, repeat. A `seen_anchors` set prevents pathological
+    # infinite loops (shouldn't happen since each relief unloads ≥1
+    # SCU, but belt-and-braces).
+    max_iterations = len(stops) * 2 + 4
+    for _ in range(max_iterations):
+        _dest_of_cargo, _dest_name_of_cargo = _build_dest_lookups(stops)
+        trace = _simulate(stops)
+
+        injected_at: int | None = None
+        for idx, (onboard_scu, onboard_map, name_map) in enumerate(trace):
+            if onboard_scu < capacity_limit:
+                continue
+            # Skip if the NEXT planned stop already drops us below
+            # the threshold on its own.
+            if idx + 1 < len(trace):
+                next_onboard_scu = trace[idx + 1][0]
+                if next_onboard_scu < capacity_limit:
+                    continue
+            # Pick the destination with the most onboard SCU.
+            best_dest = max(
+                onboard_map.keys(),
+                key=lambda d: sum(r.scu_amount for r in onboard_map[d]),
+            )
+            refs = list(onboard_map[best_dest])
+            relief = RouteStop(
+                stop_number=0,  # renumbered below
+                station_id=best_dest,
+                station_name=name_map[best_dest],
+                action=_AUTO_RELIEF_ACTION,
+                loads=[],
+                unloads=refs,
+                notes=(
+                    f"Auto relief: onboard {onboard_scu}/{total_scu} SCU "
+                    f"({onboard_scu / total_scu:.0%}) crossed "
+                    f"{threshold:.0%} threshold; unloading "
+                    f"{sum(r.scu_amount for r in refs)} SCU bound for "
+                    f"{name_map[best_dest]}."
+                ),
+            )
+            # When the same cargo line is delivered later in the
+            # planned route, remove it from that planned unload so we
+            # don't double-unload (the SCU has already left the ship).
+            relief_ids = {r.cargo_line_id for r in refs}
+            for st in stops[idx + 1:]:
+                if not st.unloads:
+                    continue
+                st.unloads = [
+                    u for u in st.unloads if u.cargo_line_id not in relief_ids
+                ]
+            stops.insert(idx + 1, relief)
+            injected_at = idx + 1
+            _log.info(
+                "auto-relief: onboard=%d/%d (%.0f%%) at stop %d (%s); "
+                "injected unload at %s for %d SCU.",
+                onboard_scu, total_scu, 100 * onboard_scu / total_scu,
+                idx + 1, stops[idx].station_name,
+                name_map[best_dest],
+                sum(r.scu_amount for r in refs),
+            )
+            break
+
+        if injected_at is None:
+            break
+
+    # Renumber so stop_number is contiguous 1..N.
+    for i, st in enumerate(stops):
+        st.stop_number = i + 1
     return stops

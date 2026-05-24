@@ -42,6 +42,11 @@ DEFAULTS: dict[str, str] = {
     # ever regresses; the planner will fall back to the legacy
     # strict-exclusion / consolidation logic.
     "strict_pallet_conflict_mode": "0",
+    # Fraction of ship capacity at which the route planner injects an
+    # automatic relief unload stop (handbook §"75% auto-routing").
+    # Clamped to [0.5, 0.95] at read time so a bogus user value can't
+    # disable the feature outright or trigger it on every load.
+    "auto_relief_threshold": "0.75",
 }
 
 
@@ -52,6 +57,14 @@ def _coerce(key: str, raw: str) -> Any:
             return float(raw)
         except (TypeError, ValueError):
             return float(DEFAULTS[key])
+    if key == "auto_relief_threshold":
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            value = float(DEFAULTS[key])
+        # Clamp to a sensible range so misconfiguration can't break the
+        # planner (≥0.95 effectively disables it, <0.5 spams stops).
+        return max(0.5, min(0.95, value))
     if key in {"noise_suppression", "tts_enabled", "use_realtime_api",
                "always_on_top", "strict_pallet_conflict_mode"}:
         return raw not in ("", "0", "false", "False")

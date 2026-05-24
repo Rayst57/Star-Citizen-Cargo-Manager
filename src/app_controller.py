@@ -22,7 +22,7 @@ from PySide6.QtCore import QObject, QThread, Signal
 
 from .planner.canonicalize import canonical_commodity, canonical_station
 from .planner.conflicts import ConflictGroup
-from .planner.physical_packer import best_pack
+from .planner.physical_packer import best_pack, box_for, pack_with_locks
 from .planner.recompute import RecomputeResult, recompute as run_recompute
 from .planner.route import RouteStop
 from .palletizer_color import assign_destination_colors
@@ -147,6 +147,11 @@ class PalletRect:
     delivery_station_name: str
     commodity_name: str
     contract_number: int
+    # 0-based position in the cargo line's deterministic palletize()
+    # output. Combined with cargo_line_id this is the pallet's stable
+    # identity — used by the UI to address individual pallets (e.g.
+    # to call controller.lock_pallet(...) from a 3D bird's-eye view).
+    pallet_index: int = 0
     # 'high' (no flip) or 'low' (flip on screen — F-bay style). The
     # renderer combines this with the bay's hardcoded length to mirror
     # pallet Y positions when ship-forward is at low local-Y.
@@ -740,6 +745,24 @@ class AppController(QObject):
                 for cl_id in d.cargo_line_ids:
                     cl_conflict_info[cl_id] = (amb_sizes, partners)
 
+        # Load per-workday pallet locks. Locks are keyed by
+        # (cargo_line_id, pallet_index); each zone uses only the locks
+        # whose zone_label matches.
+        lock_rows = self.conn.execute(
+            """
+            SELECT cargo_line_id, pallet_index, zone_label,
+                   cube_x, cube_y, cube_z
+            FROM pallet_locks
+            WHERE workday_id = ?
+            """,
+            (self.workday_id,),
+        ).fetchall()
+        locks_by_zone: dict[str, dict[tuple[int, int], tuple[int, int, int]]] = {}
+        for r in lock_rows:
+            locks_by_zone.setdefault(r["zone_label"], {})[
+                (r["cargo_line_id"], r["pallet_index"])
+            ] = (r["cube_x"], r["cube_y"], r["cube_z"])
+
         rects: list[PalletRect] = []
 
         # Group entries by zone so we place each zone's contents in a single
@@ -756,15 +779,64 @@ class AppController(QObject):
             zl = zone["length_units"]
             zh = zone["scu_capacity"] // (zw * zl) if zw * zl else 4
 
-            # Build a flat list of (entry, size) pairs across all cargo
-            # lines in this zone; we'll partition into large/small below.
-            placements = []
+            zone_locks = locks_by_zone.get(zone_label, {})
+
+            # Build the (entry, size, pallet_index) keyed list for the
+            # packer. pallet_index is the 0-based position of *this*
+            # pallet within the cargo line's full deterministic
+            # breakdown. We track per-cl_id "consumed" indices so two
+            # entries for the same line (which can happen after splits
+            # are merged into a single snapshot row) don't reuse the
+            # same index.
+            placements: list[tuple] = []  # (key, size) where key=(entry, pallet_index)
+            locked_entries: list[tuple] = []  # (key, size, w, l, h, x, y, z)
+            seen_index_for_cl: dict[int, int] = {}
             for entry in zone_entries:
                 sizes = _parse_breakdown(entry.pallet_breakdown) or [entry.scu_amount]
-                for size in sizes:
-                    placements.append((entry, size))
+                start_idx = seen_index_for_cl.get(entry.cargo_line_id, 0)
+                for offset, size in enumerate(sizes):
+                    pallet_idx = start_idx + offset
+                    key = (entry, pallet_idx)
+                    lock = zone_locks.get((entry.cargo_line_id, pallet_idx))
+                    if lock is not None:
+                        # Lookup the footprint for the lock.
+                        box = box_for(size)
+                        w, l, h = box["width"], box["length"], box["height"]
+                        if w > zw and box.get("rotatable") and l <= zw:
+                            w, l = l, w
+                        locked_entries.append(
+                            (key, size, w, l, h, lock[0], lock[1], lock[2])
+                        )
+                    else:
+                        placements.append((key, size))
+                seen_index_for_cl[entry.cargo_line_id] = start_idx + len(sizes)
 
-            placement_result, overflow = best_pack(zw, zl, zh, placements)
+            if locked_entries:
+                # Stamp the locked pallets, then pack the rest around them.
+                locked_layout = [
+                    (w, l, h, (x, y, z))
+                    for (_k, _s, w, l, h, x, y, z) in locked_entries
+                ]
+                locked_keys_aligned = [k for (k, *_rest) in locked_entries]
+                combined, overflow = pack_with_locks(
+                    zw, zl, zh, locked_layout, placements,
+                    locked_keys=locked_keys_aligned,
+                )
+                # pack_with_locks emits locked records with size=None;
+                # restore the size from locked_entries by index.
+                placement_result: list[tuple] = []
+                n_locked = len(locked_entries)
+                for i, rec in enumerate(combined):
+                    if i < n_locked:
+                        # (key, None, w, l, h, x, y, z) -> use original size
+                        key, _none, w, l, h, x, y, z = rec
+                        size = locked_entries[i][1]
+                        placement_result.append((key, size, w, l, h, x, y, z))
+                    else:
+                        placement_result.append(rec)
+            else:
+                placement_result, overflow = best_pack(zw, zl, zh, placements)
+
             if overflow:
                 lost_scu = sum(size for _, size in overflow)
                 _log.warning(
@@ -772,11 +844,12 @@ class AppController(QObject):
                     "into %dx%dx%d — rendering best partial fit. "
                     "Overflow: %s",
                     zone_label, len(overflow), lost_scu, zw, zl, zh,
-                    [f"{size} SCU (cl#{e.cargo_line_id})"
-                     for e, size in overflow],
+                    [f"{size} SCU (cl#{key[0].cargo_line_id})"
+                     for key, size in overflow],
                 )
 
-            for (entry, size, w, l, h, cell_x, cell_y, cell_z) in placement_result or []:
+            for (key, size, w, l, h, cell_x, cell_y, cell_z) in placement_result or []:
+                entry, pallet_idx = key
                 color = color_map.get(entry.delivery_station_name, "#888888")
                 amb_sizes, partner_colors = cl_conflict_info.get(
                     entry.cargo_line_id, (set(), [])
@@ -800,6 +873,7 @@ class AppController(QObject):
                     delivery_station_name=entry.delivery_station_name,
                     commodity_name=entry.commodity_name,
                     contract_number=entry.contract_number,
+                    pallet_index=pallet_idx,
                     ship_forward_y=zone.get("ship_forward_y", "high"),
                     conflict_partner_colors=partner_colors if is_pallet_conflict else [],
                 ))
@@ -1389,6 +1463,225 @@ class AppController(QObject):
         self._set_dirty()
         self.contracts_changed.emit()
         self.route_changed.emit()
+
+    # ── pallet locks (per-pallet fixed placement) ───────────────────────
+
+    def lock_pallet(
+        self,
+        cargo_line_id: int,
+        pallet_index: int,
+        zone_label: str,
+        cube_x: int,
+        cube_y: int,
+        cube_z: int,
+    ) -> None:
+        """Lock a single pallet of a cargo line to a specific cube.
+
+        Identity is ``(cargo_line_id, pallet_index)``; pallet_index is
+        the 0-based position in the deterministic palletize() output.
+        Re-locking the same pallet replaces the previous lock (upsert
+        via INSERT OR REPLACE).
+
+        Validates that the zone exists on the active workday's ship,
+        the cube is in-bounds, and the pallet_index is within range
+        for the cargo line. Raises ToolError on validation failures.
+        """
+        self._require_workday()
+
+        # 1. Validate the cargo line and pallet_index.
+        cl = self.conn.execute(
+            """
+            SELECT cl.scu_amount, ct.max_pallet_size, ct.workday_id
+            FROM cargo_lines cl
+            JOIN contracts ct ON ct.id = cl.contract_id
+            WHERE cl.id = ?
+            """,
+            (cargo_line_id,),
+        ).fetchone()
+        if not cl:
+            raise ToolError(f"Cargo line {cargo_line_id} not found.")
+        if cl["workday_id"] != self.workday_id:
+            raise ToolError(
+                f"Cargo line {cargo_line_id} is not part of the active "
+                f"workday."
+            )
+        from .planner.palletizer import palletize
+        pallets = palletize(cl["scu_amount"], cl["max_pallet_size"])
+        if not (0 <= pallet_index < len(pallets)):
+            raise ToolError(
+                f"pallet_index {pallet_index} out of range for cargo line "
+                f"{cargo_line_id} (has {len(pallets)} pallets: indices "
+                f"0..{len(pallets) - 1})."
+            )
+
+        # 2. Validate the zone + cube bounds.
+        zone = self.conn.execute(
+            """
+            SELECT z.width_units, z.length_units, z.height_units
+            FROM ship_zones z
+            JOIN workdays w ON w.ship_id = z.ship_id
+            WHERE w.id = ? AND z.zone_label = ?
+            """,
+            (self.workday_id, zone_label),
+        ).fetchone()
+        if zone is None:
+            raise ToolError(
+                f"Zone {zone_label!r} not found on the active workday's ship."
+            )
+
+        # The pallet's own footprint must also fit at the requested
+        # origin — anchor must leave room for w/l/h cubes inside the
+        # zone bounds.
+        from .planner.physical_packer import box_for
+        box = box_for(pallets[pallet_index])
+        pw, pl, ph = box["width"], box["length"], box["height"]
+        if pw > zone["width_units"] and box.get("rotatable") and pl <= zone["width_units"]:
+            pw, pl = pl, pw
+        if cube_x < 0 or cube_y < 0 or cube_z < 0:
+            raise ToolError(
+                f"Cube coordinates must be non-negative; got "
+                f"({cube_x}, {cube_y}, {cube_z})."
+            )
+        if cube_x + pw > zone["width_units"]:
+            raise ToolError(
+                f"Pallet footprint {pw}x{pl}x{ph} at cube_x={cube_x} "
+                f"exceeds zone {zone_label} width ({zone['width_units']})."
+            )
+        if cube_y + pl > zone["length_units"]:
+            raise ToolError(
+                f"Pallet footprint {pw}x{pl}x{ph} at cube_y={cube_y} "
+                f"exceeds zone {zone_label} length ({zone['length_units']})."
+            )
+        if cube_z + ph > zone["height_units"]:
+            raise ToolError(
+                f"Pallet footprint {pw}x{pl}x{ph} at cube_z={cube_z} "
+                f"exceeds zone {zone_label} height ({zone['height_units']})."
+            )
+
+        # 3. Upsert.
+        self.conn.execute(
+            """
+            INSERT OR REPLACE INTO pallet_locks
+                (workday_id, cargo_line_id, pallet_index,
+                 zone_label, cube_x, cube_y, cube_z)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (self.workday_id, cargo_line_id, pallet_index,
+             zone_label, cube_x, cube_y, cube_z),
+        )
+        self.conn.commit()
+
+        self._set_dirty()
+        self.contracts_changed.emit()
+        self.route_changed.emit()
+
+    def unlock_pallet(self, cargo_line_id: int, pallet_index: int) -> None:
+        """Remove a pallet lock. No-op if no lock exists."""
+        self._require_workday()
+        self.conn.execute(
+            """
+            DELETE FROM pallet_locks
+            WHERE workday_id = ? AND cargo_line_id = ? AND pallet_index = ?
+            """,
+            (self.workday_id, cargo_line_id, pallet_index),
+        )
+        self.conn.commit()
+        self._set_dirty()
+        self.contracts_changed.emit()
+        self.route_changed.emit()
+
+    def list_pallet_locks(self) -> list[sqlite3.Row]:
+        """Every pallet_locks row for the active workday."""
+        if not self.workday_id:
+            return []
+        return self.conn.execute(
+            """
+            SELECT workday_id, cargo_line_id, pallet_index,
+                   zone_label, cube_x, cube_y, cube_z
+            FROM pallet_locks
+            WHERE workday_id = ?
+            ORDER BY cargo_line_id, pallet_index
+            """,
+            (self.workday_id,),
+        ).fetchall()
+
+    def clear_pallet_locks(self) -> None:
+        """Delete every pallet lock for the active workday."""
+        self._require_workday()
+        self.conn.execute(
+            "DELETE FROM pallet_locks WHERE workday_id = ?",
+            (self.workday_id,),
+        )
+        self.conn.commit()
+        self._set_dirty()
+        self.contracts_changed.emit()
+        self.route_changed.emit()
+
+    # ── manual stops ────────────────────────────────────────────────────
+
+    def add_manual_stop(
+        self, station_id: int, after_station_id: int | None = None,
+    ) -> int:
+        """Insert a user-defined extra stop into the active workday's route.
+
+        *after_station_id* names the scheduled station the manual stop
+        should follow. Passing ``None`` inserts at the very start of
+        the route. Returns the new manual_stops.id.
+        """
+        self._require_workday()
+        cur = self.conn.execute(
+            """
+            INSERT INTO manual_stops
+                (workday_id, station_id, after_station_id, sort_order, notes)
+            VALUES (
+                ?, ?, ?,
+                COALESCE(
+                    (SELECT MAX(sort_order) + 1 FROM manual_stops
+                     WHERE workday_id = ?),
+                    0
+                ),
+                NULL
+            )
+            """,
+            (self.workday_id, station_id, after_station_id, self.workday_id),
+        )
+        ms_id = cur.lastrowid
+        self.conn.commit()
+        self._set_dirty()
+        self.route_changed.emit()
+        self.contracts_changed.emit()
+        return ms_id
+
+    def remove_manual_stop(self, manual_stop_id: int) -> None:
+        """Delete a manual stop from the active workday's route."""
+        self._require_workday()
+        self.conn.execute(
+            "DELETE FROM manual_stops WHERE id = ? AND workday_id = ?",
+            (manual_stop_id, self.workday_id),
+        )
+        self.conn.commit()
+        self._set_dirty()
+        self.route_changed.emit()
+        self.contracts_changed.emit()
+
+    def list_manual_stops(self) -> list[sqlite3.Row]:
+        """Manual stops for the active workday with joined station info."""
+        if not self.workday_id:
+            return []
+        return self.conn.execute(
+            """
+            SELECT ms.id, ms.station_id, ms.after_station_id, ms.sort_order,
+                   ms.notes,
+                   s.name AS station_name,
+                   ap.name AS after_station_name
+            FROM manual_stops ms
+            JOIN stations s ON s.id = ms.station_id
+            LEFT JOIN stations ap ON ap.id = ms.after_station_id
+            WHERE ms.workday_id = ?
+            ORDER BY ms.sort_order, ms.id
+            """,
+            (self.workday_id,),
+        ).fetchall()
 
     # ── voice tool dispatch ──────────────────────────────────────────────
 

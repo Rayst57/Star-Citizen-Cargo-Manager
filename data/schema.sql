@@ -222,6 +222,18 @@ CREATE TABLE zone_assignments (
     notes               TEXT
 );
 
+CREATE TABLE pallet_locks (
+    workday_id      INTEGER NOT NULL REFERENCES workdays(id) ON DELETE CASCADE,
+    cargo_line_id   INTEGER NOT NULL REFERENCES cargo_lines(id) ON DELETE CASCADE,
+    pallet_index    INTEGER NOT NULL,
+    zone_label      TEXT    NOT NULL,
+    cube_x          INTEGER NOT NULL,
+    cube_y          INTEGER NOT NULL,
+    cube_z          INTEGER NOT NULL,
+    PRIMARY KEY (workday_id, cargo_line_id, pallet_index)
+);
+CREATE INDEX idx_pallet_locks_workday ON pallet_locks(workday_id);
+
 CREATE TABLE pallet_conflicts (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     workday_id          INTEGER NOT NULL REFERENCES workdays(id) ON DELETE CASCADE,
@@ -245,6 +257,21 @@ CREATE TABLE validation_log (
     suggested_fix   TEXT,
     cargo_line_id   INTEGER REFERENCES cargo_lines(id) ON DELETE SET NULL
 );
+
+-- User-injected route stops. Lets the operator force an extra stop
+-- (e.g. an unscheduled "go to Baijini and unload") between scheduled
+-- contract stops without rewriting the contract list. The route
+-- builder reads these after computing the contract-driven stop list
+-- and splices them in at the requested positions.
+CREATE TABLE manual_stops (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    workday_id      INTEGER NOT NULL REFERENCES workdays(id) ON DELETE CASCADE,
+    station_id      INTEGER NOT NULL REFERENCES stations(id),
+    after_station_id INTEGER REFERENCES stations(id),   -- insert AFTER this scheduled station; NULL = insert at start
+    sort_order      INTEGER NOT NULL DEFAULT 0,
+    notes           TEXT
+);
+CREATE INDEX idx_manual_stops_workday ON manual_stops(workday_id);
 
 -- =========================================================
 -- Settings (key/value)

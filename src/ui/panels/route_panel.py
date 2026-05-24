@@ -32,6 +32,13 @@ class RoutePanel(QWidget):
         title.setProperty("heading", True)
         header.addWidget(title)
         header.addStretch(1)
+        self.add_stop_btn = QPushButton("+ Add Stop")
+        self.add_stop_btn.setToolTip(
+            "Insert an unscheduled extra stop into the current route "
+            "(e.g. fly to Baijini and unload)"
+        )
+        self.add_stop_btn.clicked.connect(self._open_manual_stop_dialog)
+        header.addWidget(self.add_stop_btn)
         self.detail_btn = QPushButton("Detailed Plan")
         self.detail_btn.setToolTip(
             "Open the full per-stop plan in a single window"
@@ -147,6 +154,16 @@ class RoutePanel(QWidget):
                 is_current=(idx == cur_idx),
             )
             self.list_layout.insertWidget(self.list_layout.count() - 1, card)
+
+    def _open_manual_stop_dialog(self) -> None:
+        # Late import so the route panel doesn't pull in the dialog
+        # module at startup (and to avoid a circular import via the
+        # add_contract helpers the dialog reuses).
+        from ..dialogs.manual_stop import ManualStopDialog
+        if not self.controller.workday_id:
+            return
+        dlg = ManualStopDialog(self.controller, parent=self)
+        dlg.exec()
 
     def _delivery_names(self, cargo_line_ids: list[int]) -> dict[int, str]:
         if not cargo_line_ids:
