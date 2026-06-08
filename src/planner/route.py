@@ -388,6 +388,12 @@ def build_simple_route(
     for i, st in enumerate(stops):
         st.stop_number = i + 1
 
+    # Splice in any extra pickup candidates as informational "Candidate
+    # Pickup" stops. The primary candidate (== contract.pickup_station_id)
+    # is already a normal Load/Arrive stop; additional candidates get
+    # inserted directly after it in sequence_order with empty loads.
+    _insert_candidate_pickup_stops(workday_id, conn, stops)
+
     # Splice in any user-injected manual stops. Done last so manual
     # stops can reference any scheduled station (including
     # return-visits and final-unloads).
@@ -400,6 +406,108 @@ def build_simple_route(
     stops = _inject_capacity_relief_stops(stops, workday_id, conn)
 
     return stops
+
+
+CANDIDATE_PICKUP_ACTION = "Candidate Pickup (no auto-load)"
+
+
+def _insert_candidate_pickup_stops(
+    workday_id: int,
+    conn: sqlite3.Connection,
+    stops: list[RouteStop],
+) -> None:
+    """Splice non-primary pickup candidates into *stops* as info stops.
+
+    For each contract that has rows in ``contract_pickup_candidates``
+    with ``sequence_order > 0``, the corresponding station is inserted
+    into the route immediately after the contract's primary pickup
+    stop (the one already carrying the contract's loads). The new
+    stops have empty loads/unloads — the planner has already reserved
+    SCU as if the cargo were on board from the primary visit; these
+    extra stops are reminders to the pilot to physically visit each
+    candidate station.
+
+    Idempotent: filters out any existing Candidate-Pickup stops before
+    inserting so re-running produces the same output.
+    """
+    # Idempotency: strip prior candidate-pickup stops so re-running
+    # from a freshly-built route is identical to running once.
+    drop = [
+        i for i, s in enumerate(stops) if s.action == CANDIDATE_PICKUP_ACTION
+    ]
+    for i in reversed(drop):
+        del stops[i]
+
+    rows = conn.execute(
+        """
+        SELECT cpc.contract_id, cpc.station_id, cpc.sequence_order,
+               c.pickup_station_id,
+               s.name AS station_name
+        FROM contract_pickup_candidates cpc
+        JOIN contracts c ON c.id = cpc.contract_id
+        JOIN stations  s ON s.id = cpc.station_id
+        WHERE c.workday_id = ?
+          AND c.status != 'complete'
+          AND cpc.sequence_order > 0
+        ORDER BY cpc.contract_id, cpc.sequence_order
+        """,
+        (workday_id,),
+    ).fetchall()
+    if not rows:
+        return
+
+    # Group by contract — keep per-contract sequence_order intact.
+    by_contract: dict[int, list[sqlite3.Row]] = {}
+    for r in rows:
+        by_contract.setdefault(r["contract_id"], []).append(r)
+
+    for contract_id, extras in by_contract.items():
+        # Sort by sequence_order to be safe (SQL already ORDER BYs).
+        extras.sort(key=lambda r: r["sequence_order"])
+        primary_pickup_id = extras[0]["pickup_station_id"]
+
+        # Find the primary pickup stop — the LAST stop where this
+        # contract's cargo is loaded. We match by station_id +
+        # presence of any contract-driven loads to avoid colliding
+        # with other contracts that share the primary station.
+        insert_at: int | None = None
+        for idx in range(len(stops) - 1, -1, -1):
+            st = stops[idx]
+            if st.station_id != primary_pickup_id:
+                continue
+            if any(ref.contract_id == contract_id for ref in st.loads):
+                insert_at = idx + 1
+                break
+        if insert_at is None:
+            # Primary pickup isn't in the route (shouldn't normally
+            # happen — every contract's pickup is always a load stop).
+            # Skip rather than dropping the candidates at a random spot.
+            _log.warning(
+                "candidate pickup: contract %d primary pickup station "
+                "%d not in route, skipping %d candidate stop(s)",
+                contract_id, primary_pickup_id, len(extras),
+            )
+            continue
+
+        for extra in extras:
+            stops.insert(insert_at, RouteStop(
+                stop_number=0,  # renumbered below
+                station_id=extra["station_id"],
+                station_name=extra["station_name"],
+                action=CANDIDATE_PICKUP_ACTION,
+                loads=[],
+                unloads=[],
+                notes=(
+                    f"Alternative pickup candidate for contract {contract_id} "
+                    f"(visit physically to check for cargo; SCU already "
+                    f"reserved from primary candidate)."
+                ),
+            ))
+            insert_at += 1
+
+    # Renumber so stop_number == position in the list.
+    for i, st in enumerate(stops):
+        st.stop_number = i + 1
 
 
 def _insert_manual_stops(

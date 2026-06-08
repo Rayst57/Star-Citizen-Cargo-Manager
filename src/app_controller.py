@@ -460,10 +460,20 @@ class AppController(QObject):
 
         Args:
             data: {"pickup_station": str | int,
+                   "pickup_candidates": list[str|int] (optional),
                    "max_pallet_size": int (default 8),
                    "deliveries": [{"destination": str|int,
                                    "commodity": str|int,
                                    "scu": int}, ...]}
+
+        When ``pickup_candidates`` is non-empty the contract is a
+        multi-pickup contract: the primary pickup_station is the first
+        candidate (sequence_order=0) and every entry in
+        pickup_candidates is appended after it as an additional
+        candidate. The cargo MAY be at any of these stations; the
+        planner conservatively reserves SCU from the first candidate
+        visit onward.
+
         Returns:
             The new contract_id.
         """
@@ -478,6 +488,20 @@ class AppController(QObject):
         deliveries = data.get("deliveries") or []
         if not deliveries:
             raise ToolError("Contract must have at least one delivery")
+
+        # Resolve any extra pickup candidates up front so a bad name
+        # aborts before we insert the contract row.
+        raw_candidates = data.get("pickup_candidates") or []
+        candidate_ids: list[int] = []
+        if raw_candidates:
+            seen = {pickup_id}
+            candidate_ids.append(pickup_id)
+            for ref in raw_candidates:
+                cid_station = self._resolve_station(ref)
+                if cid_station in seen:
+                    continue
+                seen.add(cid_station)
+                candidate_ids.append(cid_station)
 
         # Next contract_number for this workday
         row = self.conn.execute(
@@ -514,9 +538,36 @@ class AppController(QObject):
                 (contract_id, idx, dest_id, comm_id, scu),
             )
 
+        # Persist any multi-pickup candidates (only when the caller
+        # supplied them — legacy single-pickup contracts skip this).
+        for seq, station_id in enumerate(candidate_ids):
+            self.conn.execute(
+                """
+                INSERT INTO contract_pickup_candidates
+                  (contract_id, station_id, sequence_order)
+                VALUES (?, ?, ?)
+                """,
+                (contract_id, station_id, seq),
+            )
+
         self._set_dirty()
         self.contracts_changed.emit()
         return contract_id
+
+    def list_pickup_candidates(self, contract_id: int) -> list[sqlite3.Row]:
+        """All pickup candidates for *contract_id* joined to station name,
+        ordered by sequence_order (primary first)."""
+        return self.conn.execute(
+            """
+            SELECT cpc.contract_id, cpc.station_id, cpc.sequence_order,
+                   s.name AS station_name
+            FROM contract_pickup_candidates cpc
+            JOIN stations s ON s.id = cpc.station_id
+            WHERE cpc.contract_id = ?
+            ORDER BY cpc.sequence_order
+            """,
+            (contract_id,),
+        ).fetchall()
 
     def edit_contract(self, contract_number: int, data: dict) -> None:
         self._require_workday()

@@ -184,6 +184,21 @@ CREATE TABLE contracts (
     UNIQUE (workday_id, contract_number)
 );
 
+-- Optional alternative pickup stations for a contract whose cargo MAY
+-- be at any of several candidate stations (the pilot finds out on
+-- arrival). The contract's existing pickup_station_id still points to
+-- the PRIMARY (first) candidate. For single-pickup contracts (the
+-- legacy case) this table is either empty or holds a single row
+-- matching pickup_station_id; for multi-pickup contracts it holds 2+
+-- rows including the primary, ordered by sequence_order.
+CREATE TABLE contract_pickup_candidates (
+    contract_id    INTEGER NOT NULL REFERENCES contracts(id) ON DELETE CASCADE,
+    station_id     INTEGER NOT NULL REFERENCES stations(id),
+    sequence_order INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (contract_id, station_id)
+);
+CREATE INDEX idx_contract_pickup_candidates_contract ON contract_pickup_candidates(contract_id);
+
 CREATE TABLE cargo_lines (
     id                      INTEGER PRIMARY KEY AUTOINCREMENT,
     contract_id             INTEGER NOT NULL REFERENCES contracts(id) ON DELETE CASCADE,

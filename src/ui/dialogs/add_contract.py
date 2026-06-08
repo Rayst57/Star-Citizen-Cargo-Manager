@@ -142,6 +142,20 @@ class AddContractDialog(QDialog):
         self.pickup_combo = _make_station_combo(controller)
         form.addRow("Pickup station", self.pickup_combo)
 
+        # Additional pickup candidates — stations where the cargo MIGHT
+        # be. The pilot visits each on arrival to find out. Empty by
+        # default (single-pickup is the legacy path).
+        self.candidates_widget = QWidget()
+        self.candidates_layout = QVBoxLayout(self.candidates_widget)
+        self.candidates_layout.setContentsMargins(0, 0, 0, 0)
+        self.candidates_layout.setSpacing(4)
+        form.addRow("Pickup candidates", self.candidates_widget)
+
+        self.add_candidate_btn = QPushButton("+ Add Pickup Candidate")
+        self.add_candidate_btn.setProperty("flat", True)
+        self.add_candidate_btn.clicked.connect(lambda: self._add_candidate())
+        form.addRow("", self.add_candidate_btn)
+
         self.max_combo = QComboBox()
         for s in PALLET_SIZES:
             self.max_combo.addItem(str(s), userData=s)
@@ -186,6 +200,49 @@ class AddContractDialog(QDialog):
             self._load_contract(contract)
         else:
             self._add_row()
+
+    def _add_candidate(self) -> QComboBox:
+        """Append an extra pickup-candidate combo row.
+
+        Each candidate row carries its own remove button so the user
+        can prune a misclick without resetting the dialog.
+        """
+        row = QFrame()
+        row.setObjectName("card")
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(6, 4, 6, 4)
+        layout.setSpacing(6)
+
+        combo = _make_station_combo(self.controller)
+        layout.addWidget(QLabel("alt:"))
+        layout.addWidget(combo, 1)
+
+        rm = QPushButton("✕")
+        rm.setProperty("flat", True)
+        rm.setFixedWidth(28)
+        rm.clicked.connect(lambda: self._remove_candidate(row))
+        layout.addWidget(rm)
+
+        # Stash the combo on the row for retrieval in value().
+        row._candidate_combo = combo  # type: ignore[attr-defined]
+        self.candidates_layout.addWidget(row)
+        return combo
+
+    def _remove_candidate(self, row: QFrame) -> None:
+        self.candidates_layout.removeWidget(row)
+        row.hide()
+        row.deleteLater()
+
+    def _candidate_combos(self) -> list[QComboBox]:
+        out: list[QComboBox] = []
+        for i in range(self.candidates_layout.count()):
+            w = self.candidates_layout.itemAt(i).widget()
+            if w is None:
+                continue
+            combo = getattr(w, "_candidate_combo", None)
+            if combo is not None:
+                out.append(combo)
+        return out
 
     def _add_row(self) -> DeliveryRow:
         row = DeliveryRow(self.controller, on_remove=self._remove_row)
@@ -243,8 +300,14 @@ class AddContractDialog(QDialog):
         super().accept()
 
     def value(self) -> dict:
+        candidates = []
+        for combo in self._candidate_combos():
+            sid = _station_id(combo)
+            if sid is not None:
+                candidates.append(sid)
         return {
-            "pickup_station":  _station_id(self.pickup_combo),
-            "max_pallet_size": self.max_combo.currentData(),
-            "deliveries":      [r.value() for r in self._delivery_rows()],
+            "pickup_station":   _station_id(self.pickup_combo),
+            "pickup_candidates": candidates,
+            "max_pallet_size":  self.max_combo.currentData(),
+            "deliveries":       [r.value() for r in self._delivery_rows()],
         }

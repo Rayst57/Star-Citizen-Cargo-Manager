@@ -146,7 +146,11 @@ def test_pallet_rects_after_recompute(controller):
     seraphim = controller.conn.execute(
         "SELECT id FROM stations WHERE name = 'Seraphim Station'"
     ).fetchone()["id"]
-    wid = controller.start_workday(seraphim, None, False)
+    # Pin to the C2 — bay dimension assertions below are C2-specific.
+    c2_id = controller.conn.execute(
+        "SELECT id FROM ships WHERE name = 'C2 Hercules'"
+    ).fetchone()["id"]
+    wid = controller.start_workday(seraphim, None, False, ship_id=c2_id)
 
     controller.add_contract({
         "pickup_station": "Yellow Core",

@@ -40,6 +40,14 @@ def _seraphim(controller) -> int:
     ).fetchone()["id"]
 
 
+def _c2(controller) -> int:
+    """C2 ship id — for tests whose assertions depend on C2-specific
+    zone layout (cap-per-zone, prio order)."""
+    return controller.conn.execute(
+        "SELECT id FROM ships WHERE name = 'C2 Hercules'"
+    ).fetchone()["id"]
+
+
 def _zones_used_at(result, stop_number: int) -> set[str]:
     return {e.zone_label for e in result.snapshots.get(stop_number, [])}
 
@@ -90,7 +98,9 @@ def test_loads_drain_lowest_priority_bay_first(controller):
     On the C2 the lowest-prio zones are F1/F2/F3 (cap=72, prio 1–3);
     R-bays come later (prio 4+). 32 SCU should land in F1.
     """
-    wid = controller.start_workday(_seraphim(controller), None, False)
+    wid = controller.start_workday(
+        _seraphim(controller), None, False, ship_id=_c2(controller)
+    )
     controller.add_contract({
         "pickup_station": "Yellow Core",
         "max_pallet_size": 8,
@@ -174,7 +184,9 @@ def test_transload_moves_recorded_when_consolidation_helps(controller):
     should consolidate the two Long Forest pieces (40 + 60 = 100) into
     a single R-bay.
     """
-    wid = controller.start_workday(_seraphim(controller), None, False)
+    wid = controller.start_workday(
+        _seraphim(controller), None, False, ship_id=_c2(controller)
+    )
     # Long Forest 40 SCU — picked up at origin.
     controller.add_contract({
         "pickup_station": "Seraphim Station",

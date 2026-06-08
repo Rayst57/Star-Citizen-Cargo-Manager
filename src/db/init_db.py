@@ -192,6 +192,28 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
     )
     conn.commit()
 
+    # Multi-pickup candidate stations for a contract. When present,
+    # the contract's cargo may be at any of these stations; the pilot
+    # finds out on arrival. The planner conservatively assumes the
+    # cargo is on board from the FIRST candidate visit so SCU is
+    # reserved. Idempotent CREATE IF NOT EXISTS so re-launches are
+    # a no-op.
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS contract_pickup_candidates (
+            contract_id    INTEGER NOT NULL REFERENCES contracts(id) ON DELETE CASCADE,
+            station_id     INTEGER NOT NULL REFERENCES stations(id),
+            sequence_order INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (contract_id, station_id)
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_contract_pickup_candidates_contract "
+        "ON contract_pickup_candidates(contract_id)"
+    )
+    conn.commit()
+
     from .seed import load_stations, sync_ships
 
     load_stations(conn)
