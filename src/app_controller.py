@@ -1719,6 +1719,331 @@ class AppController(QObject):
         self.contracts_changed.emit()
         self.route_changed.emit()
 
+    # ── pallet holding (force-push waiting area) ────────────────────────
+
+    def push_pallets_to_holding(
+        self,
+        pallets: list[tuple[int, int]],
+        notes: str = "",
+    ) -> None:
+        """Move *pallets* into the holding table.
+
+        Each entry is a ``(cargo_line_id, pallet_index)`` tuple. For
+        each pallet the existing pallet_locks row (if any) is removed
+        and a pallet_holding row is inserted in its place. Holding
+        pallets are treated as NOT loaded by the planner — they no
+        longer count toward any zone's SCU and don't render in the
+        3D view; they show up in the holding sidebar instead.
+        """
+        self._require_workday()
+        if not pallets:
+            return
+        for cargo_line_id, pallet_index in pallets:
+            # Drop any lock the pallet had — force-push always evicts.
+            self.conn.execute(
+                """
+                DELETE FROM pallet_locks
+                WHERE workday_id = ?
+                  AND cargo_line_id = ?
+                  AND pallet_index = ?
+                """,
+                (self.workday_id, cargo_line_id, pallet_index),
+            )
+            # Insert into holding (upsert so re-pushing is a no-op).
+            self.conn.execute(
+                """
+                INSERT OR REPLACE INTO pallet_holding
+                    (workday_id, cargo_line_id, pallet_index, notes)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    self.workday_id,
+                    cargo_line_id,
+                    pallet_index,
+                    notes or None,
+                ),
+            )
+        self.conn.commit()
+        _log.info(
+            "push_pallets_to_holding: moved %d pallet(s) to holding",
+            len(pallets),
+        )
+        self._set_dirty()
+        self.contracts_changed.emit()
+        self.route_changed.emit()
+
+    def remove_from_holding(
+        self, cargo_line_id: int, pallet_index: int,
+    ) -> None:
+        """Take a pallet off the holding table.
+
+        Used after the user successfully drags a holding pallet back
+        to a zone (which independently creates a pallet_locks row via
+        ``lock_pallet``). No-op if the pallet wasn't in holding.
+        """
+        self._require_workday()
+        self.conn.execute(
+            """
+            DELETE FROM pallet_holding
+            WHERE workday_id = ?
+              AND cargo_line_id = ?
+              AND pallet_index = ?
+            """,
+            (self.workday_id, cargo_line_id, pallet_index),
+        )
+        self.conn.commit()
+        self._set_dirty()
+        self.contracts_changed.emit()
+        self.route_changed.emit()
+
+    def list_holding_pallets(self) -> list[sqlite3.Row]:
+        """Return every pallet currently in holding for the active
+        workday, joined to the cargo_lines / contracts / commodities /
+        delivery-station rows the holding sidebar needs to render.
+
+        Ordered by destination then cargo_line_id for stable grouping.
+        """
+        if not self.workday_id:
+            return []
+        return self.conn.execute(
+            """
+            SELECT ph.cargo_line_id, ph.pallet_index, ph.notes,
+                   cl.scu_amount AS cargo_line_scu,
+                   ct.contract_number, ct.max_pallet_size,
+                   ds.id   AS delivery_station_id,
+                   ds.name AS delivery_station_name,
+                   ds.color_hex AS delivery_color,
+                   cm.name AS commodity_name
+            FROM pallet_holding ph
+            JOIN cargo_lines  cl ON cl.id = ph.cargo_line_id
+            JOIN contracts    ct ON ct.id = cl.contract_id
+            JOIN stations     ds ON ds.id = cl.delivery_station_id
+            JOIN commodities  cm ON cm.id = cl.commodity_id
+            WHERE ph.workday_id = ?
+            ORDER BY ds.name, ph.cargo_line_id, ph.pallet_index
+            """,
+            (self.workday_id,),
+        ).fetchall()
+
+    def is_pallet_in_holding(
+        self, cargo_line_id: int, pallet_index: int,
+    ) -> bool:
+        """True iff ``(cargo_line_id, pallet_index)`` is in holding for
+        the active workday.
+
+        Used by force-push prep to defensively skip pallets that are
+        already in holding — they aren't physically on the ship so they
+        can't be "displaced" by a new drop.
+        """
+        if not self.workday_id:
+            return False
+        row = self.conn.execute(
+            """
+            SELECT 1 FROM pallet_holding
+            WHERE workday_id = ?
+              AND cargo_line_id = ?
+              AND pallet_index = ?
+            """,
+            (self.workday_id, cargo_line_id, pallet_index),
+        ).fetchone()
+        return row is not None
+
+    def auto_place_holding_pallets(self) -> dict[tuple[int, int], str]:
+        """Try to lock each holding pallet to a free cube somewhere.
+
+        For each pallet in holding, walks every zone on the active
+        workday's ship and asks the physical packer for a free
+        ``(zone, x, y, z)`` that respects existing locked pallets. On
+        success the pallet is persisted via ``lock_pallet`` and
+        removed from holding. On failure (no zone has room for the
+        pallet's footprint) it stays in holding and the reason is
+        recorded.
+
+        Returns a dict of ``(cargo_line_id, pallet_index) -> reason``
+        for every pallet that COULDN'T be placed.
+        """
+        self._require_workday()
+        from .planner.palletizer import palletize
+        from .planner.physical_packer import box_for, place_in_grid
+
+        holding_rows = self.list_holding_pallets()
+        if not holding_rows:
+            return {}
+
+        # Pull zone metadata once; we'll rebuild the per-zone grid
+        # as we go so successive placements stack naturally.
+        zone_rows = self.conn.execute(
+            """
+            SELECT z.zone_label, z.width_units, z.length_units,
+                   z.height_units
+            FROM ship_zones z
+            JOIN workdays w ON w.ship_id = z.ship_id
+            WHERE w.id = ?
+            ORDER BY z.load_order, z.zone_label
+            """,
+            (self.workday_id,),
+        ).fetchall()
+        zones = [dict(r) for r in zone_rows]
+        if not zones:
+            return {
+                (r["cargo_line_id"], r["pallet_index"]):
+                    "No zones on the active workday's ship."
+                for r in holding_rows
+            }
+
+        # Build initial occupancy from existing pallet locks. Each
+        # locked pallet stamps its footprint into the grid and reserved
+        # set so auto-place avoids them. Zones with no locks get an
+        # all-zero grid.
+        grids: dict[str, list[list[int]]] = {}
+        reserved: dict[str, set[tuple[int, int, int]]] = {}
+        for z in zones:
+            grids[z["zone_label"]] = [
+                [0] * z["length_units"] for _ in range(z["width_units"])
+            ]
+            reserved[z["zone_label"]] = set()
+        for lock in self.list_pallet_locks():
+            zlabel = lock["zone_label"]
+            grid = grids.get(zlabel)
+            if grid is None:
+                continue
+            # Look up the lock's footprint.
+            cl = self.conn.execute(
+                "SELECT scu_amount, ct.max_pallet_size "
+                "FROM cargo_lines cl JOIN contracts ct ON ct.id = cl.contract_id "
+                "WHERE cl.id = ?",
+                (lock["cargo_line_id"],),
+            ).fetchone()
+            if cl is None:
+                continue
+            pallets = palletize(cl["scu_amount"], cl["max_pallet_size"])
+            if lock["pallet_index"] >= len(pallets):
+                continue
+            box = box_for(pallets[lock["pallet_index"]])
+            lw, ll, lh = box["width"], box["length"], box["height"]
+            if lock["orientation"] == 1 and box.get("rotatable"):
+                lw, ll = ll, lw
+            lx, ly, lz = lock["cube_x"], lock["cube_y"], lock["cube_z"]
+            for dx in range(lw):
+                for dy in range(ll):
+                    top = lz + lh
+                    if 0 <= lx + dx < len(grid) and 0 <= ly + dy < len(grid[0]):
+                        if grid[lx + dx][ly + dy] < top:
+                            grid[lx + dx][ly + dy] = top
+                    for dz in range(lh):
+                        reserved[zlabel].add(
+                            (lx + dx, ly + dy, lz + dz)
+                        )
+
+        failures: dict[tuple[int, int], str] = {}
+        placed: list[tuple[int, int]] = []
+
+        for row in holding_rows:
+            cl_id = row["cargo_line_id"]
+            p_idx = row["pallet_index"]
+            cl = self.conn.execute(
+                "SELECT scu_amount, ct.max_pallet_size "
+                "FROM cargo_lines cl JOIN contracts ct ON ct.id = cl.contract_id "
+                "WHERE cl.id = ?",
+                (cl_id,),
+            ).fetchone()
+            if cl is None:
+                failures[(cl_id, p_idx)] = "Cargo line missing"
+                continue
+            pallets = palletize(cl["scu_amount"], cl["max_pallet_size"])
+            if p_idx >= len(pallets):
+                failures[(cl_id, p_idx)] = "Pallet index out of range"
+                continue
+            size = pallets[p_idx]
+            box = box_for(size)
+            nw, nl, nh = box["width"], box["length"], box["height"]
+
+            placed_here: tuple[str, int, int, int, int] | None = None
+            for z in zones:
+                zlabel = z["zone_label"]
+                zw, zl, zh = (
+                    z["width_units"], z["length_units"], z["height_units"],
+                )
+                # Try the natural footprint, falling back to a
+                # horizontal rotation when allowed.
+                attempts: list[tuple[int, int, int, int]] = []
+                attempts.append((nw, nl, nh, 0))
+                if box.get("rotatable") and (nw != nl):
+                    attempts.append((nl, nw, nh, 1))
+                for w, l, h, orient in attempts:
+                    if w > zw or l > zl or h > zh:
+                        continue
+                    grid_copy = [list(col) for col in grids[zlabel]]
+                    spot = place_in_grid(
+                        grid_copy, w, l, h, zw, zl, zh,
+                        reserved_cubes=reserved[zlabel],
+                    )
+                    if spot is not None:
+                        # Commit the chosen grid copy so subsequent
+                        # placements stack on top of this pallet.
+                        grids[zlabel] = grid_copy
+                        x, y, zc = spot
+                        for dx in range(w):
+                            for dy in range(l):
+                                for dz in range(h):
+                                    reserved[zlabel].add(
+                                        (x + dx, y + dy, zc + dz)
+                                    )
+                        placed_here = (zlabel, x, y, zc, orient)
+                        break
+                if placed_here is not None:
+                    break
+
+            if placed_here is None:
+                failures[(cl_id, p_idx)] = (
+                    f"No zone has room for a {size} SCU pallet."
+                )
+                continue
+
+            zlabel, x, y, zc, orient = placed_here
+            try:
+                self.lock_pallet(
+                    cl_id, p_idx, zlabel, x, y, zc,
+                    orientation=orient,
+                )
+            except ToolError as exc:
+                failures[(cl_id, p_idx)] = str(exc)
+                continue
+            placed.append((cl_id, p_idx))
+
+        for cl_id, p_idx in placed:
+            self.remove_from_holding(cl_id, p_idx)
+
+        _log.info(
+            "auto_place_holding_pallets: placed %d/%d (failures=%d)",
+            len(placed), len(holding_rows), len(failures),
+        )
+        return failures
+
+    def recompute_around_locks(self) -> None:
+        """Trigger a recompute that explicitly honors all current
+        pallet_locks.
+
+        Thin wrapper over ``recompute()`` whose only job is to surface
+        the user-visible intent in cargo_manager.log — the underlying
+        planner already respects locked pallets at every stop, so this
+        is the "Re-optimize remaining stops" button after a force-push
+        operation.
+        """
+        self._require_workday()
+        n_locks = 0
+        cl_ids: set[int] = set()
+        if self.workday_id:
+            for r in self.list_pallet_locks():
+                n_locks += 1
+                cl_ids.add(r["cargo_line_id"])
+        _log.info(
+            "recompute_around_locks: honoring %d pallet_locks across "
+            "%d cargo lines",
+            n_locks, len(cl_ids),
+        )
+        self.recompute()
+
     # ── manual stops ────────────────────────────────────────────────────
 
     def add_manual_stop(
