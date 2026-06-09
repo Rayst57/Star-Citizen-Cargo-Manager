@@ -182,6 +182,7 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
             cube_x          INTEGER NOT NULL,
             cube_y          INTEGER NOT NULL,
             cube_z          INTEGER NOT NULL,
+            orientation     INTEGER NOT NULL DEFAULT 0,
             PRIMARY KEY (workday_id, cargo_line_id, pallet_index)
         )
         """
@@ -191,6 +192,17 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
         "ON pallet_locks(workday_id)"
     )
     conn.commit()
+
+    # Per-pallet orientation: 0 = natural WxL footprint, 1 = rotated 90
+    # degrees on the horizontal plane (W and L swap). Defaults to 0 so
+    # existing locks keep their current placement. Idempotent guard via
+    # _has_column so re-launches are no-ops.
+    if not _has_column(conn, "pallet_locks", "orientation"):
+        conn.execute(
+            "ALTER TABLE pallet_locks "
+            "ADD COLUMN orientation INTEGER NOT NULL DEFAULT 0"
+        )
+        conn.commit()
 
     # Multi-pickup candidate stations for a contract. When present,
     # the contract's cargo may be at any of these stations; the pilot
@@ -211,6 +223,30 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_contract_pickup_candidates_contract "
         "ON contract_pickup_candidates(contract_id)"
+    )
+    conn.commit()
+
+    # Holding-table for pallets displaced from their assigned zone by
+    # the 3D drag-drop "force-push" workflow. Pallets here are NOT on
+    # the ship as far as the planner is concerned — they don't count
+    # toward zone SCU and aren't rendered in any zone. The UI's
+    # holding sidebar groups them by destination so the user can pick
+    # them back up and drop them somewhere else. Idempotent CREATE
+    # IF NOT EXISTS so re-launches are a no-op.
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS pallet_holding (
+            workday_id     INTEGER NOT NULL REFERENCES workdays(id) ON DELETE CASCADE,
+            cargo_line_id  INTEGER NOT NULL REFERENCES cargo_lines(id) ON DELETE CASCADE,
+            pallet_index   INTEGER NOT NULL,
+            notes          TEXT,
+            PRIMARY KEY (workday_id, cargo_line_id, pallet_index)
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_pallet_holding_workday "
+        "ON pallet_holding(workday_id)"
     )
     conn.commit()
 

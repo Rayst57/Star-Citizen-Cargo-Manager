@@ -285,6 +285,23 @@ class DetailedPlanDialog(QDialog):
         else:
             layout.addWidget(self._muted("Onboard after this stop: empty"))
 
+        # Advisories — surface any planner findings for this stop so the
+        # user can consider a manual adjustment. Lazily fetched once per
+        # dialog open and cached on the controller.
+        try:
+            advisories = self.controller.compute_advisories().get(
+                stop.stop_number, [],
+            )
+        except Exception:
+            advisories = []
+        if advisories:
+            from ..widgets.advisory_panel import _AdvisoryCard
+            layout.addWidget(
+                self._section_label("Advisories (consider manual adjustment)")
+            )
+            for adv in advisories:
+                layout.addWidget(_AdvisoryCard(adv))
+
         return card
 
     def _render_zone_grouped(

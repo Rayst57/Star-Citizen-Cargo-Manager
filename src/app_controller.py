@@ -20,6 +20,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, QThread, Signal
 
+from .planner.advisory import Advisory, advisories_for_result
 from .planner.canonicalize import canonical_commodity, canonical_station
 from .planner.conflicts import ConflictGroup
 from .planner.physical_packer import best_pack, box_for, pack_with_locks
@@ -224,6 +225,7 @@ class AppController(QObject):
 
         self.workday_id: int | None = None
         self._last_result: RecomputeResult | None = None
+        self._advisories_cache: dict[int, list[Advisory]] | None = None
         self._recomputing: bool = False
         self._recompute_thread: RecomputeThread | None = None
         self._current_stop_index = 0   # 0 = before first stop completed
@@ -336,6 +338,7 @@ class AppController(QObject):
         self.conn.commit()
         self.workday_id = None
         self._last_result = None
+        self._advisories_cache = None
         self.contracts_changed.emit()
         self.route_changed.emit()
 
@@ -715,6 +718,9 @@ class AppController(QObject):
 
         try:
             self._last_result = result
+            # Invalidate the advisory cache — next compute_advisories()
+            # call will rebuild from the fresh snapshot.
+            self._advisories_cache = None
             if self.workday_id:
                 assign_destination_colors(self.workday_id, self.conn)
         except Exception:
@@ -741,6 +747,24 @@ class AppController(QObject):
 
     def get_last_result(self) -> RecomputeResult | None:
         return self._last_result
+
+    # ── advisories ───────────────────────────────────────────────────────
+
+    def compute_advisories(self) -> dict[int, list[Advisory]]:
+        """Return a dict of stop_number -> list of Advisory objects.
+
+        Results are cached against the current recompute result; the
+        cache is invalidated when a new recompute completes (see
+        _on_recompute_done) so subsequent calls always reflect the
+        latest plan.
+        """
+        if not self._last_result:
+            return {}
+        if self._advisories_cache is None:
+            self._advisories_cache = advisories_for_result(
+                self._last_result, self.conn,
+            )
+        return self._advisories_cache
 
     # ── BayCanvas data ───────────────────────────────────────────────────
 
@@ -802,17 +826,18 @@ class AppController(QObject):
         lock_rows = self.conn.execute(
             """
             SELECT cargo_line_id, pallet_index, zone_label,
-                   cube_x, cube_y, cube_z
+                   cube_x, cube_y, cube_z, orientation
             FROM pallet_locks
             WHERE workday_id = ?
             """,
             (self.workday_id,),
         ).fetchall()
-        locks_by_zone: dict[str, dict[tuple[int, int], tuple[int, int, int]]] = {}
+        # Value is (cube_x, cube_y, cube_z, orientation).
+        locks_by_zone: dict[str, dict[tuple[int, int], tuple[int, int, int, int]]] = {}
         for r in lock_rows:
             locks_by_zone.setdefault(r["zone_label"], {})[
                 (r["cargo_line_id"], r["pallet_index"])
-            ] = (r["cube_x"], r["cube_y"], r["cube_z"])
+            ] = (r["cube_x"], r["cube_y"], r["cube_z"], r["orientation"])
 
         rects: list[PalletRect] = []
 
@@ -853,7 +878,13 @@ class AppController(QObject):
                         # Lookup the footprint for the lock.
                         box = box_for(size)
                         w, l, h = box["width"], box["length"], box["height"]
-                        if w > zw and box.get("rotatable") and l <= zw:
+                        lock_orientation = lock[3] if len(lock) > 3 else 0
+                        if lock_orientation == 1 and box.get("rotatable"):
+                            # User requested a horizontal rotation.
+                            w, l = l, w
+                        elif w > zw and box.get("rotatable") and l <= zw:
+                            # Auto-rotate fallback for orientation=0
+                            # when the natural footprint won't fit.
                             w, l = l, w
                         locked_entries.append(
                             (key, size, w, l, h, lock[0], lock[1], lock[2])
@@ -1525,6 +1556,7 @@ class AppController(QObject):
         cube_x: int,
         cube_y: int,
         cube_z: int,
+        orientation: int = 0,
     ) -> None:
         """Lock a single pallet of a cargo line to a specific cube.
 
@@ -1532,6 +1564,12 @@ class AppController(QObject):
         the 0-based position in the deterministic palletize() output.
         Re-locking the same pallet replaces the previous lock (upsert
         via INSERT OR REPLACE).
+
+        ``orientation`` is 0 for the pallet's natural WxL footprint or
+        1 for a 90-degree horizontal rotation (W and L swap). The
+        bounds check below honors the rotation so a user can pin a
+        16-SCU pallet sideways when the zone is narrower than its
+        natural length.
 
         Validates that the zone exists on the active workday's ship,
         the cube is in-bounds, and the pallet_index is within range
@@ -1586,7 +1624,20 @@ class AppController(QObject):
         from .planner.physical_packer import box_for
         box = box_for(pallets[pallet_index])
         pw, pl, ph = box["width"], box["length"], box["height"]
-        if pw > zone["width_units"] and box.get("rotatable") and pl <= zone["width_units"]:
+        if orientation == 1:
+            # User requested a horizontal rotation. Only valid for
+            # rotatable footprints; for non-rotatable (square) ones it
+            # is a no-op so we silently accept it.
+            if box.get("rotatable"):
+                pw, pl = pl, pw
+            elif pw != pl:
+                raise ToolError(
+                    f"Pallet size {pallets[pallet_index]} SCU is not "
+                    f"rotatable — orientation=1 is invalid."
+                )
+        elif pw > zone["width_units"] and box.get("rotatable") and pl <= zone["width_units"]:
+            # Auto-rotate when the natural footprint doesn't fit the
+            # zone width (legacy behavior preserved for orientation=0).
             pw, pl = pl, pw
         if cube_x < 0 or cube_y < 0 or cube_z < 0:
             raise ToolError(
@@ -1614,11 +1665,11 @@ class AppController(QObject):
             """
             INSERT OR REPLACE INTO pallet_locks
                 (workday_id, cargo_line_id, pallet_index,
-                 zone_label, cube_x, cube_y, cube_z)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                 zone_label, cube_x, cube_y, cube_z, orientation)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (self.workday_id, cargo_line_id, pallet_index,
-             zone_label, cube_x, cube_y, cube_z),
+             zone_label, cube_x, cube_y, cube_z, int(orientation)),
         )
         self.conn.commit()
 
@@ -1648,7 +1699,7 @@ class AppController(QObject):
         return self.conn.execute(
             """
             SELECT workday_id, cargo_line_id, pallet_index,
-                   zone_label, cube_x, cube_y, cube_z
+                   zone_label, cube_x, cube_y, cube_z, orientation
             FROM pallet_locks
             WHERE workday_id = ?
             ORDER BY cargo_line_id, pallet_index

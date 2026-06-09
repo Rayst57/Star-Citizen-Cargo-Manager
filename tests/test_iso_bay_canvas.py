@@ -24,7 +24,7 @@ import pytest
 pytest.importorskip("PySide6")
 
 from PySide6.QtCore import QPoint, QPointF, Qt, QEvent
-from PySide6.QtGui import QMouseEvent, QPixmap
+from PySide6.QtGui import QKeyEvent, QMouseEvent, QPixmap
 from PySide6.QtWidgets import QApplication
 
 from src.app_controller import AppController
@@ -242,13 +242,10 @@ def test_drag_drop_calls_lock_pallet(qapp):
     press_pos = QPoint(int(cx), int(cy))
 
     # Drop on a different ground cell within the same zone (RM is 4x6).
-    # Use the iso projection at (cell 2, cell 3, 0) — well inside the
-    # zone and not under any other pallet.
-    drop_sx, drop_sy = iso_project(
-        2.5, 3.5, 0, canvas._origin.x(), canvas._origin.y(),
-        canvas._cell_w, canvas._cell_h,
-    )
-    drop_pos = QPoint(int(drop_sx), int(drop_sy))
+    # Use the camera-aware projection at (cell 2, cell 3, 0) — well
+    # inside the zone and not under any other pallet.
+    drop_pt = canvas.project(2.5, 3.5, 0)
+    drop_pos = QPoint(int(drop_pt.x()), int(drop_pt.y()))
 
     canvas.mousePressEvent(_make_mouse_event(QEvent.Type.MouseButtonPress, press_pos))
     assert canvas._drag_shape is not None, "press should pick up pallet"
@@ -274,3 +271,130 @@ def test_clear_locks_button_calls_controller(qapp):
     canvas.refresh()
     canvas._on_clear_locks()
     assert ctrl.clear_calls == 1
+
+
+# ── 4. Camera orbit + rotation ────────────────────────────────────────
+
+
+def test_camera_orbit_changes_projection(qapp):
+    """Changing the camera yaw must move a pallet's projected position.
+
+    Pure-math sanity: project at default yaw, rotate the camera, and
+    confirm the same world cube now lives at a different screen point.
+    """
+    import math
+    ctrl = _FakeController()
+    canvas = IsoBayCanvas(ctrl)
+    canvas.resize(800, 600)
+    canvas.refresh()
+
+    p0 = canvas.project(2.0, 1.0, 0.0)
+    canvas._yaw += math.radians(45)
+    p1 = canvas.project(2.0, 1.0, 0.0)
+    # x and y must both shift — the rotation isn't axis-aligned for a
+    # non-origin point at a fresh 45-degree yaw bump.
+    assert (abs(p1.x() - p0.x()) > 1e-3
+            or abs(p1.y() - p0.y()) > 1e-3), (
+        f"Orbit had no effect on projection: {p0} -> {p1}"
+    )
+
+
+def test_unproject_round_trip_after_orbit(qapp):
+    """project() followed by unproject_ground() must round-trip on the
+    z=0 ground plane for arbitrary yaw and pitch."""
+    import math
+    ctrl = _FakeController()
+    canvas = IsoBayCanvas(ctrl)
+    canvas.resize(800, 600)
+    canvas.refresh()
+
+    canvas._yaw = math.radians(33)
+    canvas._pitch = math.radians(48)
+
+    wx, wy = 3.0, 5.0
+    pt = canvas.project(wx, wy, 0.0)
+    rx, ry = canvas.unproject_ground(pt.x(), pt.y())
+    assert abs(rx - wx) < 1e-6, f"round-trip rx={rx}, expected {wx}"
+    assert abs(ry - wy) < 1e-6, f"round-trip ry={ry}, expected {wy}"
+
+
+class _RotFakeController(_FakeController):
+    """Variant of _FakeController whose lock_pallet captures the
+    orientation kwarg (so the rotation test can verify it)."""
+
+    def __init__(self):
+        super().__init__()
+        # 16 SCU = (w=2, l=4) per scu_boxes.json — exercise the
+        # rotation by starting with the natural footprint.
+        self.rect = _FakeRect(
+            cargo_line_id=42, zone_label="RM", bay="main",
+            cell_x=0, cell_y=0, cell_z=0,
+            cell_w=2, cell_l=4, cell_h=2,
+            pallet_size=16, pallet_index=0,
+        )
+
+    def lock_pallet(self, cargo_line_id, pallet_index, zone, x, y, z,
+                    orientation=0):
+        self.lock_calls.append((cargo_line_id, pallet_index, zone,
+                                x, y, z, orientation))
+
+
+def _make_key_event(kind, key) -> QKeyEvent:
+    return QKeyEvent(kind, key, Qt.KeyboardModifier.NoModifier)
+
+
+def test_pallet_rotation_swaps_footprint(qapp):
+    """Drag a 16-SCU pallet (w=2, l=4), press R to rotate, drop.
+
+    After the drop the controller is called with orientation=1 and the
+    held rect carries the swapped (w=4, l=2) footprint so the renderer
+    paints the rotated outline.
+    """
+    ctrl = _RotFakeController()
+    canvas = IsoBayCanvas(ctrl)
+    canvas.resize(800, 600)
+    canvas.refresh()
+    assert canvas._shapes, "geometry should include the seeded 16-SCU pallet"
+
+    shape = canvas._shapes[0]
+    cx = sum(pt.x() for pt in shape.top) / 4
+    cy = sum(pt.y() for pt in shape.top) / 4
+    press_pos = QPoint(int(cx), int(cy))
+
+    canvas.mousePressEvent(_make_mouse_event(
+        QEvent.Type.MouseButtonPress, press_pos,
+    ))
+    assert canvas._drag_shape is not None
+    assert canvas._drag_orientation == 0
+    # Natural footprint at the start of the drag.
+    rect = canvas._drag_shape.rect
+    assert (rect.cell_w, rect.cell_l) == (2, 4)
+
+    # Press R — orientation flips and the rect's footprint swaps.
+    canvas.keyPressEvent(_make_key_event(
+        QEvent.Type.KeyPress, Qt.Key.Key_R,
+    ))
+    assert canvas._drag_orientation == 1
+    assert (rect.cell_w, rect.cell_l) == (4, 2), (
+        f"R should swap (w, l) → got ({rect.cell_w}, {rect.cell_l})"
+    )
+
+    # Drop somewhere valid inside the 4x6 RM zone. (0, 0) is fine for
+    # a rotated 16 SCU (4x2 footprint), since 0+4 <= 4 and 0+2 <= 6.
+    drop_pt = canvas.project(0.0, 0.0, 0)
+    # Aim slightly into the cell so unproject_ground floors to (0, 0).
+    drop_pos = QPoint(int(drop_pt.x()) + 1, int(drop_pt.y()) + 1)
+
+    canvas.mouseMoveEvent(_make_mouse_event(
+        QEvent.Type.MouseMove, drop_pos,
+    ))
+    canvas.mouseReleaseEvent(_make_mouse_event(
+        QEvent.Type.MouseButtonRelease, drop_pos,
+    ))
+
+    assert len(ctrl.lock_calls) == 1, ctrl.lock_calls
+    cl_id, p_idx, zone, x, y, z, orientation = ctrl.lock_calls[0]
+    assert (cl_id, p_idx, zone) == (42, 0, "RM")
+    assert orientation == 1, (
+        f"Expected orientation=1 after R press, got {orientation}"
+    )
