@@ -186,14 +186,30 @@ class AddContractDialog(QDialog):
             tr.setWordWrap(True)
             root.addWidget(tr)
 
-        # Buttons
+        # Buttons — From Screenshot on the left, OK/Cancel on the right.
+        # The screenshot button opens ScreenCaptureDialog, parses a
+        # screenshot via the vision API, and prefills the fields above
+        # so the user can review/edit before saving.
+        button_row = QHBoxLayout()
+        self.screenshot_btn = QPushButton("📷 From Screenshot")
+        self.screenshot_btn.setProperty("flat", True)
+        self.screenshot_btn.setToolTip(
+            "Capture a region of your screen (Star Citizen window, "
+            "monitor, or any open window) and let GPT-4o vision extract "
+            "the contract data."
+        )
+        self.screenshot_btn.clicked.connect(self._on_screenshot_clicked)
+        button_row.addWidget(self.screenshot_btn)
+        button_row.addStretch(1)
+
         bb = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok |
             QDialogButtonBox.StandardButton.Cancel
         )
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
-        root.addWidget(bb)
+        button_row.addWidget(bb)
+        root.addLayout(button_row)
 
         # Pre-populate when editing
         if contract:
@@ -255,6 +271,108 @@ class AddContractDialog(QDialog):
         self.rows_layout.removeWidget(row)
         row.hide()
         row.deleteLater()
+
+    # ── screenshot → vision prefill ────────────────────────────────────
+
+    def _on_screenshot_clicked(self) -> None:
+        # Local import so the rest of the app doesn't pay the cost (or
+        # take a hard dep on mss) when the user never opens the dialog.
+        from .screen_capture import ScreenCaptureDialog
+        dlg = ScreenCaptureDialog(self.controller, parent=self)
+        dlg.contract_parsed.connect(self._apply_parsed_contract)
+        dlg.exec()
+
+    def _apply_parsed_contract(self, data: dict) -> None:
+        """Prefill the dialog fields from a vision-parsed contract dict.
+
+        Stations and commodities come back as *names* (the model has no
+        access to our DB ids), so we set them through the editable
+        line-edit and rely on the existing _station_id() resolver. If a
+        name doesn't match anything in the combo's list the user sees
+        the typed text and can fix it before saving.
+        """
+        if not isinstance(data, dict):
+            QMessageBox.warning(
+                self, "Parse failed",
+                f"Unexpected parse result: {data!r}",
+            )
+            return
+        if "error" in data:
+            QMessageBox.warning(
+                self, "No contract found", str(data["error"]),
+            )
+            return
+
+        # Pickup station — set the editable text; _station_id() resolves
+        # it back to an id by case-insensitive text match.
+        pickup = (data.get("pickup_station") or "").strip()
+        if pickup:
+            self._set_station_combo_text(self.pickup_combo, pickup)
+
+        # Max pallet size — clamp to a valid choice.
+        max_size = data.get("max_pallet_size")
+        if isinstance(max_size, int) and max_size in PALLET_SIZES:
+            self.max_combo.setCurrentText(str(max_size))
+
+        # Pickup candidates (multi-pickup variant). Clear any existing
+        # candidate rows first so a re-parse doesn't pile up.
+        candidates = data.get("pickup_candidates") or []
+        if candidates:
+            for row in list(self._candidate_combos()):
+                # _candidate_combos returns the inner combos; the parent
+                # row widget owns the remove button.
+                parent_row = row.parentWidget()
+                if parent_row is not None:
+                    self._remove_candidate(parent_row)
+            for cand in candidates:
+                cand = (cand or "").strip()
+                if not cand:
+                    continue
+                combo = self._add_candidate()
+                self._set_station_combo_text(combo, cand)
+
+        # Deliveries — clear all existing rows, then add one row per
+        # parsed delivery. Always keep at least one row.
+        for r in list(self._delivery_rows()):
+            self.rows_layout.removeWidget(r)
+            r.hide()
+            r.deleteLater()
+
+        deliveries = data.get("deliveries") or []
+        if not deliveries:
+            self._add_row()
+            return
+
+        for d in deliveries:
+            row = self._add_row()
+            dest = (d.get("destination") or "").strip()
+            commodity = (d.get("commodity") or "").strip()
+            scu = d.get("scu")
+            if dest:
+                self._set_station_combo_text(row.station_combo, dest)
+            if commodity:
+                self._set_commodity_combo_text(row.commodity_combo, commodity)
+            if isinstance(scu, (int, float)) and scu > 0:
+                row.scu_spin.setValue(int(scu))
+
+    @staticmethod
+    def _set_station_combo_text(combo: QComboBox, name: str) -> None:
+        """Set an editable station combo to `name`. Prefer an exact
+        case-insensitive match against the combo's existing items so
+        currentData() picks up the right id; otherwise fall back to
+        the raw typed text and let the user fix it."""
+        idx = combo.findText(name, Qt.MatchFlag.MatchFixedString)
+        if idx >= 0:
+            combo.setCurrentIndex(idx)
+            return
+        combo.setCurrentIndex(-1)
+        combo.setEditText(name)
+
+    @staticmethod
+    def _set_commodity_combo_text(combo: QComboBox, name: str) -> None:
+        idx = combo.findText(name, Qt.MatchFlag.MatchFixedString)
+        if idx >= 0:
+            combo.setCurrentIndex(idx)
 
     def _load_contract(self, contract: dict) -> None:
         # Pickup station
