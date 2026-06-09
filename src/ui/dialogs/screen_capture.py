@@ -30,12 +30,31 @@ PREVIEW_MAX_WIDTH = 600
 def _capture_libs_available() -> tuple[bool, str]:
     """Return (available, missing_libs_message). mss is required;
     pygetwindow is optional (needed for window enumeration on Windows
-    but monitor capture works without it)."""
+    but monitor capture works without it).
+
+    The diagnostic message names which lib failed AND shows the active
+    Python so the user can tell whether the install went to the same
+    interpreter the app is running."""
+    import sys
+    missing: list[str] = []
     try:
         import mss  # noqa: F401
     except ImportError:
+        missing.append("mss")
+    try:
+        import pygetwindow  # noqa: F401
+    except ImportError:
+        missing.append("pygetwindow")
+    if "mss" in missing:
+        # mss is required — without it we have nothing.
+        miss_list = " ".join(missing)
         return False, (
-            "Install screen capture support: pip install mss pygetwindow"
+            "Screen capture libraries missing.\n\n"
+            f"  Install:  pip install {miss_list}\n"
+            f"  Python:   {sys.executable}\n\n"
+            "Tip: make sure the install goes to the SAME Python the "
+            "app is running from (the path above). If you already "
+            "installed, click ↻ Refresh below."
         )
     return True, ""
 
@@ -174,7 +193,7 @@ class ScreenCaptureDialog(QDialog):
         title.setProperty("heading", True)
         root.addWidget(title)
 
-        # Source selector + Capture button
+        # Source selector + Capture button.
         source_row = QHBoxLayout()
         source_row.addWidget(QLabel("Source:"))
         self.source_combo = QComboBox()
