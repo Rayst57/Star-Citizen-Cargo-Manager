@@ -40,6 +40,14 @@ def _seraphim(controller) -> int:
     ).fetchone()["id"]
 
 
+def _c2(controller) -> int:
+    """C2 ship id — for tests whose assertions depend on C2-specific
+    zone layout (cap-per-zone, prio order)."""
+    return controller.conn.execute(
+        "SELECT id FROM ships WHERE name = 'C2 Hercules'"
+    ).fetchone()["id"]
+
+
 def _zones_used_at(result, stop_number: int) -> set[str]:
     return {e.zone_label for e in result.snapshots.get(stop_number, [])}
 
@@ -90,7 +98,9 @@ def test_loads_drain_lowest_priority_bay_first(controller):
     On the C2 the lowest-prio zones are F1/F2/F3 (cap=72, prio 1–3);
     R-bays come later (prio 4+). 32 SCU should land in F1.
     """
-    wid = controller.start_workday(_seraphim(controller), None, False)
+    wid = controller.start_workday(
+        _seraphim(controller), None, False, ship_id=_c2(controller)
+    )
     controller.add_contract({
         "pickup_station": "Yellow Core",
         "max_pallet_size": 8,
@@ -174,7 +184,9 @@ def test_transload_moves_recorded_when_consolidation_helps(controller):
     should consolidate the two Long Forest pieces (40 + 60 = 100) into
     a single R-bay.
     """
-    wid = controller.start_workday(_seraphim(controller), None, False)
+    wid = controller.start_workday(
+        _seraphim(controller), None, False, ship_id=_c2(controller)
+    )
     # Long Forest 40 SCU — picked up at origin.
     controller.add_contract({
         "pickup_station": "Seraphim Station",
@@ -930,6 +942,70 @@ def test_unlocked_pallets_pack_around_locked(controller):
                         f"idx={r.pallet_index}, size={r.pallet_size}) "
                         f"overlaps locked cube {locked_cube}"
                     )
+
+
+def test_locked_rotated_pallet_persists(controller):
+    """Locking a rotatable pallet with orientation=1 should swap (w, l)
+    on the rendered PalletRect after recompute.
+
+    A 2-SCU pallet has a natural (w=2, l=1) footprint and is rotatable.
+    With orientation=1 the renderer must stamp it as (w=1, l=2) so the
+    pinned cube layout matches what the user set. Using a 2-SCU pallet
+    keeps both orientations physically valid inside the C2's 2-wide
+    zones.
+    """
+    from src.planner.recompute import recompute as run_recompute
+
+    wid = controller.start_workday(_seraphim(controller), None, False)
+    controller.add_contract({
+        "pickup_station": "Seraphim Station",
+        "max_pallet_size": 2,
+        "deliveries": [
+            {"destination": "Long Forest", "commodity": "Tungsten",
+             "scu": 2},
+        ],
+    })
+    result = run_recompute(wid, controller.conn)
+    controller._last_result = result
+    assign_destination_colors(wid, controller.conn)
+
+    cl_id = _cargo_line_id(controller, wid)
+
+    chosen_stop = None
+    for s in result.route_stops:
+        if any(e.cargo_line_id == cl_id
+               for e in result.snapshots.get(s.stop_number, [])):
+            chosen_stop = s.stop_number
+            break
+    assert chosen_stop is not None
+
+    pre_rects = controller.get_pallet_rects(stop_number=chosen_stop)
+    pre_pallets = [r for r in pre_rects if r.cargo_line_id == cl_id]
+    assert pre_pallets, "Cargo line should have rendered pallets pre-lock"
+    target_zone = pre_pallets[0].zone_label
+
+    # Lock the pallet rotated 90° so it occupies (w=1, l=2) instead of
+    # the natural (w=2, l=1). Origin (0, 0) is a valid placement for
+    # both orientations within the zone.
+    controller.lock_pallet(cl_id, 0, target_zone, 0, 0, 0, orientation=1)
+
+    result2 = run_recompute(wid, controller.conn)
+    controller._last_result = result2
+
+    post_rects = controller.get_pallet_rects(stop_number=chosen_stop)
+    locked = [
+        r for r in post_rects
+        if r.cargo_line_id == cl_id and r.pallet_index == 0
+    ]
+    assert locked, (
+        "Expected exactly one rendered pallet for pallet_index=0 "
+        f"after the rotated lock. Got rects: {post_rects}"
+    )
+    rotated = locked[0]
+    assert (rotated.cell_w, rotated.cell_l) == (1, 2), (
+        f"Rotated lock should swap (w, l) to (1, 2); got "
+        f"({rotated.cell_w}, {rotated.cell_l})"
+    )
 
 
 def test_lock_validation_rejects_out_of_bounds(controller):

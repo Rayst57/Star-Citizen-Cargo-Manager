@@ -184,6 +184,21 @@ CREATE TABLE contracts (
     UNIQUE (workday_id, contract_number)
 );
 
+-- Optional alternative pickup stations for a contract whose cargo MAY
+-- be at any of several candidate stations (the pilot finds out on
+-- arrival). The contract's existing pickup_station_id still points to
+-- the PRIMARY (first) candidate. For single-pickup contracts (the
+-- legacy case) this table is either empty or holds a single row
+-- matching pickup_station_id; for multi-pickup contracts it holds 2+
+-- rows including the primary, ordered by sequence_order.
+CREATE TABLE contract_pickup_candidates (
+    contract_id    INTEGER NOT NULL REFERENCES contracts(id) ON DELETE CASCADE,
+    station_id     INTEGER NOT NULL REFERENCES stations(id),
+    sequence_order INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (contract_id, station_id)
+);
+CREATE INDEX idx_contract_pickup_candidates_contract ON contract_pickup_candidates(contract_id);
+
 CREATE TABLE cargo_lines (
     id                      INTEGER PRIMARY KEY AUTOINCREMENT,
     contract_id             INTEGER NOT NULL REFERENCES contracts(id) ON DELETE CASCADE,
@@ -230,9 +245,27 @@ CREATE TABLE pallet_locks (
     cube_x          INTEGER NOT NULL,
     cube_y          INTEGER NOT NULL,
     cube_z          INTEGER NOT NULL,
+    -- 0 = natural WxL orientation, 1 = rotated 90 degrees (W and L swap)
+    orientation     INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (workday_id, cargo_line_id, pallet_index)
 );
 CREATE INDEX idx_pallet_locks_workday ON pallet_locks(workday_id);
+
+-- Pallets displaced from their assigned zone by the user (via the
+-- 3D drag-drop "force-push" workflow) and waiting for a new home.
+-- Rows here represent pallets that the planner should treat as NOT
+-- loaded — they don't count toward zone SCU and aren't rendered in
+-- any zone of the 3D view; instead the UI's holding-table sidebar
+-- shows them grouped by destination so the user can pick them back
+-- up and drop them somewhere else.
+CREATE TABLE pallet_holding (
+    workday_id     INTEGER NOT NULL REFERENCES workdays(id) ON DELETE CASCADE,
+    cargo_line_id  INTEGER NOT NULL REFERENCES cargo_lines(id) ON DELETE CASCADE,
+    pallet_index   INTEGER NOT NULL,
+    notes          TEXT,
+    PRIMARY KEY (workday_id, cargo_line_id, pallet_index)
+);
+CREATE INDEX idx_pallet_holding_workday ON pallet_holding(workday_id);
 
 CREATE TABLE pallet_conflicts (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,

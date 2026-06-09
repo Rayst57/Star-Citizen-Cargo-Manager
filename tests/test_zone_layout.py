@@ -44,6 +44,15 @@ def _seraphim(controller) -> int:
     ).fetchone()["id"]
 
 
+def _c2(controller) -> int:
+    """Resolve the C2 Hercules ship id; used by tests that hard-code C2
+    assumptions (zone count, bay dimensions) so they aren't broken by
+    larger-capacity ships being added to the seed list."""
+    return controller.conn.execute(
+        "SELECT id FROM ships WHERE name = 'C2 Hercules'"
+    ).fetchone()["id"]
+
+
 # ── Zone segregation ─────────────────────────────────────────────────────
 
 def test_two_destinations_get_two_zones(controller):
@@ -199,7 +208,9 @@ def test_wide_pallets_auto_rotate(controller):
 # ── Empty zones ─────────────────────────────────────────────────────────
 
 def test_empty_zones_appear_in_strips(controller):
-    wid = controller.start_workday(_seraphim(controller), None, False)
+    wid = controller.start_workday(
+        _seraphim(controller), None, False, ship_id=_c2(controller)
+    )
     controller.add_contract({
         "pickup_station": "Yellow Core",
         "max_pallet_size": 8,
