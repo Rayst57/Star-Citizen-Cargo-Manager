@@ -55,8 +55,8 @@ from PySide6.QtGui import (
     QPen, QPolygonF, QResizeEvent, QWheelEvent,
 )
 from PySide6.QtWidgets import (
-    QComboBox, QHBoxLayout, QLabel, QMessageBox, QPushButton, QSizePolicy,
-    QVBoxLayout, QWidget,
+    QComboBox, QDialog, QHBoxLayout, QLabel, QMessageBox, QPushButton,
+    QSizePolicy, QVBoxLayout, QWidget,
 )
 
 try:                                                # optional dep
@@ -786,6 +786,45 @@ class IsoBayCanvas(QWidget):
         self.setFocus()
         self.update()
 
+    def _find_displaced_pallets(
+        self, zone: str, x: int, y: int, z: int,
+        shape, orientation: int, dragged_cl: int, dragged_idx: int,
+    ) -> list:
+        """Return the PalletRects in *zone* whose cubes intersect the
+        footprint of the dragged pallet at (x, y, z). Excludes the
+        pallet being dragged. The footprint reflects the current
+        orientation (swapped w/l when orientation == 1)."""
+        rect = shape.rect
+        w = getattr(rect, "cell_w", 1)
+        l = getattr(rect, "cell_l", 1)
+        h = getattr(rect, "cell_h", 1)
+        # The dragged rect's cell_w/cell_l have already been swapped
+        # by the R-key handler to reflect the active orientation.
+        target_cubes = {
+            (x + dx, y + dy, z + dz)
+            for dx in range(w) for dy in range(l) for dz in range(h)
+        }
+        displaced = []
+        for p in self._pallets:
+            if getattr(p, "zone_label", None) != zone:
+                continue
+            if (getattr(p, "cargo_line_id", None) == dragged_cl
+                    and getattr(p, "pallet_index", 0) == dragged_idx):
+                continue
+            pw = getattr(p, "cell_w", 1)
+            pl = getattr(p, "cell_l", 1)
+            ph = getattr(p, "cell_h", 1)
+            px = getattr(p, "cell_x", 0)
+            py = getattr(p, "cell_y", 0)
+            pz = getattr(p, "cell_z", 0)
+            p_cubes = {
+                (px + dx, py + dy, pz + dz)
+                for dx in range(pw) for dy in range(pl) for dz in range(ph)
+            }
+            if p_cubes & target_cubes:
+                displaced.append(p)
+        return displaced
+
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         if event.button() == Qt.MouseButton.RightButton:
             self._orbit_last = None
@@ -821,6 +860,59 @@ class IsoBayCanvas(QWidget):
             )
             self.update()
             return
+        # Force-push: if the target cubes are occupied by OTHER pallets,
+        # confirm the displacement before locking. Approved displacees
+        # get pushed to the holding table; the operator can place them
+        # back later via the holding sidebar.
+        displaced = self._find_displaced_pallets(
+            zone, x, y, z, shape, orientation, cl_id, p_idx,
+        )
+        if displaced:
+            from ..dialogs.force_push import ForcePushDialog
+            incoming = {
+                "cargo_line_id": cl_id,
+                "pallet_index": p_idx,
+                "size": getattr(rect, "pallet_size", 0),
+                "destination": getattr(rect, "delivery_station_name", "—"),
+            }
+            displaced_info = [
+                {
+                    "cargo_line_id": d.cargo_line_id,
+                    "pallet_index": d.pallet_index,
+                    "size": d.pallet_size,
+                    "destination": d.delivery_station_name,
+                    "commodity": d.commodity_name,
+                }
+                for d in displaced
+            ]
+            dlg = ForcePushDialog(
+                self.controller,
+                incoming_pallet=incoming,
+                displaced_pallets=displaced_info,
+                parent=self,
+            )
+            if dlg.exec() != QDialog.DialogCode.Accepted:
+                self.update()
+                return
+            confirmed = list(dlg.confirmed_displacements)
+            # If the user unchecked any displacee, abort the drop (can't
+            # land a pallet that depends on keeping someone else there).
+            if len(confirmed) != len(displaced_info):
+                QMessageBox.information(
+                    self, "Drop aborted",
+                    "Some pallets that would block this drop were "
+                    "marked 'keep'. The pallet can't land here.",
+                )
+                self.update()
+                return
+            push_fn = getattr(self.controller, "push_pallets_to_holding", None)
+            if push_fn is not None:
+                try:
+                    push_fn(confirmed, notes="Displaced by force-push in 3D view")
+                except Exception as e:                  # noqa: BLE001
+                    QMessageBox.warning(self, "Push failed", str(e))
+                    self.update()
+                    return
         try:
             # Prefer the orientation-aware signature; fall back to the
             # legacy 6-arg call if a stub controller doesn't accept it.
@@ -985,15 +1077,29 @@ class IsoBayCanvas(QWidget):
 # ── dialog wrapper ───────────────────────────────────────────────────────
 
 def open_iso_view(controller, parent=None):
-    """Open the IsoBayCanvas in a resizable modeless dialog."""
-    from PySide6.QtWidgets import QDialog, QVBoxLayout as _V
+    """Open the IsoBayCanvas in a resizable modeless dialog with the
+    holding-table sidebar."""
+    from PySide6.QtWidgets import QDialog, QHBoxLayout as _H, QSplitter
+    from ..widgets.holding_table import HoldingTableWidget
     dlg = QDialog(parent)
     dlg.setWindowTitle("Cargo Bay — 3D View")
-    dlg.resize(900, 700)
-    lay = _V(dlg)
+    dlg.resize(1200, 800)
+    splitter = QSplitter(Qt.Orientation.Horizontal, dlg)
+    canvas = IsoBayCanvas(controller, parent=splitter)
+    holding = HoldingTableWidget(controller, parent=splitter)
+    # When the user clicks "Pick up" on a holding pallet, refresh the
+    # canvas so the next click in 3D can target a cube; the pallet is
+    # off any zone until it gets a new lock.
+    holding.pallet_picked.connect(lambda _cl, _idx: canvas.refresh())
+    splitter.addWidget(canvas)
+    splitter.addWidget(holding)
+    splitter.setStretchFactor(0, 3)
+    splitter.setStretchFactor(1, 1)
+    splitter.setSizes([900, 300])
+    lay = _H(dlg)
     lay.setContentsMargins(0, 0, 0, 0)
-    canvas = IsoBayCanvas(controller, parent=dlg)
-    lay.addWidget(canvas)
+    lay.addWidget(splitter)
     canvas.refresh()
+    holding.refresh()
     dlg.show()
     return dlg
