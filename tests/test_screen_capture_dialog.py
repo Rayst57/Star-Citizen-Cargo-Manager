@@ -38,8 +38,10 @@ def test_dialog_opens_without_mss_installed(qapp, monkeypatch):
     dlg = ScreenCaptureDialog(controller)
     try:
         status = dlg.status_label.text()
-        assert "Install screen capture support" in status
-        assert "pip install mss" in status
+        # Error message names the missing lib + the active Python path,
+        # so the user can spot a source-vs-bundle Python mismatch.
+        assert "mss" in status.lower()
+        assert "pip install" in status.lower()
         # Capture is disabled — there's nothing to capture without mss.
         assert not dlg.capture_btn.isEnabled()
         assert not dlg.source_combo.isEnabled()

@@ -37,6 +37,13 @@ a = Analysis(
         *openai_hidden,
         "keyring.backends.Windows",
         "pkg_resources.py2_warn",
+        # Screen-capture deps — imported lazily inside the
+        # ScreenCaptureDialog so PyInstaller's static analysis misses
+        # them. Listing them here forces the bundle to include them.
+        "mss",
+        "mss.windows",        # Windows backend module mss loads at runtime
+        "pygetwindow",
+        "pygetwindow._pygetwindow_win",  # Windows backend
     ],
     hookspath=[],
     hooksconfig={},

@@ -9,6 +9,10 @@ openai>=1.30              # STT (Whisper), LLM, TTS
 keyring>=24               # API key storage in Windows Credential Manager
 httpx>=0.27               # cancellable async HTTP
 
+# ── Screen capture (From Screenshot button on AddContract) ──────
+mss>=9.0                  # cross-platform fast screen / monitor capture
+pygetwindow>=0.0.9        # window enumeration for the "pick a window" picker
+
 # ── Dev / test / packaging ──────────────────────────────────────
 pytest>=8.2
 pyinstaller>=6.5
