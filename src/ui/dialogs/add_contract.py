@@ -77,7 +77,11 @@ class DeliveryRow(QFrame):
         self.station_combo = _make_station_combo(controller)
         self.commodity_combo = QComboBox()
         self.scu_spin = QSpinBox()
-        self.scu_spin.setRange(1, 696)
+        # Upper bound is intentionally generous — a single delivery
+        # can legitimately exceed any one ship's capacity (the user
+        # may pick up & drop off intermediates), and contract sizes
+        # are creeping into the thousands as larger ships arrive.
+        self.scu_spin.setRange(1, 99999)
         self.scu_spin.setValue(8)
         self.scu_spin.setSuffix(" SCU")
 
