@@ -13,8 +13,8 @@ dialog detects this and shows a friendly install message.
 
 from __future__ import annotations
 
-from PySide6.QtCore import QBuffer, QIODevice, Qt, QThread, Signal
-from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtCore import QBuffer, QIODevice, QPoint, QRect, Qt, QThread, Signal
+from PySide6.QtGui import QColor, QImage, QMouseEvent, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QComboBox, QDialog, QHBoxLayout, QLabel, QMessageBox, QPushButton,
     QVBoxLayout,
@@ -172,6 +172,167 @@ class _ParseThread(QThread):
             self.failed.emit(str(e))
 
 
+class CroppablePreview(QLabel):
+    """Preview label that lets the user drag a selection rectangle over
+    the captured image to focus a vision parse on a sub-region.
+
+    Stars Citizen typically runs fullscreen, so capturing the SC window
+    grabs the whole monitor. Without a crop tool the vision API has to
+    parse a 4K screenshot dominated by HUD, sky, and other UI elements
+    instead of the contract panel. Letting the user draw a rectangle
+    around just the contract panel keeps the parse fast and accurate.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAlignment(
+            Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
+        )
+        self.setStyleSheet("QLabel { border: 1px dashed #555; padding: 8px; }")
+        self.setText("No capture yet.")
+        self.setProperty("muted", True)
+        self.setMouseTracking(True)
+        self._original_image: QImage | None = None
+        self._displayed_pixmap: QPixmap | None = None
+        # Selection rect is in DISPLAYED pixmap coordinates (after scaling).
+        self._sel_start: QPoint | None = None
+        self._sel_end: QPoint | None = None
+        self._sel_active: bool = False
+        # Where the pixmap actually sits inside the label, in label coords
+        # — used to translate mouse events into pixmap coords.
+        self._pix_origin: QPoint = QPoint(8, 8)
+
+    def set_image(self, image: QImage, displayed: QPixmap) -> None:
+        """Show *displayed* (a scaled QPixmap) while remembering *image*
+        (the original full-resolution QImage) for crop math."""
+        self._original_image = image
+        self._displayed_pixmap = displayed
+        self._sel_start = self._sel_end = None
+        self._sel_active = False
+        # Size the label to the pixmap so coordinates are 1:1 inside it.
+        self.setText("")
+        self.setMinimumSize(
+            displayed.width() + 16, displayed.height() + 16,
+        )
+        self.update()
+
+    def clear_selection(self) -> None:
+        self._sel_start = self._sel_end = None
+        self._sel_active = False
+        self.update()
+
+    def has_selection(self) -> bool:
+        if self._sel_start is None or self._sel_end is None:
+            return False
+        r = QRect(self._sel_start, self._sel_end).normalized()
+        return r.width() >= 8 and r.height() >= 8
+
+    def selected_image(self) -> QImage | None:
+        """Return the cropped QImage if there's a selection, else the
+        full captured image. None if nothing has been captured yet."""
+        if self._original_image is None or self._original_image.isNull():
+            return None
+        if not self.has_selection() or self._displayed_pixmap is None:
+            return self._original_image
+        # Translate the displayed-coordinate selection back to original
+        # image coordinates via the displayed/original scale ratio.
+        sel = QRect(self._sel_start, self._sel_end).normalized()
+        scale_x = self._original_image.width() / self._displayed_pixmap.width()
+        scale_y = self._original_image.height() / self._displayed_pixmap.height()
+        src = QRect(
+            int(sel.x() * scale_x),
+            int(sel.y() * scale_y),
+            int(sel.width() * scale_x),
+            int(sel.height() * scale_y),
+        )
+        src = src.intersected(self._original_image.rect())
+        if src.isEmpty():
+            return self._original_image
+        return self._original_image.copy(src)
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        super().paintEvent(event)
+        if self._displayed_pixmap is None:
+            return
+        p = QPainter(self)
+        p.drawPixmap(self._pix_origin, self._displayed_pixmap)
+        if self.has_selection():
+            sel = QRect(self._sel_start, self._sel_end).normalized()
+            # Translate selection to label space for drawing.
+            label_sel = sel.translated(self._pix_origin)
+            # Dim everything outside the selection.
+            pix_rect = QRect(
+                self._pix_origin,
+                self._displayed_pixmap.size(),
+            )
+            overlay = QColor(0, 0, 0, 110)
+            for r in self._regions_outside(pix_rect, label_sel):
+                p.fillRect(r, overlay)
+            p.setPen(QPen(QColor("#26b6d4"), 2))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRect(label_sel)
+        p.end()
+
+    @staticmethod
+    def _regions_outside(outer: QRect, inner: QRect) -> list[QRect]:
+        """Return up-to-4 rects covering outer \\ inner for the dimming
+        overlay."""
+        out = []
+        if inner.top() > outer.top():
+            out.append(QRect(
+                outer.left(), outer.top(),
+                outer.width(), inner.top() - outer.top(),
+            ))
+        if inner.bottom() < outer.bottom():
+            out.append(QRect(
+                outer.left(), inner.bottom() + 1,
+                outer.width(), outer.bottom() - inner.bottom(),
+            ))
+        if inner.left() > outer.left():
+            out.append(QRect(
+                outer.left(), inner.top(),
+                inner.left() - outer.left(), inner.height(),
+            ))
+        if inner.right() < outer.right():
+            out.append(QRect(
+                inner.right() + 1, inner.top(),
+                outer.right() - inner.right(), inner.height(),
+            ))
+        return out
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        if (event.button() != Qt.MouseButton.LeftButton
+                or self._displayed_pixmap is None):
+            return
+        # Translate to pixmap coords.
+        pt = event.position().toPoint() - self._pix_origin
+        if not QRect(QPoint(0, 0), self._displayed_pixmap.size()).contains(pt):
+            return
+        self._sel_start = pt
+        self._sel_end = pt
+        self._sel_active = True
+        self.update()
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        if not self._sel_active or self._displayed_pixmap is None:
+            return
+        pt = event.position().toPoint() - self._pix_origin
+        # Clamp to pixmap bounds.
+        pt.setX(max(0, min(pt.x(), self._displayed_pixmap.width() - 1)))
+        pt.setY(max(0, min(pt.y(), self._displayed_pixmap.height() - 1)))
+        self._sel_end = pt
+        self.update()
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        if event.button() != Qt.MouseButton.LeftButton:
+            return
+        self._sel_active = False
+        # If the click didn't drag (tiny rect), treat as a clear.
+        if not self.has_selection():
+            self._sel_start = self._sel_end = None
+        self.update()
+
+
 class ScreenCaptureDialog(QDialog):
     """Capture a region of the screen and parse it into a contract."""
 
@@ -203,15 +364,27 @@ class ScreenCaptureDialog(QDialog):
         source_row.addWidget(self.capture_btn)
         root.addLayout(source_row)
 
-        # Preview thumbnail
-        self.preview_label = QLabel("No capture yet.")
-        self.preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        # Preview with drag-to-crop selection. Star Citizen typically
+        # runs fullscreen so capturing the SC window grabs the whole
+        # monitor; the user can drag a rectangle on the preview to
+        # focus the vision parse on just the contract panel.
+        self.preview_label = CroppablePreview()
         self.preview_label.setMinimumHeight(200)
-        self.preview_label.setProperty("muted", True)
-        self.preview_label.setStyleSheet(
-            "QLabel { border: 1px dashed #555; padding: 8px; }"
-        )
         root.addWidget(self.preview_label, 1)
+
+        crop_row = QHBoxLayout()
+        self.crop_hint = QLabel(
+            "💡 Drag a rectangle on the preview to crop to just the "
+            "contract panel before parsing."
+        )
+        self.crop_hint.setProperty("muted", True)
+        self.crop_hint.setWordWrap(True)
+        crop_row.addWidget(self.crop_hint, 1)
+        self.clear_crop_btn = QPushButton("Clear selection")
+        self.clear_crop_btn.setProperty("flat", True)
+        self.clear_crop_btn.clicked.connect(self.preview_label.clear_selection)
+        crop_row.addWidget(self.clear_crop_btn)
+        root.addLayout(crop_row)
 
         # Status line
         self.status_label = QLabel("")
@@ -297,8 +470,9 @@ class ScreenCaptureDialog(QDialog):
                 PREVIEW_MAX_WIDTH,
                 Qt.TransformationMode.SmoothTransformation,
             )
-        self.preview_label.setPixmap(pix)
-        self.preview_label.setText("")
+        # CroppablePreview owns both the original image (for accurate
+        # crop coords) and the displayed scaled pixmap.
+        self.preview_label.set_image(image, pix)
 
     # ── parse ──────────────────────────────────────────────────────────
 
@@ -317,18 +491,30 @@ class ScreenCaptureDialog(QDialog):
             )
             return
 
+        # Send only the user-selected crop if they dragged one;
+        # otherwise the full capture.
+        image_to_parse = self.preview_label.selected_image()
+        if image_to_parse is None or image_to_parse.isNull():
+            self.status_label.setText("Capture a screenshot first.")
+            return
         try:
-            png = _qimage_to_png_bytes(self._captured_image)
+            png = _qimage_to_png_bytes(image_to_parse)
         except Exception as e:
             QMessageBox.warning(
                 self, "Encoding failed",
                 f"Could not encode captured image as PNG: {e}",
             )
             return
+        cropped = self.preview_label.has_selection()
+        size_note = (
+            f"{image_to_parse.width()}×{image_to_parse.height()} (cropped)"
+            if cropped else
+            f"{image_to_parse.width()}×{image_to_parse.height()}"
+        )
 
         self.parse_btn.setEnabled(False)
         self.capture_btn.setEnabled(False)
-        self.status_label.setText("Parsing…")
+        self.status_label.setText(f"Parsing {size_note}…")
 
         self._thread = _ParseThread(png, api_key)
         self._thread.parsed.connect(self._on_parsed)
