@@ -126,7 +126,12 @@ def test_hotkey_trigger_pushes_to_queue(controller, monkeypatch):
 
     # Pretend the saved source resolves to a fixed test image.
     canned = _solid_image()
-    monkeypatch.setattr(sc, "grab_source", lambda saved: canned)
+    monkeypatch.setattr(
+        sc, "grab_source",
+        lambda saved, return_reason=False: (
+            (canned, "") if return_reason else canned
+        ),
+    )
     # Pretend a source is saved so install_quick_capture has something
     # to label the entry with.
     controller.settings.set("screen_capture_source", {
@@ -155,7 +160,12 @@ def test_hotkey_trigger_no_op_when_grab_fails(controller, monkeypatch):
     from src.ui import quick_capture
     from src.ui.dialogs import screen_capture as sc
 
-    monkeypatch.setattr(sc, "grab_source", lambda saved: None)
+    monkeypatch.setattr(
+        sc, "grab_source",
+        lambda saved, return_reason=False: (
+            (None, "test no-grab") if return_reason else None
+        ),
+    )
 
     win = QMainWindow()
     hk = quick_capture.install_quick_capture(controller, win)

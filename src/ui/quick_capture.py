@@ -186,27 +186,27 @@ def install_quick_capture(controller, main_window) -> QuickCaptureHotkey | None:
         from .dialogs.screen_capture import grab_source
         saved = controller.settings.get("screen_capture_source") or {}
         if not saved:
-            _toast("⛔ Quick Capture: no source saved — pick one in Settings → Capture")
+            _toast(
+                "⛔ Quick Capture: no source saved — "
+                "Settings → Capture",
+                ms=5000,
+            )
             _log.info("quick_capture: hotkey fired but no source saved")
             return
-        img = grab_source(saved)
+        img, reason = grab_source(saved, return_reason=True)
         if img is None or img.isNull():
-            label = saved.get("label", "?")
-            _toast(
-                f"⛔ Quick Capture: '{label}' isn't running. Open SC, "
-                f"or pick a monitor in Settings."
-            )
-            _log.info(
-                "quick_capture: hotkey fired but capture source "
-                "couldn't be resolved (saved=%r)", saved,
-            )
+            _toast(f"⛔ Quick Capture failed: {reason}", ms=6000)
+            _log.info("quick_capture: hotkey grab failed: %s", reason)
             return
         label = saved.get("label", "") if isinstance(saved, dict) else ""
         controller.capture_queue.push(img, source_label=label)
-        _toast(
+        msg = (
             f"📸 Captured from '{label}' — "
             f"{len(controller.capture_queue)} in queue"
         )
+        if reason:
+            msg += f"  ({reason})"
+        _toast(msg)
         _log.info(
             "quick_capture: queued screenshot from '%s' (depth=%d)",
             label, len(controller.capture_queue),

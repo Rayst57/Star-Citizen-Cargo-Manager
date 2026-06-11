@@ -119,9 +119,10 @@ def _list_sources(diagnostics: dict | None = None) -> list[dict]:
     # property's semantics vary by platform anyway. The size filter
     # (> 0) is enough to drop genuinely-invalid handles while still
     # showing fullscreen apps like Star Citizen.
+    seen_titles: set[str] = set()
     for w in windows:
-        title = getattr(w, "title", "") or ""
-        if not title.strip():
+        title = (getattr(w, "title", "") or "").strip()
+        if not title:
             continue
         diag["titled_windows"] += 1
         try:
@@ -131,12 +132,25 @@ def _list_sources(diagnostics: dict | None = None) -> list[dict]:
             continue
         if width <= 0 or height <= 0:
             continue
-        diag["sized_windows"] += 1
         try:
             left = int(getattr(w, "left", 0) or 0)
             top  = int(getattr(w, "top", 0) or 0)
         except Exception:                                   # noqa: BLE001
             left = top = 0
+        # Windows parks minimized windows at (-32000, -32000) so they
+        # still enumerate. mss can grab from that rect but the result
+        # is empty / black, which user-side looks like "capture
+        # silently failed". Drop them — the user has to un-minimize
+        # the target window before it can be captured anyway.
+        if left <= -32000 or top <= -32000:
+            continue
+        diag["sized_windows"] += 1
+        if title in seen_titles:
+            # Some apps create multiple top-level windows with the same
+            # title (toolbar + main); dedupe so the dropdown isn't
+            # noisy. The first hit wins — usually the main window.
+            continue
+        seen_titles.add(title)
         sources.append({
             "label": title,
             "kind": "window",
@@ -205,22 +219,96 @@ def resolve_saved_source(saved: dict) -> dict | None:
     return None
 
 
-def grab_source(saved: dict) -> QImage | None:
-    """Grab a screenshot of the saved source, or None if it can't be
-    resolved or the capture libs are missing. Never raises."""
-    ok, _ = _capture_libs_available()
+def grab_source(
+    saved: dict,
+    return_reason: bool = False,
+):
+    """Grab a screenshot of the saved source.
+
+    Returns a QImage on success, or ``None`` on failure. When
+    *return_reason* is True, returns ``(image_or_None, reason_str)``
+    where the reason explains exactly why the grab failed — used by
+    the Settings "Test capture" dialog to give actionable feedback
+    instead of the old "Either / or" generic message.
+
+    For window sources where the live grab comes back blank (Star
+    Citizen running Fullscreen Exclusive is the canonical case), this
+    automatically retries against the monitor that contains the
+    window's centre point. The original failure reason is preserved
+    so the caller can tell the user "fell back to the monitor".
+    """
+    def _ret(img, reason):
+        return (img, reason) if return_reason else img
+
+    ok, msg = _capture_libs_available()
     if not ok:
-        return None
+        return _ret(None, msg or "Capture libraries missing.")
+
     src = resolve_saved_source(saved)
     if src is None:
-        return None
+        label = (saved or {}).get("label", "?")
+        return _ret(None, (
+            f"Saved source '{label}' isn't in the live enumeration. "
+            f"For a window: it's closed or minimized. For a monitor: "
+            f"its index changed."
+        ))
+
+    rect = src["rect"]
     try:
-        img = _grab_rect(src["rect"])
-    except Exception:                                   # noqa: BLE001
-        return None
-    if img.isNull():
-        return None
-    return img
+        img = _grab_rect(rect)
+        grab_err = ""
+    except Exception as exc:                                # noqa: BLE001
+        img = None
+        grab_err = str(exc)
+
+    if img is not None and not img.isNull():
+        return _ret(img, "")
+
+    # Window grab failed (mss exception OR null image) — for window
+    # sources that's almost always Fullscreen Exclusive. Fall back to
+    # the monitor that contains the window's centre, which DOES grab
+    # the SC framebuffer through DWM.
+    if src["kind"] == "window":
+        try:
+            cx = rect["left"] + rect["width"] // 2
+            cy = rect["top"] + rect["height"] // 2
+            import mss
+            with mss.mss() as sct:
+                for i, m in enumerate(sct.monitors[1:], start=1):
+                    if (m["left"] <= cx < m["left"] + m["width"]
+                            and m["top"] <= cy < m["top"] + m["height"]):
+                        fb = _grab_rect({
+                            "left": m["left"], "top": m["top"],
+                            "width": m["width"], "height": m["height"],
+                        })
+                        if not fb.isNull():
+                            reason = (
+                                f"Window '{src['label']}' wouldn't "
+                                f"grab directly (likely Fullscreen "
+                                f"Exclusive) — captured Monitor {i} "
+                                f"instead."
+                            )
+                            if grab_err:
+                                reason += f" (mss: {grab_err})"
+                            return _ret(fb, reason)
+                        break
+        except Exception:                                   # noqa: BLE001
+            pass
+
+    reason = (
+        f"Couldn't grab '{src['label']}' "
+        f"(rect={rect['width']}x{rect['height']} at "
+        f"{rect['left']},{rect['top']})."
+    )
+    if grab_err:
+        reason += f" mss error: {grab_err}"
+    elif src["kind"] == "window":
+        reason += (
+            " The window returned an empty image. If Star Citizen is "
+            "in Fullscreen Exclusive, switch it to Borderless / "
+            "Fullscreen Windowed, or pick a Monitor source."
+        )
+    return _ret(None, reason)
 
 
 def source_to_settings_value(src: dict) -> dict:
@@ -572,27 +660,27 @@ class ScreenCaptureDialog(QDialog):
         if not src:
             self.status_label.setText("Pick a source to capture.")
             return
-        try:
-            image = _grab_rect(src["rect"])
-        except Exception as e:
-            QMessageBox.warning(
-                self, "Capture failed",
-                f"Could not capture {src['label']}: {e}",
-            )
-            return
-        if image.isNull():
-            QMessageBox.warning(
-                self, "Capture failed",
-                f"Captured image of {src['label']} was empty.",
-            )
+        # Run through grab_source so window captures that come back
+        # blank (Fullscreen Exclusive) auto-fall back to the monitor
+        # underneath, the same way the global Quick Capture hotkey
+        # does. We synthesise a "saved" spec from the current source
+        # so grab_source's resolver finds it.
+        saved_spec = source_to_settings_value(src)
+        image, reason = grab_source(saved_spec, return_reason=True)
+        if image is None or image.isNull():
+            QMessageBox.warning(self, "Capture failed", reason)
             return
         self._captured_image = image
         self._show_preview(image)
         self.parse_btn.setEnabled(True)
-        self.status_label.setText(
-            f"Captured {image.width()}×{image.height()} from {src['label']}. "
-            "Click 'Parse with AI' to extract contract data."
+        status = (
+            f"Captured {image.width()}×{image.height()} from "
+            f"{src['label']}. Click 'Parse with AI' to extract "
+            f"contract data."
         )
+        if reason:
+            status += f"\n(Note: {reason})"
+        self.status_label.setText(status)
 
     def _show_preview(self, image: QImage) -> None:
         pix = QPixmap.fromImage(image)
