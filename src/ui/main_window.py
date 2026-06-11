@@ -166,24 +166,13 @@ class MainWindow(QMainWindow):
         row.addWidget(brand)
         row.addStretch(1)
 
-        # Capture-queue badge — shows the number of screenshots pending
-        # parse (filled by the Quick Capture global hotkey). Hidden when
-        # the queue is empty so the topbar stays clean.
-        self.capture_badge = QPushButton("📸 0")
-        self.capture_badge.setProperty("flat", True)
-        self.capture_badge.setToolTip(
-            "Quick Capture queue — click to review pending screenshots."
-        )
-        self.capture_badge.clicked.connect(self._open_capture_queue)
-        self.capture_badge.hide()
-        row.addWidget(self.capture_badge)
-        self.controller.capture_queue.changed.connect(
-            self._on_capture_queue_changed
-        )
-
         # Iso "3D" view — birds-eye axonometric of the cargo bay with
         # per-pallet drag-to-lock. Lives in a separate dialog so the
         # tri-panel main view stays uncluttered.
+        # The Quick-Capture queue is reviewed from inside Add Contract
+        # — its "From Screenshot" button switches to "From Captures (N
+        # pending)" whenever the queue isn't empty, so the topbar
+        # stays uncluttered.
         iso_btn = QPushButton("Open 3D View")
         iso_btn.setProperty("flat", True)
         iso_btn.clicked.connect(self._open_iso_view)
@@ -191,15 +180,6 @@ class MainWindow(QMainWindow):
 
         MobiglassCornerOverlay(bar)
         return bar
-
-    def _on_capture_queue_changed(self, depth: int) -> None:
-        self.capture_badge.setText(f"📸 {depth}")
-        self.capture_badge.setVisible(depth > 0)
-
-    def _open_capture_queue(self) -> None:
-        from .dialogs.capture_queue_dialog import CaptureQueueDialog
-        dlg = CaptureQueueDialog(self.controller, parent=self)
-        dlg.exec()
 
     def _open_iso_view(self) -> None:
         # Keep a reference so the dialog isn't garbage-collected as soon
