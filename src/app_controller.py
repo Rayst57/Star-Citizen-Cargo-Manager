@@ -1005,8 +1005,8 @@ class AppController(QObject):
         rows = self.conn.execute(
             """
             SELECT z.zone_label, z.bay_label, z.cube_offset_x, z.cube_offset_y,
-                   z.width_units, z.length_units, z.scu_capacity,
-                   z.ship_forward_y, z.ramp_side, z.load_order
+                   z.width_units, z.length_units, z.height_units,
+                   z.scu_capacity, z.ship_forward_y, z.ramp_side, z.load_order
             FROM ship_zones z
             JOIN workdays w ON w.ship_id = z.ship_id
             WHERE w.id = ?
