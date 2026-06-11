@@ -58,10 +58,12 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
-        # Standard library bloat we never use.
+        # Standard library bloat we never call directly. We do NOT
+        # exclude `unittest` or `test` here even though we don't use
+        # them — pygetwindow (and a few other small libs) import
+        # unittest at module load, so excluding it breaks the bundle
+        # with "No module named 'unittest'".
         "tkinter",
-        "test",
-        "unittest",
         "pydoc_data",
         # Scientific stack — none of it is on our import path; excluding
         # in case a transitive dep (e.g. openai's optional extras) tries
