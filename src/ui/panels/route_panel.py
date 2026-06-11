@@ -152,6 +152,7 @@ class RoutePanel(QWidget):
                 load_summary=load_summary,
                 conflict_note=conflict_note,
                 is_current=(idx == cur_idx),
+                distance_km=getattr(stop, "distance_from_prev_km", None),
             )
             self.list_layout.insertWidget(self.list_layout.count() - 1, card)
 

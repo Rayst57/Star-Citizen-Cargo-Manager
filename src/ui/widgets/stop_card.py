@@ -20,6 +20,7 @@ class StopCard(QFrame):
         load_summary: str = "",
         conflict_note: str = "",
         is_current: bool = False,
+        distance_km: float | None = None,
         parent=None,
     ):
         super().__init__(parent)
@@ -47,6 +48,17 @@ class StopCard(QFrame):
         header.addWidget(ac)
 
         root.addLayout(header)
+
+        # Jump leg from the previous stop (Gm reads naturally for
+        # Stanton-scale hops; sub-0.1 Gm legs are same-body shuttles).
+        if distance_km:
+            if distance_km >= 100_000:
+                leg_text = f"⇢ {distance_km / 1e6:.1f} Gm jump"
+            else:
+                leg_text = "⇢ local hop"
+            leg = QLabel(leg_text)
+            leg.setProperty("muted", True)
+            root.addWidget(leg)
 
         # Unload
         if unload_summary:

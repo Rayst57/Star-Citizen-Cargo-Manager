@@ -4,12 +4,14 @@ Route builder — converts a workday's contracts into an ordered list of stops.
 Design (handbook §2.1):
   Priority: unload sanity > station count > reshuffling > SCU waste > travel time.
 
-Algorithm (when distances are null, use station sort_order as a proxy for
-geographic position — later replaced by actual Dijkstra on station_distances +
-jump_gates):
+Algorithm:
 
 1. Collect every unique station that appears as pickup or delivery.
-2. Sort by sort_order (ascending = nearest to origin first).
+2. Order by greedy nearest-neighbor on the Stanton map (see
+   planner.geography): starting from the origin, repeatedly fly to the
+   closest station that has useful work — a pickup, or a delivery whose
+   cargo has already been picked up. Stations without map coordinates
+   fall back to the static sort_order column.
 3. Emit one RouteStop per station:
    - "Depart"      — origin (always first)
    - "Load"        — pickup-only stop
@@ -27,6 +29,8 @@ import logging
 import sqlite3
 from dataclasses import dataclass, field
 from typing import Optional
+
+from .geography import distance_km, station_positions
 
 
 _log = logging.getLogger("cargo_manager")
@@ -54,6 +58,10 @@ class RouteStop:
     loads: list[CargoLineRef] = field(default_factory=list)
     unloads: list[CargoLineRef] = field(default_factory=list)
     notes: str = ""
+    # Map distance from the previous stop in km, or None when either
+    # endpoint has no known position (filled in last, after every
+    # splice, so inserted stops get correct legs too).
+    distance_from_prev_km: float | None = None
 
 
 def build_simple_route(
@@ -197,16 +205,14 @@ def build_simple_route(
                 )
                 station_map[c["pickup_station_id"]]["loads"].append(ref)
 
-    # ── Sort stations ─────────────────────────────────────────────────────
-    # Origin always first, then ascending sort_order, final_destination last.
-    def _sort_key(sid: int) -> tuple:
-        if sid == origin_id:
-            return (0, 0)
-        if final_destination_id and sid == final_destination_id:
-            return (2, 0)
-        return (1, station_map[sid]["sort_order"])
-
-    ordered_ids = sorted(station_map.keys(), key=_sort_key)
+    # ── Order stations ────────────────────────────────────────────────────
+    # Greedy nearest-neighbor on the Stanton map. Origin always first,
+    # final_destination always last. A delivery-only station becomes
+    # "eligible" once every one of its inbound pickups has been visited
+    # — no sense flying to Port Tressler while the Tressler cargo is
+    # still sitting at a pickup we haven't hit. Stations without map
+    # coordinates order by sort_order after all positioned ones.
+    positions = station_positions(conn)
 
     # Remove no-op stops (handbook §13): stations with no load, no unload,
     # and not origin / final destination.
@@ -218,7 +224,62 @@ def build_simple_route(
         info = station_map[sid]
         return bool(info["loads"] or info["unloads"])
 
-    ordered_ids = [sid for sid in ordered_ids if _has_work(sid)]
+    candidate_ids = [sid for sid in station_map.keys() if _has_work(sid)]
+
+    # cargo_line_id → pickup station (for delivery eligibility).
+    pickup_sid_of_cl: dict[int, int] = {}
+    for c in contracts:
+        for cl in cargo_lines:
+            if cl["contract_id"] == c["id"]:
+                pickup_sid_of_cl[cl["id"]] = c["pickup_station_id"]
+
+    def _travel_key(from_sid: int, to_sid: int) -> tuple:
+        """Sort key for "fly from A to B": positioned stations by real
+        distance first, unpositioned ones afterwards by sort_order."""
+        d = distance_km(positions.get(from_sid), positions.get(to_sid))
+        if d is not None:
+            return (0, d, station_map[to_sid]["sort_order"])
+        return (1, station_map[to_sid]["sort_order"], 0)
+
+    remaining = [sid for sid in candidate_ids if sid != origin_id]
+    save_for_last = (
+        final_destination_id
+        if final_destination_id and final_destination_id in remaining
+        else None
+    )
+    if save_for_last is not None:
+        remaining.remove(save_for_last)
+
+    ordered_ids = [origin_id]
+    visited: set[int] = {origin_id}
+    while remaining:
+        current = ordered_ids[-1]
+
+        def _eligible(sid: int) -> bool:
+            info = station_map[sid]
+            if info["loads"]:
+                return True
+            # Delivery-only: every inbound cargo line's pickup must
+            # already be behind us (origin-bound unloads are deferred
+            # to the return stop anyway, so treat unknown pickups as
+            # satisfied).
+            return all(
+                pickup_sid_of_cl.get(ref.cargo_line_id, origin_id) in visited
+                for ref in info["unloads"]
+            )
+
+        pool = [sid for sid in remaining if _eligible(sid)]
+        if not pool:
+            # Deadlock can't normally happen (every pickup is always
+            # eligible) — but guard anyway: just take the nearest.
+            pool = remaining
+        nxt = min(pool, key=lambda sid: _travel_key(current, sid))
+        ordered_ids.append(nxt)
+        visited.add(nxt)
+        remaining.remove(nxt)
+
+    if save_for_last is not None:
+        ordered_ids.append(save_for_last)
 
     _log.info(
         "route: ordered station ids=%s (origin=%d, final=%s)",
@@ -404,6 +465,17 @@ def build_simple_route(
     # Runs AFTER manual stops so user-explicit wishes are honoured
     # first, then auto-relief is applied to the merged route.
     stops = _inject_capacity_relief_stops(stops, workday_id, conn)
+
+    # Fill in per-leg distances last so every spliced-in stop (manual,
+    # candidate-pickup, relief, return visits) gets a correct leg.
+    for i, st in enumerate(stops):
+        if i == 0:
+            st.distance_from_prev_km = 0.0
+            continue
+        st.distance_from_prev_km = distance_km(
+            positions.get(stops[i - 1].station_id),
+            positions.get(st.station_id),
+        )
 
     return stops
 
