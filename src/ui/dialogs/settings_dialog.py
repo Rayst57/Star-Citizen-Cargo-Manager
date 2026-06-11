@@ -208,9 +208,10 @@ class SettingsDialog(QDialog):
         source_row = QHBoxLayout()
         self._capture_source_combo = QComboBox()
         self._capture_sources: list[dict] = []
+        self._enum_diag: dict = {}
         if self._lib_status["mss"]:
             try:
-                self._capture_sources = _list_sources()
+                self._capture_sources = _list_sources(self._enum_diag)
             except Exception as exc:                        # noqa: BLE001
                 self._capture_source_combo.setEnabled(False)
                 self._capture_source_combo.addItem(
@@ -235,6 +236,16 @@ class SettingsDialog(QDialog):
         source_w = QWidget()
         source_w.setLayout(source_row)
         f.addRow("Screen capture source", source_w)
+
+        # Enumeration diagnostics — say exactly what was found so the
+        # user can tell "did Refresh do anything?" at a glance.
+        self._enum_label = QLabel(self._format_enum_diag())
+        self._enum_label.setProperty("muted", True)
+        self._enum_label.setWordWrap(True)
+        self._enum_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        f.addRow("", self._enum_label)
 
         # Restore the saved selection (if it still exists in this run).
         saved = self.settings.get("screen_capture_source") or {}
@@ -294,13 +305,15 @@ class SettingsDialog(QDialog):
         from ..dialogs.screen_capture import _list_sources
         prev_data = self._capture_source_combo.currentData()
         self._capture_source_combo.clear()
+        self._enum_diag = {}
         try:
-            self._capture_sources = _list_sources()
+            self._capture_sources = _list_sources(self._enum_diag)
         except Exception as exc:                            # noqa: BLE001
             self._capture_source_combo.setEnabled(False)
             self._capture_source_combo.addItem(
                 f"(could not enumerate sources: {exc})",
             )
+            self._enum_label.setText(f"Enumeration failed: {exc}")
             return
         self._capture_source_combo.setEnabled(True)
         for src in self._capture_sources:
@@ -308,6 +321,36 @@ class SettingsDialog(QDialog):
         # Try to keep the previously-selected source highlighted.
         if isinstance(prev_data, dict):
             self._select_saved_source(self._source_to_settings(prev_data))
+        self._enum_label.setText(self._format_enum_diag())
+
+    def _format_enum_diag(self) -> str:
+        """Human-readable summary of the last enumeration so the user
+        can see whether the Refresh button picked anything new up."""
+        d = self._enum_diag
+        if not d:
+            return ""
+        parts = [f"Found {d.get('monitors', 0)} monitor(s)"]
+        if d.get("pygetwindow_error"):
+            parts.append(
+                f"⛔ pygetwindow: {d['pygetwindow_error']}"
+            )
+        else:
+            parts.append(
+                f"{d.get('sized_windows', 0)} window(s) "
+                f"({d.get('titled_windows', 0)} titled, "
+                f"{d.get('raw_windows', 0)} total raw handles)"
+            )
+        suffix = ""
+        if (d.get("raw_windows", 0) > 0
+                and d.get("sized_windows", 0) == 0):
+            suffix = (
+                "\nNo windows passed the size filter. If Star Citizen "
+                "is running in fullscreen exclusive mode, capture the "
+                "monitor instead — the OS doesn't expose SC as a "
+                "regular window in that mode. Switch SC to "
+                "Borderless / Fullscreen Windowed to grab it by name."
+            )
+        return "Enumerated: " + " · ".join(parts) + suffix
 
     def _select_saved_source(self, saved: dict) -> None:
         wanted_kind = saved.get("kind")

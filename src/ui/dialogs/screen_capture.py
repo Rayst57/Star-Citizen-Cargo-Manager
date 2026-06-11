@@ -59,7 +59,7 @@ def _capture_libs_available() -> tuple[bool, str]:
     return True, ""
 
 
-def _list_sources() -> list[dict]:
+def _list_sources(diagnostics: dict | None = None) -> list[dict]:
     """Enumerate available capture sources.
 
     Returns a list of dicts shaped:
@@ -68,8 +68,19 @@ def _list_sources() -> list[dict]:
 
     Window enumeration uses pygetwindow; if it isn't installed, only
     monitors are returned. mss is required for either.
+
+    When *diagnostics* is a dict, the function fills it with counts
+    explaining what was found vs filtered out — used by the Settings
+    tab to tell the user "saw N raw windows, M had titles, K passed
+    the size filter" instead of silently degrading.
     """
     sources: list[dict] = []
+    diag = diagnostics if isinstance(diagnostics, dict) else {}
+    diag.setdefault("monitors", 0)
+    diag.setdefault("raw_windows", 0)
+    diag.setdefault("titled_windows", 0)
+    diag.setdefault("sized_windows", 0)
+    diag.setdefault("pygetwindow_error", "")
 
     import mss
     with mss.mss() as sct:
@@ -85,40 +96,55 @@ def _list_sources() -> list[dict]:
                     "height": m["height"],
                 },
             })
+        diag["monitors"] = len(sct.monitors) - 1
 
     try:
         import pygetwindow as gw
-    except ImportError:
+    except ImportError as exc:
+        diag["pygetwindow_error"] = f"pygetwindow not installed: {exc}"
         return sources
 
     try:
         windows = gw.getAllWindows()
-    except Exception:
+    except Exception as exc:                                # noqa: BLE001
         # pygetwindow's macOS / Linux stubs raise NotImplementedError;
-        # silently fall back to monitor-only mode.
+        # surface the reason so the Settings UI can show it.
+        diag["pygetwindow_error"] = str(exc)
         return sources
 
+    diag["raw_windows"] = len(windows)
+
+    # NB: we deliberately don't filter on `isVisible` — on pygetwindow
+    # 0.0.9 it's a bound method (always truthy under getattr), and the
+    # property's semantics vary by platform anyway. The size filter
+    # (> 0) is enough to drop genuinely-invalid handles while still
+    # showing fullscreen apps like Star Citizen.
     for w in windows:
         title = getattr(w, "title", "") or ""
         if not title.strip():
             continue
-        # isVisible / visible — name varies by platform. Default to
-        # showing the window if the attr isn't present.
-        visible = getattr(w, "isVisible", getattr(w, "visible", True))
-        if not visible:
+        diag["titled_windows"] += 1
+        try:
+            width = int(getattr(w, "width", 0) or 0)
+            height = int(getattr(w, "height", 0) or 0)
+        except Exception:                                   # noqa: BLE001
             continue
-        width = getattr(w, "width", 0) or 0
-        height = getattr(w, "height", 0) or 0
         if width <= 0 or height <= 0:
             continue
+        diag["sized_windows"] += 1
+        try:
+            left = int(getattr(w, "left", 0) or 0)
+            top  = int(getattr(w, "top", 0) or 0)
+        except Exception:                                   # noqa: BLE001
+            left = top = 0
         sources.append({
             "label": title,
             "kind": "window",
             "rect": {
-                "left":   int(getattr(w, "left", 0) or 0),
-                "top":    int(getattr(w, "top", 0) or 0),
-                "width":  int(width),
-                "height": int(height),
+                "left":   left,
+                "top":    top,
+                "width":  width,
+                "height": height,
             },
         })
     return sources
