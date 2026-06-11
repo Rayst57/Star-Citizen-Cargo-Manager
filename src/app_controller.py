@@ -111,6 +111,7 @@ class BayZoneGeom:
     cube_offset_y: int
     width_units: int
     length_units: int
+    height_units: int = 4
 
 
 @dataclass
@@ -148,6 +149,10 @@ class PalletRect:
     delivery_station_name: str
     commodity_name: str
     contract_number: int
+    # Pickup station name — needed for hover tooltips that show the
+    # full Pickup → Destination route. Filled from the cargo line's
+    # contract.pickup_station_id by get_pallet_rects.
+    pickup_station_name: str = ""
     # 0-based position in the cargo line's deterministic palletize()
     # output. Combined with cargo_line_id this is the pallet's stable
     # identity — used by the UI to address individual pallets (e.g.
@@ -955,6 +960,9 @@ class AppController(QObject):
                     delivery_station_name=entry.delivery_station_name,
                     commodity_name=entry.commodity_name,
                     contract_number=entry.contract_number,
+                    pickup_station_name=getattr(
+                        entry, "pickup_station_name", "",
+                    ),
                     pallet_index=pallet_idx,
                     ship_forward_y=zone.get("ship_forward_y", "high"),
                     conflict_partner_colors=partner_colors if is_pallet_conflict else [],
@@ -1026,6 +1034,7 @@ class AppController(QObject):
                 cube_offset_y=r["cube_offset_y"],
                 width_units=r["width_units"],
                 length_units=r["length_units"],
+                height_units=r["height_units"],
             ))
             d["w"] = max(d["w"], r["cube_offset_x"] + r["width_units"])
             d["l"] = max(d["l"], r["cube_offset_y"] + r["length_units"])

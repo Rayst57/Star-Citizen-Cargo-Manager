@@ -96,6 +96,7 @@ class _PlacedCargo:
     delivery_station_name: str
     scu: int
     pallet_sizes: list[int]
+    pickup_station_name: str = ""
 
 
 @dataclass
@@ -248,6 +249,7 @@ def _split_into_zone(
         delivery_station_name=c.delivery_station_name,
         scu=sum(fitting),
         pallet_sizes=fitting,
+        pickup_station_name=c.pickup_station_name,
     )
     leftover_piece = _PlacedCargo(
         cargo_line_id=c.cargo_line_id,
@@ -259,6 +261,7 @@ def _split_into_zone(
         delivery_station_name=c.delivery_station_name,
         scu=sum(leftover),
         pallet_sizes=leftover,
+        pickup_station_name=c.pickup_station_name,
     )
     return placed_piece, leftover_piece
 
@@ -563,6 +566,7 @@ def _clone_placed(c: _PlacedCargo, sizes: list[int]) -> _PlacedCargo:
         delivery_station_name=c.delivery_station_name,
         scu=sum(sizes),
         pallet_sizes=list(sizes),
+        pickup_station_name=c.pickup_station_name,
     )
     mps = getattr(c, "_max_pallet_size", None)
     if mps is not None:
@@ -925,6 +929,9 @@ def _build_snapshot(
                 pallet_breakdown=palletize_summary(sizes),
                 is_conflicted=cl_id in cl_conflict,
                 conflict_group_id=cl_conflict.get(cl_id),
+                pickup_station_name=getattr(
+                    sample, "pickup_station_name", "",
+                ),
             ))
     entries.sort(key=lambda e: (e.zone_label, e.delivery_station_name))
     return entries
@@ -1100,10 +1107,12 @@ def build_zone_plan(
                cl.delivery_station_id,
                cm.name AS commodity_name,
                ds.name AS delivery_name,
+               ps.name AS pickup_name,
                ct.contract_number, ct.max_pallet_size
         FROM cargo_lines cl
         JOIN contracts   ct ON ct.id = cl.contract_id
         JOIN stations    ds ON ds.id = cl.delivery_station_id
+        JOIN stations    ps ON ps.id = ct.pickup_station_id
         JOIN commodities cm ON cm.id = cl.commodity_id
         WHERE ct.workday_id = ?
           AND ct.status != 'complete'
@@ -1126,6 +1135,7 @@ def build_zone_plan(
             delivery_station_name=r["delivery_name"],
             scu=r["scu_amount"],
             pallet_sizes=pallets,
+            pickup_station_name=r["pickup_name"] or "",
         )
         # Tag with max_pallet_size so we can re-palletize on persist.
         c._max_pallet_size = r["max_pallet_size"]  # type: ignore[attr-defined]
@@ -1217,6 +1227,7 @@ def build_zone_plan(
                     delivery_station_name=src.delivery_station_name,
                     scu=src.scu,
                     pallet_sizes=list(src.pallet_sizes),
+                    pickup_station_name=src.pickup_station_name,
                 )
                 cp._max_pallet_size = src._max_pallet_size  # type: ignore[attr-defined]
                 new_cargo.append(cp)
