@@ -33,6 +33,9 @@ class LoadoutEntry:
     pallet_breakdown: str
     is_conflicted: bool = False
     conflict_group_id: int | None = None
+    # Pickup station for the originating contract — used by the 3D
+    # view's hover tooltip to show the full Pickup → Destination route.
+    pickup_station_name: str = ""
 
 
 Snapshot = dict[int, list[LoadoutEntry]]  # stop_number → entries
@@ -68,11 +71,13 @@ def build_loadout_snapshots(
                cl.delivery_station_id,
                ds.name          AS delivery_name,
                ct.pickup_station_id,
+               ps.name          AS pickup_name,
                ct.contract_number,
                cm.name          AS commodity_name
         FROM cargo_lines cl
         JOIN contracts   ct ON ct.id = cl.contract_id
         JOIN stations    ds ON ds.id = cl.delivery_station_id
+        JOIN stations    ps ON ps.id = ct.pickup_station_id
         JOIN commodities cm ON cm.id = cl.commodity_id
         WHERE ct.workday_id = ?
           AND ct.status != 'complete'
@@ -154,6 +159,7 @@ def build_loadout_snapshots(
                     pallet_breakdown=z["breakdown"] or "",
                     is_conflicted=grp_id is not None,
                     conflict_group_id=grp_id,
+                    pickup_station_name=data.get("pickup_name", "") or "",
                 ))
 
         entries.sort(key=lambda e: (e.zone_label, e.delivery_station_name))

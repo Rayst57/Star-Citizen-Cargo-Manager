@@ -485,10 +485,12 @@ class IsoBayCanvas(QWidget):
                 wx, wy = self._zone_world_offset(b.bay_label, z.zone_label)
                 self._zone_meta[z.zone_label] = {
                     "bay": b.bay_label,
+                    "bay_label": b.bay_label,
                     "world_x": wx,
                     "world_y": wy,
                     "width": z.width_units,
                     "length": z.length_units,
+                    "height": getattr(z, "height_units", 4),
                 }
 
         self._shapes = []
@@ -751,7 +753,43 @@ class IsoBayCanvas(QWidget):
         idx = self._hit_test(pos)
         if idx != self._hover_index:
             self._hover_index = idx
+            self._update_hover_tooltip(pos, idx)
             self.update()
+        elif idx is not None:
+            # Same pallet, but the cursor moved — keep the tooltip
+            # anchored to the cursor so it doesn't lag behind.
+            self._update_hover_tooltip(pos, idx)
+
+    def _update_hover_tooltip(self, pos: QPoint, idx: int | None) -> None:
+        """Show a QToolTip with commodity + Pickup → Destination for
+        the pallet currently under the cursor, or hide it when the
+        cursor leaves a pallet."""
+        from PySide6.QtWidgets import QToolTip
+        if idx is None or idx >= len(self._shapes):
+            QToolTip.hideText()
+            return
+        r = self._shapes[idx].rect
+        cl = getattr(r, "cargo_line_id", "?")
+        pi = getattr(r, "pallet_index", 0)
+        pickup = getattr(r, "pickup_station_name", "") or "—"
+        dest = getattr(r, "delivery_station_name", "") or "—"
+        commodity = getattr(r, "commodity_name", "") or "—"
+        size = getattr(r, "pallet_size", "—")
+        contract = getattr(r, "contract_number", "—")
+        # Rich-text tooltip so we can emphasise the route line and
+        # the commodity, with smaller meta text below.
+        html = (
+            f"<div style='font-size: 11pt;'>"
+            f"<b>{commodity}</b><br>"
+            f"<span style='color:#5be4ff;'>{pickup}</span>"
+            f" &nbsp;→&nbsp; "
+            f"<span style='color:#ffd24a;'>{dest}</span><br>"
+            f"<span style='color:#8aa;font-size:9pt;'>"
+            f"{size} SCU &nbsp;|&nbsp; Contract #{contract} &nbsp;|&nbsp; "
+            f"cl#{cl}:p{pi}</span>"
+            f"</div>"
+        )
+        QToolTip.showText(self.mapToGlobal(pos), html, self)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         if event.button() == Qt.MouseButton.RightButton:
@@ -954,11 +992,96 @@ class IsoBayCanvas(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
 
+        self._draw_floor_grid(p)
         self._draw_zone_floors(p)
+        self._draw_bay_outlines(p)
         self._draw_pallets(p)
         if self._drag_shape is not None:
             self._draw_drag_ghost(p)
         p.end()
+
+    def _draw_floor_grid(self, p: QPainter) -> None:
+        """Thin grid on the ground plane underneath the zones — a few
+        cells of margin around the ship footprint. Helps sell the 3D
+        scale and matches the look of polished SC cargo viewers."""
+        if not self._zone_meta:
+            return
+        # Compute the world-space bounding box of all zones + margin.
+        xs, ys = [], []
+        for zm in self._zone_meta.values():
+            xs.append(zm["world_x"])
+            xs.append(zm["world_x"] + zm["width"])
+            ys.append(zm["world_y"])
+            ys.append(zm["world_y"] + zm["length"])
+        if not xs:
+            return
+        margin = 4
+        x0, x1 = min(xs) - margin, max(xs) + margin
+        y0, y1 = min(ys) - margin, max(ys) + margin
+        # Project corners + draw a grid of cell-sized parallelograms.
+        # Light pen, no fill — the zone floors will overlay on top.
+        p.setPen(QPen(QColor(60, 80, 95, 90), 1))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        for gx in range(x0, x1 + 1):
+            p.drawLine(self.project(gx, y0, 0), self.project(gx, y1, 0))
+        for gy in range(y0, y1 + 1):
+            p.drawLine(self.project(x0, gy, 0), self.project(x1, gy, 0))
+
+    def _draw_bay_outlines(self, p: QPainter) -> None:
+        """Translucent wireframe box for each bay showing its full
+        height limit — the 'opacity guide' so the user sees how much
+        head-room remains."""
+        if not self._zone_meta:
+            return
+        # Group zones by bay so we draw one combined box per bay
+        # rather than one per zone (looks cleaner on multi-zone bays).
+        by_bay: dict[str, dict] = {}
+        for zm in self._zone_meta.values():
+            bay = zm.get("bay_label", "main")
+            box = by_bay.setdefault(bay, {
+                "x0": zm["world_x"],
+                "x1": zm["world_x"] + zm["width"],
+                "y0": zm["world_y"],
+                "y1": zm["world_y"] + zm["length"],
+                "h":  zm.get("height", 4),
+            })
+            box["x0"] = min(box["x0"], zm["world_x"])
+            box["x1"] = max(box["x1"], zm["world_x"] + zm["width"])
+            box["y0"] = min(box["y0"], zm["world_y"])
+            box["y1"] = max(box["y1"], zm["world_y"] + zm["length"])
+            box["h"]  = max(box["h"],  zm.get("height", 4))
+
+        line_pen = QPen(QColor(38, 182, 212, 90), 1, Qt.PenStyle.DashLine)
+        label_pen = QPen(QColor(91, 228, 255, 200))
+        label_font = QFont("Segoe UI", 10)
+        label_font.setBold(True)
+        for bay_name, box in by_bay.items():
+            x0, x1, y0, y1, h = box["x0"], box["x1"], box["y0"], box["y1"], box["h"]
+            corners_low = [
+                self.project(x0, y0, 0), self.project(x1, y0, 0),
+                self.project(x1, y1, 0), self.project(x0, y1, 0),
+            ]
+            corners_high = [
+                self.project(x0, y0, h), self.project(x1, y0, h),
+                self.project(x1, y1, h), self.project(x0, y1, h),
+            ]
+            p.setPen(line_pen)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            for i in range(4):
+                p.drawLine(corners_low[i], corners_low[(i + 1) % 4])
+                p.drawLine(corners_high[i], corners_high[(i + 1) % 4])
+                p.drawLine(corners_low[i], corners_high[i])
+            # Bay label on the floor at the centre of the bay.
+            cx = (x0 + x1) / 2
+            cy = (y0 + y1) / 2
+            label_pt = self.project(cx, cy, 0)
+            p.setPen(label_pen)
+            p.setFont(label_font)
+            p.drawText(
+                QRectF(label_pt.x() - 80, label_pt.y() + 8, 160, 18),
+                Qt.AlignmentFlag.AlignCenter,
+                bay_name.title() + " Bay",
+            )
 
     def _draw_zone_floors(self, p: QPainter) -> None:
         """Paint a faint parallelogram for each zone's ground footprint."""
@@ -993,8 +1116,9 @@ class IsoBayCanvas(QWidget):
                 p.drawPolygon(poly)
 
     def _draw_pallets(self, p: QPainter) -> None:
-        font = QFont("Segoe UI", 8)
-        font.setBold(True)
+        size_font = QFont("Segoe UI", 9)
+        size_font.setBold(True)
+        label_font = QFont("Segoe UI", 7)
         for i, shape in enumerate(self._shapes):
             if self._drag_shape is shape:
                 p.setBrush(Qt.BrushStyle.NoBrush)
@@ -1003,14 +1127,15 @@ class IsoBayCanvas(QWidget):
                 continue
 
             base = QColor(shape.rect.color)
-            top_c = _shade(base, 130)
-            # The more-perpendicular side gets 118 (closer to base
-            # brightness); the more-glancing gets 143 (darker). side_a
-            # is the more-perpendicular by construction (higher dot).
-            side_a_c = base.darker(118)
-            side_b_c = base.darker(143)
-            border = base.darker(180)
-            border_pen = QPen(border, 1)
+            # Soft pastel shading — barely-different side faces matching
+            # the look of polished SC cargo viewers. Top stays at base,
+            # sides are subtle darkenings so the 3D form reads without
+            # the heavy contrast we had before.
+            top_c = base
+            side_a_c = base.darker(106)
+            side_b_c = base.darker(112)
+            border = base.darker(190)
+            border_pen = QPen(border, 0.8)
 
             p.setPen(border_pen)
             # Paint the more-glancing face first (it's mostly behind
@@ -1022,16 +1147,42 @@ class IsoBayCanvas(QWidget):
             p.setBrush(QBrush(top_c))
             p.drawPolygon(shape.top)
 
-            p.setFont(font)
-            text_color = (QColor("#ffffff") if top_c.lightness() < 150
-                          else QColor("#142028"))
+            # Pick text color from the top face's lightness — pastel
+            # colors get a dark glyph; saturated darks get a light one.
+            text_color = (QColor("#ffffff") if top_c.lightness() < 140
+                          else QColor("#1a2530"))
             p.setPen(QPen(text_color))
             cx = sum(pt.x() for pt in shape.top) / 4
             cy = sum(pt.y() for pt in shape.top) / 4
             p_idx = getattr(shape.rect, "pallet_index", 0)
-            p.drawText(QRectF(cx - 24, cy - 8, 48, 16),
-                       Qt.AlignmentFlag.AlignCenter,
-                       f"{shape.rect.label}#{p_idx}")
+            r = shape.rect
+            # On big pallets (top face wide enough to read text) print
+            # commodity + Pickup → Destination directly on the face.
+            # Smaller pallets show just the SCU number — the tooltip
+            # has the rest.
+            top_screen_w = max(abs(shape.top[1].x() - shape.top[0].x()),
+                                abs(shape.top[2].x() - shape.top[3].x()))
+            commodity = getattr(r, "commodity_name", "") or ""
+            pickup = getattr(r, "pickup_station_name", "") or ""
+            dest = getattr(r, "delivery_station_name", "") or ""
+            if top_screen_w >= 80 and (commodity or dest):
+                p.setFont(size_font)
+                p.drawText(QRectF(cx - 30, cy - 18, 60, 14),
+                           Qt.AlignmentFlag.AlignCenter,
+                           f"{r.label} SCU")
+                p.setFont(label_font)
+                if commodity:
+                    p.drawText(QRectF(cx - 60, cy - 4, 120, 12),
+                               Qt.AlignmentFlag.AlignCenter, commodity)
+                if dest:
+                    route = self._short_route(pickup, dest)
+                    p.drawText(QRectF(cx - 70, cy + 6, 140, 12),
+                               Qt.AlignmentFlag.AlignCenter, route)
+            else:
+                p.setFont(size_font)
+                p.drawText(QRectF(cx - 18, cy - 8, 36, 16),
+                           Qt.AlignmentFlag.AlignCenter,
+                           f"{r.label}")
 
             cl_id = getattr(shape.rect, "cargo_line_id", None)
             if cl_id is not None and (cl_id, p_idx) in self._locks:
@@ -1043,6 +1194,20 @@ class IsoBayCanvas(QWidget):
                 p.setBrush(Qt.BrushStyle.NoBrush)
                 p.setPen(QPen(QColor("#ff8a3c"), 2))
                 p.drawPolygon(shape.silhouette)
+
+    @staticmethod
+    def _short_route(pickup: str, dest: str) -> str:
+        """Compact route string for pallet labels — drops the
+        "Station" suffix and the L-point prefix on Lagrange names so
+        e.g. "CRU-L1 Ambitious Dream Station → Baijini Point" fits."""
+        def _short(name: str) -> str:
+            n = name or ""
+            n = n.replace(" Station", "").strip()
+            # Drop a leading "XYZ-LN " Lagrange prefix.
+            if len(n) > 7 and n[3:5] == "-L" and n[6:7] == " ":
+                n = n[7:]
+            return n.strip() or "—"
+        return f"{_short(pickup)} → {_short(dest)}"
 
     def _draw_drag_ghost(self, p: QPainter) -> None:
         """Outline of the dragged pallet snapped to the candidate cell."""
