@@ -30,7 +30,7 @@ import sqlite3
 from dataclasses import dataclass, field
 from typing import Optional
 
-from .geography import distance_km, station_positions
+from .geography import leg_km, station_positions
 
 
 _log = logging.getLogger("cargo_manager")
@@ -236,7 +236,7 @@ def build_simple_route(
     def _travel_key(from_sid: int, to_sid: int) -> tuple:
         """Sort key for "fly from A to B": positioned stations by real
         distance first, unpositioned ones afterwards by sort_order."""
-        d = distance_km(positions.get(from_sid), positions.get(to_sid))
+        d = leg_km(positions.get(from_sid), positions.get(to_sid))
         if d is not None:
             return (0, d, station_map[to_sid]["sort_order"])
         return (1, station_map[to_sid]["sort_order"], 0)
@@ -472,7 +472,7 @@ def build_simple_route(
         if i == 0:
             st.distance_from_prev_km = 0.0
             continue
-        st.distance_from_prev_km = distance_km(
+        st.distance_from_prev_km = leg_km(
             positions.get(stops[i - 1].station_id),
             positions.get(st.station_id),
         )
