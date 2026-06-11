@@ -140,6 +140,77 @@ def _grab_rect(rect: dict) -> QImage:
         ).copy()
 
 
+def resolve_saved_source(saved: dict) -> dict | None:
+    """Take a persisted source spec from settings and re-resolve it to
+    a fresh ``{label, kind, rect}`` ready for ``_grab_rect``.
+
+    Monitor entries match by ``index`` (defaults to 1 if missing).
+    Window entries match by title (case-insensitive substring) and
+    pick up the window's CURRENT bounds — so the saved source still
+    works after the user moves or resizes the Star Citizen window.
+
+    Returns None when the saved source can't be re-resolved (monitor
+    removed, window closed). Callers should fall back to prompting.
+    """
+    if not saved:
+        return None
+    sources = _list_sources()
+    kind = saved.get("kind")
+    if kind == "monitor":
+        idx = int(saved.get("index", 1))
+        for s in sources:
+            if s["kind"] == "monitor" and s["label"] == f"Monitor {idx}":
+                return s
+        return None
+    if kind == "window":
+        wanted = (saved.get("title") or saved.get("label") or "").strip().lower()
+        if not wanted:
+            return None
+        for s in sources:
+            if s["kind"] == "window" and wanted in s["label"].lower():
+                return s
+        return None
+    return None
+
+
+def grab_source(saved: dict) -> QImage | None:
+    """Grab a screenshot of the saved source, or None if it can't be
+    resolved or the capture libs are missing. Never raises."""
+    ok, _ = _capture_libs_available()
+    if not ok:
+        return None
+    src = resolve_saved_source(saved)
+    if src is None:
+        return None
+    try:
+        img = _grab_rect(src["rect"])
+    except Exception:                                   # noqa: BLE001
+        return None
+    if img.isNull():
+        return None
+    return img
+
+
+def source_to_settings_value(src: dict) -> dict:
+    """Persistable form of a source dict — strips the volatile rect
+    (window positions change) but keeps enough to re-resolve later."""
+    kind = src.get("kind")
+    if kind == "monitor":
+        # "Monitor 1" → index 1.
+        try:
+            idx = int(src["label"].split()[-1])
+        except (IndexError, ValueError):
+            idx = 1
+        return {"kind": "monitor", "label": src["label"], "index": idx}
+    if kind == "window":
+        return {
+            "kind": "window",
+            "label": src.get("label", ""),
+            "title": src.get("label", ""),
+        }
+    return {}
+
+
 def _qimage_to_png_bytes(image: QImage) -> bytes:
     """Encode a QImage as PNG bytes for the vision API."""
     buf = QBuffer()
@@ -407,6 +478,10 @@ class ScreenCaptureDialog(QDialog):
 
         # Populate sources — or show the install hint if mss is missing.
         self._populate_sources()
+        # Pre-select whatever the user previously saved in Settings →
+        # Capture so the rapid-fire workflow always lands on the right
+        # source without an extra click.
+        self._restore_saved_source()
 
     # ── source list ────────────────────────────────────────────────────
 
@@ -433,6 +508,28 @@ class ScreenCaptureDialog(QDialog):
 
         for src in sources:
             self.source_combo.addItem(src["label"], userData=src)
+
+    def _restore_saved_source(self) -> None:
+        settings = getattr(self.controller, "settings", None)
+        if settings is None:
+            return
+        saved = settings.get("screen_capture_source") or {}
+        if not saved:
+            return
+        wanted_kind = saved.get("kind")
+        wanted_label = (saved.get("label") or "").lower()
+        wanted_title = (saved.get("title") or wanted_label).lower()
+        for i in range(self.source_combo.count()):
+            src = self.source_combo.itemData(i)
+            if not src or src.get("kind") != wanted_kind:
+                continue
+            label = (src.get("label") or "").lower()
+            if wanted_kind == "monitor" and label == wanted_label:
+                self.source_combo.setCurrentIndex(i)
+                return
+            if wanted_kind == "window" and wanted_title in label:
+                self.source_combo.setCurrentIndex(i)
+                return
 
     # ── capture ────────────────────────────────────────────────────────
 

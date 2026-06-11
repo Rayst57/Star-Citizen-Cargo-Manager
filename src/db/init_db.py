@@ -108,6 +108,9 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
         ("Faint Glen",       "ARC-L4 Faint Glen Station"),
         ("Modern Express",   "ARC-L3 Modern Express Station"),
         ("Pyro Jump Point",  "Pyro Gateway (Stanton)"),
+        # Pyro-side gateway re-canonicalised to the UEX name so the
+        # startup UEX sync matches it instead of inserting a duplicate.
+        ("Stanton Jump Point", "Stanton Gateway (Pyro)"),
     ]
     for old_name, new_name in _STATION_RENAMES:
         # Only rename when the old row exists and the new name is free

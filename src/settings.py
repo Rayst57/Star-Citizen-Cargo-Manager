@@ -34,6 +34,17 @@ DEFAULTS: dict[str, str] = {
     "theme":                 "default",
     "window_opacity":        "1.0",
     "always_on_top":         "0",
+    # Screen capture source — JSON dict describing the last-saved
+    # capture target so the AddContract screenshot button and the
+    # global Quick-Capture hotkey always grab the same thing. Shape:
+    #   {"kind": "monitor", "label": "Monitor 1", "index": 1}
+    #   {"kind": "window",  "label": "Star Citizen", "title": "Star Citizen"}
+    # Empty string = unset (the user is prompted in the dialog).
+    "screen_capture_source": "",
+    # Global hotkey (parsed by the ``keyboard`` package) that grabs the
+    # saved capture source and pops an Add Contract dialog prefilled
+    # from the vision parse. Empty = no global hotkey active.
+    "hotkey_quick_capture": "",
     "hotkey_recompute":      "[]",
     "hotkey_cancel":         "Escape",
     # Backup path for the old "indistinguishable identical pallets"
@@ -73,6 +84,13 @@ def _coerce(key: str, raw: str) -> Any:
             return json.loads(raw or "[]")
         except json.JSONDecodeError:
             return []
+    if key == "screen_capture_source":
+        if not raw:
+            return {}
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            return {}
     return raw
 
 

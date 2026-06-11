@@ -242,6 +242,13 @@ class AppController(QObject):
         self._current_stop_index = 0   # 0 = before first stop completed
 
         self.api_key: str | None = get_api_key()
+
+        # Pending screenshots from the Quick Capture global hotkey.
+        # Lives on the controller so the main window's queue badge and
+        # the review dialog share the same list.
+        from .ui.quick_capture import CaptureQueue
+        self.capture_queue = CaptureQueue(self)
+
         _log.info("AppController initialised. db_path=%s", db_path)
 
     # ── workday lifecycle ────────────────────────────────────────────────

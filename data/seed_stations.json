@@ -1,9 +1,9 @@
 {
   "_meta": {
     "purpose": "Station / system / gateway seed. Loaded on first launch; re-synced (upsert) every launch.",
-    "scope": "Stanton system, full facility list. Pyro is a gateway-only placeholder.",
-    "as_of": "Patch 4.x - May 2026",
-    "station_count": 324
+    "scope": "Stanton + Pyro + Nyx, merged from UEX API; runtime startup sync keeps existing DBs current.",
+    "as_of": "UEX sync 2026-06-11",
+    "station_count": 393
   },
   "systems": [
     {
@@ -12,8 +12,11 @@
     },
     {
       "name": "Pyro",
-      "is_active": 1,
-      "notes": "Gateway-only placeholder; expand station list later"
+      "is_active": 1
+    },
+    {
+      "name": "Nyx",
+      "is_active": 1
     }
   ],
   "stations": [
@@ -191,14 +194,15 @@
     },
     {
       "system": "Pyro",
-      "name": "Stanton Jump Point",
-      "parent_body": null,
+      "name": "Stanton Gateway (Pyro)",
+      "parent_body": "Stanton Gateway (Pyro system)",
       "station_type": "gateway",
       "is_gateway": 1,
       "sort_order": 100,
       "aliases": [
         "Pyro-Stanton Gate (Pyro side)",
-        "Pyro Gateway"
+        "Pyro Gateway",
+        "Stanton Jump Point"
       ]
     },
     {
@@ -217,7 +221,9 @@
       "station_type": "mining_outpost",
       "is_gateway": 0,
       "sort_order": 1020,
-      "aliases": []
+      "aliases": [
+        "Edmond"
+      ]
     },
     {
       "system": "Stanton",
@@ -226,7 +232,9 @@
       "station_type": "mining_outpost",
       "is_gateway": 0,
       "sort_order": 1030,
-      "aliases": []
+      "aliases": [
+        "Hadley"
+      ]
     },
     {
       "system": "Stanton",
@@ -235,7 +243,9 @@
       "station_type": "mining_outpost",
       "is_gateway": 0,
       "sort_order": 1040,
-      "aliases": []
+      "aliases": [
+        "Oparei"
+      ]
     },
     {
       "system": "Stanton",
@@ -244,7 +254,9 @@
       "station_type": "mining_outpost",
       "is_gateway": 0,
       "sort_order": 1050,
-      "aliases": []
+      "aliases": [
+        "Pinewood"
+      ]
     },
     {
       "system": "Stanton",
@@ -253,7 +265,9 @@
       "station_type": "mining_outpost",
       "is_gateway": 0,
       "sort_order": 1060,
-      "aliases": []
+      "aliases": [
+        "Stanhope"
+      ]
     },
     {
       "system": "Stanton",
@@ -262,7 +276,9 @@
       "station_type": "mining_outpost",
       "is_gateway": 0,
       "sort_order": 1070,
-      "aliases": []
+      "aliases": [
+        "Thedus"
+      ]
     },
     {
       "system": "Stanton",
@@ -676,7 +692,9 @@
       "station_type": "distribution_centre",
       "is_gateway": 0,
       "sort_order": 1530,
-      "aliases": []
+      "aliases": [
+        "Sakura Sun Magnolia"
+      ]
     },
     {
       "system": "Stanton",
@@ -685,7 +703,9 @@
       "station_type": "salvage_yard",
       "is_gateway": 0,
       "sort_order": 1540,
-      "aliases": []
+      "aliases": [
+        "Reclamation"
+      ]
     },
     {
       "system": "Stanton",
@@ -730,7 +750,9 @@
       "station_type": "settlement",
       "is_gateway": 0,
       "sort_order": 1590,
-      "aliases": []
+      "aliases": [
+        "Makers"
+      ]
     },
     {
       "system": "Stanton",
@@ -748,7 +770,9 @@
       "station_type": "settlement",
       "is_gateway": 0,
       "sort_order": 1610,
-      "aliases": []
+      "aliases": [
+        "Pickers"
+      ]
     },
     {
       "system": "Stanton",
@@ -1110,7 +1134,9 @@
       "station_type": "mining_outpost",
       "is_gateway": 0,
       "sort_order": 13220,
-      "aliases": []
+      "aliases": [
+        "Shubin 10"
+      ]
     },
     {
       "system": "Stanton",
@@ -1119,7 +1145,9 @@
       "station_type": "mining_outpost",
       "is_gateway": 0,
       "sort_order": 13230,
-      "aliases": []
+      "aliases": [
+        "Shubin 13"
+      ]
     },
     {
       "system": "Stanton",
@@ -1128,7 +1156,9 @@
       "station_type": "mining_outpost",
       "is_gateway": 0,
       "sort_order": 13240,
-      "aliases": []
+      "aliases": [
+        "Shubin 18"
+      ]
     },
     {
       "system": "Stanton",
@@ -1137,7 +1167,9 @@
       "station_type": "mining_outpost",
       "is_gateway": 0,
       "sort_order": 13250,
-      "aliases": []
+      "aliases": [
+        "Shubin 22"
+      ]
     },
     {
       "system": "Stanton",
@@ -1155,7 +1187,9 @@
       "station_type": "research_outpost",
       "is_gateway": 0,
       "sort_order": 13270,
-      "aliases": []
+      "aliases": [
+        "Deltana"
+      ]
     },
     {
       "system": "Stanton",
@@ -1182,7 +1216,9 @@
       "station_type": "mining_outpost",
       "is_gateway": 0,
       "sort_order": 2010,
-      "aliases": []
+      "aliases": [
+        "Bezdek"
+      ]
     },
     {
       "system": "Stanton",
@@ -1191,7 +1227,9 @@
       "station_type": "mining_outpost",
       "is_gateway": 0,
       "sort_order": 2020,
-      "aliases": []
+      "aliases": [
+        "Lathan"
+      ]
     },
     {
       "system": "Stanton",
@@ -1236,7 +1274,9 @@
       "station_type": "mining_outpost",
       "is_gateway": 0,
       "sort_order": 3010,
-      "aliases": []
+      "aliases": [
+        "Norgaard"
+      ]
     },
     {
       "system": "Stanton",
@@ -1245,7 +1285,9 @@
       "station_type": "mining_outpost",
       "is_gateway": 0,
       "sort_order": 3020,
-      "aliases": []
+      "aliases": [
+        "Anderson"
+      ]
     },
     {
       "system": "Stanton",
@@ -1371,7 +1413,9 @@
       "station_type": "mining_outpost",
       "is_gateway": 0,
       "sort_order": 4010,
-      "aliases": []
+      "aliases": [
+        "Hahn"
+      ]
     },
     {
       "system": "Stanton",
@@ -1380,7 +1424,9 @@
       "station_type": "mining_outpost",
       "is_gateway": 0,
       "sort_order": 4020,
-      "aliases": []
+      "aliases": [
+        "Perlman"
+      ]
     },
     {
       "system": "Stanton",
@@ -1416,7 +1462,9 @@
       "station_type": "mining_outpost",
       "is_gateway": 0,
       "sort_order": 5010,
-      "aliases": []
+      "aliases": [
+        "Ryder"
+      ]
     },
     {
       "system": "Stanton",
@@ -1425,7 +1473,9 @@
       "station_type": "mining_outpost",
       "is_gateway": 0,
       "sort_order": 5020,
-      "aliases": []
+      "aliases": [
+        "Woodruff"
+      ]
     },
     {
       "system": "Stanton",
@@ -1461,7 +1511,9 @@
       "station_type": "farm",
       "is_gateway": 0,
       "sort_order": 7010,
-      "aliases": []
+      "aliases": [
+        "Terra Mills"
+      ]
     },
     {
       "system": "Stanton",
@@ -1659,7 +1711,9 @@
       "station_type": "outpost",
       "is_gateway": 0,
       "sort_order": 7230,
-      "aliases": []
+      "aliases": [
+        "Tram"
+      ]
     },
     {
       "system": "Stanton",
@@ -1668,7 +1722,9 @@
       "station_type": "outpost",
       "is_gateway": 0,
       "sort_order": 7240,
-      "aliases": []
+      "aliases": [
+        "Gallete"
+      ]
     },
     {
       "system": "Stanton",
@@ -1677,7 +1733,9 @@
       "station_type": "outpost",
       "is_gateway": 0,
       "sort_order": 7250,
-      "aliases": []
+      "aliases": [
+        "Private"
+      ]
     },
     {
       "system": "Stanton",
@@ -1713,7 +1771,9 @@
       "station_type": "mining_outpost",
       "is_gateway": 0,
       "sort_order": 8010,
-      "aliases": []
+      "aliases": [
+        "ArcCorp 141"
+      ]
     },
     {
       "system": "Stanton",
@@ -1722,7 +1782,9 @@
       "station_type": "mining_outpost",
       "is_gateway": 0,
       "sort_order": 8020,
-      "aliases": []
+      "aliases": [
+        "Shubin SCD1"
+      ]
     },
     {
       "system": "Stanton",
@@ -1803,7 +1865,9 @@
       "station_type": "salvage_yard",
       "is_gateway": 0,
       "sort_order": 8110,
-      "aliases": []
+      "aliases": [
+        "Brio's"
+      ]
     },
     {
       "system": "Stanton",
@@ -1812,7 +1876,9 @@
       "station_type": "farm",
       "is_gateway": 0,
       "sort_order": 8120,
-      "aliases": []
+      "aliases": [
+        "Bontiful"
+      ]
     },
     {
       "system": "Stanton",
@@ -1821,7 +1887,9 @@
       "station_type": "drug_lab",
       "is_gateway": 0,
       "sort_order": 8130,
-      "aliases": []
+      "aliases": [
+        "Jumpdown"
+      ]
     },
     {
       "system": "Stanton",
@@ -2010,7 +2078,9 @@
       "station_type": "outpost",
       "is_gateway": 0,
       "sort_order": 8340,
-      "aliases": []
+      "aliases": [
+        "Nuen"
+      ]
     },
     {
       "system": "Stanton",
@@ -2082,7 +2152,9 @@
       "station_type": "mining_outpost",
       "is_gateway": 0,
       "sort_order": 9010,
-      "aliases": []
+      "aliases": [
+        "ArcCorp 157"
+      ]
     },
     {
       "system": "Stanton",
@@ -2199,7 +2271,9 @@
       "station_type": "underground_bunker",
       "is_gateway": 0,
       "sort_order": 9140,
-      "aliases": []
+      "aliases": [
+        "NT999II"
+      ]
     },
     {
       "system": "Stanton",
@@ -2280,7 +2354,9 @@
       "station_type": "outpost",
       "is_gateway": 0,
       "sort_order": 9230,
-      "aliases": []
+      "aliases": [
+        "Benson"
+      ]
     },
     {
       "system": "Stanton",
@@ -2310,7 +2386,8 @@
       "aliases": [
         "GH",
         "Green Imperial Housing Exchange",
-        "GrimHEX"
+        "GrimHEX",
+        "Grim HEX"
       ]
     },
     {
@@ -2338,7 +2415,9 @@
       "station_type": "mining_outpost",
       "is_gateway": 0,
       "sort_order": 11010,
-      "aliases": []
+      "aliases": [
+        "Humboldt"
+      ]
     },
     {
       "system": "Stanton",
@@ -2347,7 +2426,9 @@
       "station_type": "mining_outpost",
       "is_gateway": 0,
       "sort_order": 11020,
-      "aliases": []
+      "aliases": [
+        "Loveridge"
+      ]
     },
     {
       "system": "Stanton",
@@ -2356,7 +2437,9 @@
       "station_type": "mining_outpost",
       "is_gateway": 0,
       "sort_order": 11030,
-      "aliases": []
+      "aliases": [
+        "Shubin SAL-2"
+      ]
     },
     {
       "system": "Stanton",
@@ -2365,7 +2448,9 @@
       "station_type": "mining_outpost",
       "is_gateway": 0,
       "sort_order": 11040,
-      "aliases": []
+      "aliases": [
+        "Shubin SAL-5"
+      ]
     },
     {
       "system": "Stanton",
@@ -2465,7 +2550,8 @@
       "is_gateway": 0,
       "sort_order": 12010,
       "aliases": [
-        "Shady Glen Farms"
+        "Shady Glen Farms",
+        "Samson"
       ]
     },
     {
@@ -2475,7 +2561,9 @@
       "station_type": "mining_outpost",
       "is_gateway": 0,
       "sort_order": 12020,
-      "aliases": []
+      "aliases": [
+        "ArcCorp 045"
+      ]
     },
     {
       "system": "Stanton",
@@ -2484,7 +2572,9 @@
       "station_type": "mining_outpost",
       "is_gateway": 0,
       "sort_order": 12030,
-      "aliases": []
+      "aliases": [
+        "ArcCorp 048"
+      ]
     },
     {
       "system": "Stanton",
@@ -2493,7 +2583,9 @@
       "station_type": "mining_outpost",
       "is_gateway": 0,
       "sort_order": 12040,
-      "aliases": []
+      "aliases": [
+        "ArcCorp 056"
+      ]
     },
     {
       "system": "Stanton",
@@ -2502,7 +2594,9 @@
       "station_type": "mining_outpost",
       "is_gateway": 0,
       "sort_order": 12050,
-      "aliases": []
+      "aliases": [
+        "ArcCorp 061"
+      ]
     },
     {
       "system": "Stanton",
@@ -2547,7 +2641,9 @@
       "station_type": "mining_outpost",
       "is_gateway": 0,
       "sort_order": 14010,
-      "aliases": []
+      "aliases": [
+        "Shubin A6"
+      ]
     },
     {
       "system": "Stanton",
@@ -2556,7 +2652,9 @@
       "station_type": "mining_outpost",
       "is_gateway": 0,
       "sort_order": 14020,
-      "aliases": []
+      "aliases": [
+        "Shubin A8"
+      ]
     },
     {
       "system": "Stanton",
@@ -2619,7 +2717,9 @@
       "station_type": "research_outpost",
       "is_gateway": 0,
       "sort_order": 14090,
-      "aliases": []
+      "aliases": [
+        "Anvik"
+      ]
     },
     {
       "system": "Stanton",
@@ -2628,7 +2728,9 @@
       "station_type": "research_outpost",
       "is_gateway": 0,
       "sort_order": 14100,
-      "aliases": []
+      "aliases": [
+        "Kaltag"
+      ]
     },
     {
       "system": "Stanton",
@@ -2646,7 +2748,9 @@
       "station_type": "research_outpost",
       "is_gateway": 0,
       "sort_order": 15010,
-      "aliases": []
+      "aliases": [
+        "Cantwell"
+      ]
     },
     {
       "system": "Stanton",
@@ -2655,7 +2759,9 @@
       "station_type": "research_outpost",
       "is_gateway": 0,
       "sort_order": 15020,
-      "aliases": []
+      "aliases": [
+        "McGrath"
+      ]
     },
     {
       "system": "Stanton",
@@ -2673,7 +2779,9 @@
       "station_type": "farm",
       "is_gateway": 0,
       "sort_order": 16010,
-      "aliases": []
+      "aliases": [
+        "Bud's"
+      ]
     },
     {
       "system": "Stanton",
@@ -2691,7 +2799,9 @@
       "station_type": "salvage_yard",
       "is_gateway": 0,
       "sort_order": 16030,
-      "aliases": []
+      "aliases": [
+        "Devlin"
+      ]
     },
     {
       "system": "Stanton",
@@ -2773,7 +2883,8 @@
       "sort_order": 17020,
       "aliases": [
         "Wikelo Dasi",
-        "Dasi Station"
+        "Dasi Station",
+        "Wikela Dasi"
       ]
     },
     {
@@ -2785,7 +2896,8 @@
       "sort_order": 17030,
       "aliases": [
         "Wikelo Kinga",
-        "Kinga Station"
+        "Kinga Station",
+        "Wikela Kinga"
       ]
     },
     {
@@ -2797,7 +2909,8 @@
       "sort_order": 17040,
       "aliases": [
         "Wikelo Selo",
-        "Selo Station"
+        "Selo Station",
+        "Wikela Selo"
       ]
     },
     {
@@ -2950,7 +3063,9 @@
       "station_type": "outpost",
       "is_gateway": 0,
       "sort_order": 17170,
-      "aliases": []
+      "aliases": [
+        "Orphanage"
+      ]
     },
     {
       "system": "Stanton",
@@ -2959,7 +3074,9 @@
       "station_type": "outpost",
       "is_gateway": 0,
       "sort_order": 17180,
-      "aliases": []
+      "aliases": [
+        "Paradise"
+      ]
     },
     {
       "system": "Stanton",
@@ -2977,7 +3094,9 @@
       "station_type": "outpost",
       "is_gateway": 0,
       "sort_order": 17200,
-      "aliases": []
+      "aliases": [
+        "Raven"
+      ]
     },
     {
       "system": "Stanton",
@@ -2986,7 +3105,9 @@
       "station_type": "outpost",
       "is_gateway": 0,
       "sort_order": 17210,
-      "aliases": []
+      "aliases": [
+        "Necropolis"
+      ]
     },
     {
       "system": "Stanton",
@@ -2995,7 +3116,9 @@
       "station_type": "outpost",
       "is_gateway": 0,
       "sort_order": 17220,
-      "aliases": []
+      "aliases": [
+        "Astor's"
+      ]
     },
     {
       "system": "Stanton",
@@ -3004,7 +3127,9 @@
       "station_type": "outpost",
       "is_gateway": 0,
       "sort_order": 17230,
-      "aliases": []
+      "aliases": [
+        "Harper's"
+      ]
     },
     {
       "system": "Stanton",
@@ -3050,6 +3175,588 @@
       "is_gateway": 0,
       "sort_order": 17280,
       "aliases": []
+    },
+    {
+      "system": "Pyro",
+      "name": "PYAM-FARSTAT-1-2",
+      "parent_body": "Pyro I",
+      "station_type": "orbital",
+      "is_gateway": 0,
+      "sort_order": 110
+    },
+    {
+      "system": "Pyro",
+      "name": "PYAM-FARSTAT-1-3",
+      "parent_body": "Pyro I",
+      "station_type": "orbital",
+      "is_gateway": 0,
+      "sort_order": 120
+    },
+    {
+      "system": "Pyro",
+      "name": "PYAM-FARSTAT-1-5",
+      "parent_body": "Pyro I",
+      "station_type": "orbital",
+      "is_gateway": 0,
+      "sort_order": 130
+    },
+    {
+      "system": "Pyro",
+      "name": "Checkmate Station",
+      "parent_body": "Monox",
+      "station_type": "lagrange",
+      "is_gateway": 0,
+      "sort_order": 140,
+      "aliases": [
+        "Checkmate"
+      ]
+    },
+    {
+      "system": "Pyro",
+      "name": "Orbituary",
+      "parent_body": "Bloom",
+      "station_type": "orbital",
+      "is_gateway": 0,
+      "sort_order": 150
+    },
+    {
+      "system": "Pyro",
+      "name": "Starlight Service Station",
+      "parent_body": "Bloom",
+      "station_type": "lagrange",
+      "is_gateway": 0,
+      "sort_order": 160,
+      "aliases": [
+        "Starlight Service"
+      ]
+    },
+    {
+      "system": "Pyro",
+      "name": "Patch City",
+      "parent_body": "Bloom",
+      "station_type": "orbital",
+      "is_gateway": 0,
+      "sort_order": 170
+    },
+    {
+      "system": "Pyro",
+      "name": "PYAM-FARSTAT-3-5",
+      "parent_body": "Bloom",
+      "station_type": "orbital",
+      "is_gateway": 0,
+      "sort_order": 180
+    },
+    {
+      "system": "Pyro",
+      "name": "PYAM-FARSTAT-5-1",
+      "parent_body": "Pyro V",
+      "station_type": "orbital",
+      "is_gateway": 0,
+      "sort_order": 190
+    },
+    {
+      "system": "Pyro",
+      "name": "PYAM-FARSTAT-5-3",
+      "parent_body": "Pyro V",
+      "station_type": "lagrange",
+      "is_gateway": 0,
+      "sort_order": 200
+    },
+    {
+      "system": "Pyro",
+      "name": "Rod's Fuel 'N Supplies",
+      "parent_body": "Pyro V",
+      "station_type": "lagrange",
+      "is_gateway": 0,
+      "sort_order": 210
+    },
+    {
+      "system": "Pyro",
+      "name": "Rat's Nest",
+      "parent_body": "Pyro V",
+      "station_type": "lagrange",
+      "is_gateway": 0,
+      "sort_order": 220
+    },
+    {
+      "system": "Pyro",
+      "name": "PYAM-FARSTAT-6-2",
+      "parent_body": "Pyro IV",
+      "station_type": "orbital",
+      "is_gateway": 0,
+      "sort_order": 230
+    },
+    {
+      "system": "Pyro",
+      "name": "Endgame",
+      "parent_body": "Pyro IV",
+      "station_type": "lagrange",
+      "is_gateway": 0,
+      "sort_order": 240
+    },
+    {
+      "system": "Pyro",
+      "name": "Dudley & Daughters",
+      "parent_body": "Terminus",
+      "station_type": "lagrange",
+      "is_gateway": 0,
+      "sort_order": 250
+    },
+    {
+      "system": "Pyro",
+      "name": "Megumi Refueling",
+      "parent_body": "Terminus",
+      "station_type": "lagrange",
+      "is_gateway": 0,
+      "sort_order": 260
+    },
+    {
+      "system": "Pyro",
+      "name": "Ruin Station",
+      "parent_body": "Terminus",
+      "station_type": "orbital",
+      "is_gateway": 0,
+      "sort_order": 270
+    },
+    {
+      "system": "Pyro",
+      "name": "Gaslight",
+      "parent_body": "Pyro V",
+      "station_type": "lagrange",
+      "is_gateway": 0,
+      "sort_order": 280
+    },
+    {
+      "system": "Pyro",
+      "name": "PYAM-FARSTAT-2-3",
+      "parent_body": "Monox",
+      "station_type": "lagrange",
+      "is_gateway": 0,
+      "sort_order": 290
+    },
+    {
+      "system": "Pyro",
+      "name": "PYAM-SUPVISR-3-4",
+      "parent_body": "Bloom",
+      "station_type": "orbital",
+      "is_gateway": 0,
+      "sort_order": 300
+    },
+    {
+      "system": "Pyro",
+      "name": "PYAM-SUPVISR-3-5",
+      "parent_body": "Bloom",
+      "station_type": "orbital",
+      "is_gateway": 0,
+      "sort_order": 310
+    },
+    {
+      "system": "Pyro",
+      "name": "Nyx Gateway (Pyro)",
+      "parent_body": "Nyx Gateway (Pyro system)",
+      "station_type": "gateway",
+      "is_gateway": 1,
+      "sort_order": 330
+    },
+    {
+      "system": "Nyx",
+      "name": "Stanton Gateway (Nyx)",
+      "parent_body": "Stanton Gateway (Nyx system)",
+      "station_type": "gateway",
+      "is_gateway": 1,
+      "sort_order": 10
+    },
+    {
+      "system": "Nyx",
+      "name": "Pyro Gateway (Nyx)",
+      "parent_body": "Pyro Gateway (Nyx system)",
+      "station_type": "gateway",
+      "is_gateway": 1,
+      "sort_order": 20
+    },
+    {
+      "system": "Nyx",
+      "name": "People's Service Station Delta",
+      "parent_body": "People's Service Station Delta",
+      "station_type": "orbital",
+      "is_gateway": 0,
+      "sort_order": 30,
+      "aliases": [
+        "PSS Delta"
+      ]
+    },
+    {
+      "system": "Nyx",
+      "name": "People's Service Station Alpha",
+      "parent_body": "People's Service Station Alpha",
+      "station_type": "orbital",
+      "is_gateway": 0,
+      "sort_order": 40,
+      "aliases": [
+        "PSS Alpha"
+      ]
+    },
+    {
+      "system": "Nyx",
+      "name": "People's Service Station Theta",
+      "parent_body": "People's Service Station Theta",
+      "station_type": "orbital",
+      "is_gateway": 0,
+      "sort_order": 50,
+      "aliases": [
+        "PSS Theta"
+      ]
+    },
+    {
+      "system": "Nyx",
+      "name": "People's Service Station Lambda",
+      "parent_body": "People's Service Station Lambda",
+      "station_type": "orbital",
+      "is_gateway": 0,
+      "sort_order": 60,
+      "aliases": [
+        "PSS Lambda"
+      ]
+    },
+    {
+      "system": "Nyx",
+      "name": "Levski",
+      "parent_body": "Delamar",
+      "station_type": "major_location",
+      "is_gateway": 0,
+      "sort_order": 70
+    },
+    {
+      "system": "Stanton",
+      "name": "Deakins Research",
+      "parent_body": "Yela",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 17290,
+      "aliases": [
+        "Deakins"
+      ]
+    },
+    {
+      "system": "Stanton",
+      "name": "Hickes Research",
+      "parent_body": "Cellin",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 17300,
+      "aliases": [
+        "Hickes"
+      ]
+    },
+    {
+      "system": "Stanton",
+      "name": "Samson & Son's Salvage Center",
+      "parent_body": "Wala",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 17310,
+      "aliases": [
+        "Samson"
+      ]
+    },
+    {
+      "system": "Pyro",
+      "name": "Rustville",
+      "parent_body": "Pyro I",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 340
+    },
+    {
+      "system": "Pyro",
+      "name": "Jackson's Swap",
+      "parent_body": "Monox",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 350
+    },
+    {
+      "system": "Pyro",
+      "name": "Last Ditch",
+      "parent_body": "Monox",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 360
+    },
+    {
+      "system": "Pyro",
+      "name": "Sunset Mesa",
+      "parent_body": "Monox",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 370
+    },
+    {
+      "system": "Pyro",
+      "name": "Yang's Place",
+      "parent_body": "Monox",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 380
+    },
+    {
+      "system": "Pyro",
+      "name": "Bueno Ravine",
+      "parent_body": "Bloom",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 390
+    },
+    {
+      "system": "Pyro",
+      "name": "Shadowfall",
+      "parent_body": "Bloom",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 400
+    },
+    {
+      "system": "Pyro",
+      "name": "Shepherd's Rest",
+      "parent_body": "Bloom",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 410
+    },
+    {
+      "system": "Pyro",
+      "name": "The Golden Riviera",
+      "parent_body": "Bloom",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 420
+    },
+    {
+      "system": "Pyro",
+      "name": "The Yard",
+      "parent_body": "Bloom",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 430
+    },
+    {
+      "system": "Pyro",
+      "name": "Stag's Rut",
+      "parent_body": "Pyro I",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 440
+    },
+    {
+      "system": "Pyro",
+      "name": "Arid Reach",
+      "parent_body": "Monox",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 450
+    },
+    {
+      "system": "Pyro",
+      "name": "Ostler's Claim",
+      "parent_body": "Monox",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 460
+    },
+    {
+      "system": "Pyro",
+      "name": "Carver's Ridge",
+      "parent_body": "Bloom",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 470
+    },
+    {
+      "system": "Pyro",
+      "name": "Frigid Knot",
+      "parent_body": "Bloom",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 480
+    },
+    {
+      "system": "Pyro",
+      "name": "Narena's Rest",
+      "parent_body": "Bloom",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 490
+    },
+    {
+      "system": "Pyro",
+      "name": "Windfall",
+      "parent_body": "Bloom",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 500
+    },
+    {
+      "system": "Pyro",
+      "name": "Ashland",
+      "parent_body": "Ignis",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 510
+    },
+    {
+      "system": "Pyro",
+      "name": "Chawla's Beach",
+      "parent_body": "Pyro IV",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 520
+    },
+    {
+      "system": "Pyro",
+      "name": "Fallow Field",
+      "parent_body": "Pyro IV",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 530
+    },
+    {
+      "system": "Pyro",
+      "name": "Goner's Deal",
+      "parent_body": "Pyro IV",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 540
+    },
+    {
+      "system": "Pyro",
+      "name": "Sacren's Plot",
+      "parent_body": "Pyro IV",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 550
+    },
+    {
+      "system": "Pyro",
+      "name": "Kabir's Post",
+      "parent_body": "Ignis",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 560
+    },
+    {
+      "system": "Pyro",
+      "name": "Blackrock Exchange",
+      "parent_body": "Terminus",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 570
+    },
+    {
+      "system": "Pyro",
+      "name": "Bullock's Reach",
+      "parent_body": "Terminus",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 580
+    },
+    {
+      "system": "Pyro",
+      "name": "Canard View",
+      "parent_body": "Terminus",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 590
+    },
+    {
+      "system": "Pyro",
+      "name": "Kinder Plots",
+      "parent_body": "Terminus",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 600
+    },
+    {
+      "system": "Pyro",
+      "name": "Last Landings",
+      "parent_body": "Terminus",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 610
+    },
+    {
+      "system": "Pyro",
+      "name": "Rough Landing",
+      "parent_body": "Terminus",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 620
+    },
+    {
+      "system": "Pyro",
+      "name": "Scarper's Turn",
+      "parent_body": "Terminus",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 630
+    },
+    {
+      "system": "Pyro",
+      "name": "Stonetree",
+      "parent_body": "Terminus",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 640
+    },
+    {
+      "system": "Pyro",
+      "name": "Prophet's Peak",
+      "parent_body": "Adir",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 650,
+      "aliases": [
+        "Porphet's Peak"
+      ]
+    },
+    {
+      "system": "Pyro",
+      "name": "Seer's Canyon",
+      "parent_body": "Vatra",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 660
+    },
+    {
+      "system": "Pyro",
+      "name": "Prospect Depot",
+      "parent_body": "Bloom",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 670
+    },
+    {
+      "system": "Pyro",
+      "name": "Slowburn Depot",
+      "parent_body": "Monox",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 680
+    },
+    {
+      "system": "Pyro",
+      "name": "Feo Canyon Depot",
+      "parent_body": "Fairo",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 690
+    },
+    {
+      "system": "Pyro",
+      "name": "Gray Gardens Depot",
+      "parent_body": "Pyro I",
+      "station_type": "outpost",
+      "is_gateway": 0,
+      "sort_order": 700
     }
   ],
   "station_distances": [],
@@ -3061,22 +3768,70 @@
       },
       "to_gateway": {
         "system": "Pyro",
-        "name": "Stanton Jump Point"
+        "name": "Stanton Gateway (Pyro)"
       },
       "distance_km": null,
-      "notes": "Stanton -> Pyro gateway link; populate distance later"
+      "notes": "Stanton <-> Pyro"
     },
     {
       "from_gateway": {
         "system": "Pyro",
-        "name": "Stanton Jump Point"
+        "name": "Stanton Gateway (Pyro)"
       },
       "to_gateway": {
         "system": "Stanton",
         "name": "Pyro Gateway (Stanton)"
       },
       "distance_km": null,
-      "notes": "Pyro -> Stanton gateway link; populate distance later"
+      "notes": "Pyro <-> Stanton"
+    },
+    {
+      "from_gateway": {
+        "system": "Stanton",
+        "name": "Nyx Gateway (Stanton)"
+      },
+      "to_gateway": {
+        "system": "Nyx",
+        "name": "Stanton Gateway (Nyx)"
+      },
+      "distance_km": null,
+      "notes": "Stanton <-> Nyx"
+    },
+    {
+      "from_gateway": {
+        "system": "Nyx",
+        "name": "Stanton Gateway (Nyx)"
+      },
+      "to_gateway": {
+        "system": "Stanton",
+        "name": "Nyx Gateway (Stanton)"
+      },
+      "distance_km": null,
+      "notes": "Nyx <-> Stanton"
+    },
+    {
+      "from_gateway": {
+        "system": "Pyro",
+        "name": "Nyx Gateway (Pyro)"
+      },
+      "to_gateway": {
+        "system": "Nyx",
+        "name": "Pyro Gateway (Nyx)"
+      },
+      "distance_km": null,
+      "notes": "Pyro <-> Nyx"
+    },
+    {
+      "from_gateway": {
+        "system": "Nyx",
+        "name": "Pyro Gateway (Nyx)"
+      },
+      "to_gateway": {
+        "system": "Pyro",
+        "name": "Nyx Gateway (Pyro)"
+      },
+      "distance_km": null,
+      "notes": "Nyx <-> Pyro"
     }
   ]
 }
