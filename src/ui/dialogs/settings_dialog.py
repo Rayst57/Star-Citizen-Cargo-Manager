@@ -144,6 +144,8 @@ class SettingsDialog(QDialog):
 
     def _capture_tab(self) -> QWidget:
         """Source picker + Quick Capture global hotkey."""
+        import sys
+
         from ..dialogs.screen_capture import (
             _capture_libs_available, _list_sources, source_to_settings_value,
         )
@@ -151,12 +153,62 @@ class SettingsDialog(QDialog):
         w = QWidget()
         f = QFormLayout(w)
 
+        # Lib status banner — surfaces the exact missing package(s) and
+        # the active Python so the user can pip-install into the right
+        # interpreter. mss is required; pygetwindow gates window
+        # capture; keyboard gates the global hotkey.
+        def _probe(modname: str) -> bool:
+            try:
+                __import__(modname)
+                return True
+            except Exception:                               # noqa: BLE001
+                return False
+
+        self._lib_status = {
+            "mss":         _probe("mss"),
+            "pygetwindow": _probe("pygetwindow"),
+            "keyboard":    _probe("keyboard"),
+        }
+        missing = [n for n, ok in self._lib_status.items() if not ok]
+        status_lines = [
+            ("✅" if ok else "⛔") + f"  {n}"
+            for n, ok in self._lib_status.items()
+        ]
+        status_text = "Capture libraries:   " + "    ".join(status_lines)
+        if missing:
+            if getattr(sys, "frozen", False):
+                # Frozen .exe — pip-installing into the embedded Python
+                # isn't possible. The bundle should have shipped these
+                # already; the .exe needs to be rebuilt.
+                status_text += (
+                    f"\n\nMissing in this build: {', '.join(missing)}.\n"
+                    f"This is a packaging bug — rebuild the .exe from "
+                    f"the current source (the spec lists every "
+                    f"required package). After installing the new "
+                    f"build, reopen Settings."
+                )
+            else:
+                status_text += (
+                    f"\n\nInstall the missing one(s) into THIS Python:\n"
+                    f"  {sys.executable} -m pip install {' '.join(missing)}\n\n"
+                    f"Then close and reopen Settings to refresh."
+                )
+        status = QLabel(status_text)
+        status.setStyleSheet(
+            "color: #ff8a3c;" if missing else "color: #9fd8ec;"
+        )
+        status.setWordWrap(True)
+        status.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        f.addRow("", status)
+
         # Saved source — re-enumerated each time the dialog opens so a
         # newly-launched Star Citizen window shows up immediately.
+        source_row = QHBoxLayout()
         self._capture_source_combo = QComboBox()
         self._capture_sources: list[dict] = []
-        ok, msg = _capture_libs_available()
-        if ok:
+        if self._lib_status["mss"]:
             try:
                 self._capture_sources = _list_sources()
             except Exception as exc:                        # noqa: BLE001
@@ -170,26 +222,35 @@ class SettingsDialog(QDialog):
                 )
         else:
             self._capture_source_combo.setEnabled(False)
-            self._capture_source_combo.addItem("(install mss / pygetwindow)")
+            self._capture_source_combo.addItem("(install mss first)")
+        source_row.addWidget(self._capture_source_combo, 1)
+        refresh_btn = QPushButton("↻ Refresh")
+        refresh_btn.setProperty("flat", True)
+        refresh_btn.setToolTip(
+            "Re-scan for monitors and windows. Use after launching "
+            "Star Citizen so the SC window appears in the list."
+        )
+        refresh_btn.clicked.connect(self._refresh_capture_sources)
+        source_row.addWidget(refresh_btn)
+        source_w = QWidget()
+        source_w.setLayout(source_row)
+        f.addRow("Screen capture source", source_w)
 
         # Restore the saved selection (if it still exists in this run).
         saved = self.settings.get("screen_capture_source") or {}
         if saved and self._capture_sources:
-            wanted_kind = saved.get("kind")
-            wanted_label = (saved.get("label") or "").lower()
-            wanted_title = (saved.get("title") or wanted_label).lower()
-            for i in range(self._capture_source_combo.count()):
-                src = self._capture_source_combo.itemData(i)
-                if not src or src.get("kind") != wanted_kind:
-                    continue
-                label = (src.get("label") or "").lower()
-                if wanted_kind == "monitor" and label == wanted_label:
-                    self._capture_source_combo.setCurrentIndex(i)
-                    break
-                if wanted_kind == "window" and wanted_title in label:
-                    self._capture_source_combo.setCurrentIndex(i)
-                    break
-        f.addRow("Screen capture source", self._capture_source_combo)
+            self._select_saved_source(saved)
+
+        if (self._lib_status["mss"]
+                and not self._lib_status["pygetwindow"]):
+            hint = QLabel(
+                "⚠ Only monitor sources are listed because pygetwindow "
+                "isn't available — install it (see above) to capture a "
+                "specific window like Star Citizen."
+            )
+            hint.setStyleSheet("color: #ffb060;")
+            hint.setWordWrap(True)
+            f.addRow("", hint)
 
         # Persist the chosen source even without the user hitting Save —
         # the to-settings shape strips volatile fields (window rects).
@@ -206,6 +267,7 @@ class SettingsDialog(QDialog):
         )
         hotkey_row.addWidget(self._hotkey_edit, 1)
         capture_btn = QPushButton("Press a combo…")
+        capture_btn.setEnabled(self._lib_status["keyboard"])
         capture_btn.clicked.connect(self._capture_hotkey_combo)
         hotkey_row.addWidget(capture_btn)
         clear_btn = QPushButton("Clear")
@@ -226,21 +288,69 @@ class SettingsDialog(QDialog):
         hint.setWordWrap(True)
         f.addRow("", hint)
 
-        if not ok:
-            warn = QLabel(msg)
-            warn.setStyleSheet("color: #ff8a3c;")
-            warn.setWordWrap(True)
-            f.addRow("", warn)
-
         return w
+
+    def _refresh_capture_sources(self) -> None:
+        from ..dialogs.screen_capture import _list_sources
+        prev_data = self._capture_source_combo.currentData()
+        self._capture_source_combo.clear()
+        try:
+            self._capture_sources = _list_sources()
+        except Exception as exc:                            # noqa: BLE001
+            self._capture_source_combo.setEnabled(False)
+            self._capture_source_combo.addItem(
+                f"(could not enumerate sources: {exc})",
+            )
+            return
+        self._capture_source_combo.setEnabled(True)
+        for src in self._capture_sources:
+            self._capture_source_combo.addItem(src["label"], userData=src)
+        # Try to keep the previously-selected source highlighted.
+        if isinstance(prev_data, dict):
+            self._select_saved_source(self._source_to_settings(prev_data))
+
+    def _select_saved_source(self, saved: dict) -> None:
+        wanted_kind = saved.get("kind")
+        wanted_label = (saved.get("label") or "").lower()
+        wanted_title = (saved.get("title") or wanted_label).lower()
+        for i in range(self._capture_source_combo.count()):
+            src = self._capture_source_combo.itemData(i)
+            if not src or src.get("kind") != wanted_kind:
+                continue
+            label = (src.get("label") or "").lower()
+            if wanted_kind == "monitor" and label == wanted_label:
+                self._capture_source_combo.setCurrentIndex(i)
+                return
+            if wanted_kind == "window" and wanted_title in label:
+                self._capture_source_combo.setCurrentIndex(i)
+                return
 
     def _capture_hotkey_combo(self) -> None:
         """Listen for one keypress and store its combo string."""
+        import sys
+        from PySide6.QtWidgets import QMessageBox
         try:
             import keyboard
-        except Exception:                                   # noqa: BLE001
-            self._hotkey_edit.setPlaceholderText(
-                "(install the `keyboard` package to bind hotkeys)"
+        except Exception as exc:                            # noqa: BLE001
+            if getattr(sys, "frozen", False):
+                body = (
+                    "The `keyboard` package isn't in this build of the "
+                    "app.\n\nRebuild the .exe from the current source "
+                    "— the spec already lists it as a required "
+                    "package. After installing the new build, reopen "
+                    f"Settings.\n\nImport error: {exc}"
+                )
+            else:
+                body = (
+                    "The `keyboard` package is needed to bind a "
+                    "global hotkey.\n\n"
+                    f"Install it into THIS Python:\n  "
+                    f"{sys.executable} -m pip install keyboard\n\n"
+                    f"Then close and reopen Settings.\n\n"
+                    f"Import error: {exc}"
+                )
+            QMessageBox.warning(
+                self, "Keyboard library not installed", body,
             )
             return
         self._hotkey_edit.setPlaceholderText("Press the keys now…")
