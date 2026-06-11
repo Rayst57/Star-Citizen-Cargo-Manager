@@ -345,23 +345,22 @@ class SettingsDialog(QDialog):
                 "first. Then re-open Settings and Test again.",
             )
             return
-        img = grab_source(saved)
+        img, reason = grab_source(saved, return_reason=True)
         if img is None or img.isNull():
-            QMessageBox.warning(
-                self, "Capture failed",
-                f"Couldn't grab '{saved.get('label', '?')}'. Either "
-                f"the window isn't open or pygetwindow can't find it "
-                f"(Star Citizen in Fullscreen Exclusive is invisible "
-                f"— use a monitor source for that mode).",
-            )
+            QMessageBox.warning(self, "Capture failed", reason)
             return
         label = saved.get("label", "")
         self.controller.capture_queue.push(img, source_label=label)
-        QMessageBox.information(
-            self, "Test capture queued",
+        body = (
             f"Captured '{label}' ({img.width()}×{img.height()}). "
-            f"Queue depth: {len(self.controller.capture_queue)}.",
+            f"Queue depth: {len(self.controller.capture_queue)}."
         )
+        if reason:
+            # grab_source surfaces a reason on partial-success too —
+            # e.g. "fell back to Monitor 1 because the window wouldn't
+            # grab directly". Show it so the user knows.
+            body += f"\n\nNote: {reason}"
+        QMessageBox.information(self, "Test capture queued", body)
 
     def _refresh_capture_sources(self) -> None:
         from ..dialogs.screen_capture import _list_sources
