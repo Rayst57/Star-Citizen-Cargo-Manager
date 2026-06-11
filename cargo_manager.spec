@@ -44,6 +44,10 @@ a = Analysis(
         "mss.windows",        # Windows backend module mss loads at runtime
         "pygetwindow",
         "pygetwindow._pygetwindow_win",  # Windows backend
+        # Global hotkey listener for the Quick Capture workflow —
+        # imported lazily in src/ui/quick_capture.py.
+        "keyboard",
+        "keyboard._winkeyboard",
     ],
     hookspath=[],
     hooksconfig={},

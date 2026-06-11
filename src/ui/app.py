@@ -149,4 +149,11 @@ def launch() -> int:
     window = MainWindow(controller)
     window.show()
 
+    # Wire the Quick Capture global hotkey AFTER MainWindow exists so
+    # the queue-badge slot is connected. Stash the handle on the
+    # controller so SettingsDialog can rebind it when the user picks
+    # a new combo.
+    from .quick_capture import install_quick_capture
+    controller._quick_capture_hotkey = install_quick_capture(controller, window)
+
     return app.exec()

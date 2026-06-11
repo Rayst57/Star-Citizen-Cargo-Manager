@@ -32,6 +32,7 @@ class SettingsDialog(QDialog):
         tabs.addTab(self._mic_tab(), "Microphone")
         tabs.addTab(self._wake_tab(), "Wake Word")
         tabs.addTab(self._openai_tab(), "OpenAI")
+        tabs.addTab(self._capture_tab(), "Capture")
         tabs.addTab(self._appearance_tab(), "Appearance")
         root.addWidget(tabs)
 
@@ -141,6 +142,121 @@ class SettingsDialog(QDialog):
 
         return w
 
+    def _capture_tab(self) -> QWidget:
+        """Source picker + Quick Capture global hotkey."""
+        from ..dialogs.screen_capture import (
+            _capture_libs_available, _list_sources, source_to_settings_value,
+        )
+
+        w = QWidget()
+        f = QFormLayout(w)
+
+        # Saved source — re-enumerated each time the dialog opens so a
+        # newly-launched Star Citizen window shows up immediately.
+        self._capture_source_combo = QComboBox()
+        self._capture_sources: list[dict] = []
+        ok, msg = _capture_libs_available()
+        if ok:
+            try:
+                self._capture_sources = _list_sources()
+            except Exception as exc:                        # noqa: BLE001
+                self._capture_source_combo.setEnabled(False)
+                self._capture_source_combo.addItem(
+                    f"(could not enumerate sources: {exc})",
+                )
+            for src in self._capture_sources:
+                self._capture_source_combo.addItem(
+                    src["label"], userData=src,
+                )
+        else:
+            self._capture_source_combo.setEnabled(False)
+            self._capture_source_combo.addItem("(install mss / pygetwindow)")
+
+        # Restore the saved selection (if it still exists in this run).
+        saved = self.settings.get("screen_capture_source") or {}
+        if saved and self._capture_sources:
+            wanted_kind = saved.get("kind")
+            wanted_label = (saved.get("label") or "").lower()
+            wanted_title = (saved.get("title") or wanted_label).lower()
+            for i in range(self._capture_source_combo.count()):
+                src = self._capture_source_combo.itemData(i)
+                if not src or src.get("kind") != wanted_kind:
+                    continue
+                label = (src.get("label") or "").lower()
+                if wanted_kind == "monitor" and label == wanted_label:
+                    self._capture_source_combo.setCurrentIndex(i)
+                    break
+                if wanted_kind == "window" and wanted_title in label:
+                    self._capture_source_combo.setCurrentIndex(i)
+                    break
+        f.addRow("Screen capture source", self._capture_source_combo)
+
+        # Persist the chosen source even without the user hitting Save —
+        # the to-settings shape strips volatile fields (window rects).
+        self._source_to_settings = source_to_settings_value
+
+        # Global hotkey: typed manually OR captured by pressing keys
+        # while the line edit has focus.
+        hotkey_row = QHBoxLayout()
+        self._hotkey_edit = QLineEdit(
+            self.settings.get("hotkey_quick_capture") or ""
+        )
+        self._hotkey_edit.setPlaceholderText(
+            "e.g. ctrl+shift+c   (leave blank to disable)"
+        )
+        hotkey_row.addWidget(self._hotkey_edit, 1)
+        capture_btn = QPushButton("Press a combo…")
+        capture_btn.clicked.connect(self._capture_hotkey_combo)
+        hotkey_row.addWidget(capture_btn)
+        clear_btn = QPushButton("Clear")
+        clear_btn.setProperty("flat", True)
+        clear_btn.clicked.connect(lambda: self._hotkey_edit.setText(""))
+        hotkey_row.addWidget(clear_btn)
+        hotkey_w = QWidget()
+        hotkey_w.setLayout(hotkey_row)
+        f.addRow("Quick Capture hotkey", hotkey_w)
+
+        hint = QLabel(
+            "While in Star Citizen, press the hotkey to silently snap "
+            "the saved source — captures stack in the queue badge "
+            "(top-right of the main window). Open the queue to parse "
+            "each screenshot into a contract."
+        )
+        hint.setProperty("muted", True)
+        hint.setWordWrap(True)
+        f.addRow("", hint)
+
+        if not ok:
+            warn = QLabel(msg)
+            warn.setStyleSheet("color: #ff8a3c;")
+            warn.setWordWrap(True)
+            f.addRow("", warn)
+
+        return w
+
+    def _capture_hotkey_combo(self) -> None:
+        """Listen for one keypress and store its combo string."""
+        try:
+            import keyboard
+        except Exception:                                   # noqa: BLE001
+            self._hotkey_edit.setPlaceholderText(
+                "(install the `keyboard` package to bind hotkeys)"
+            )
+            return
+        self._hotkey_edit.setPlaceholderText("Press the keys now…")
+        self._hotkey_edit.setText("")
+        try:
+            # read_hotkey returns the normalised combo string for the
+            # next key combination, blocking the dialog for a moment
+            # — fine because the user invited it by clicking.
+            combo = keyboard.read_hotkey(suppress=False)
+        except Exception as exc:                            # noqa: BLE001
+            self._hotkey_edit.setPlaceholderText(
+                f"(capture failed: {exc})"
+            )
+            return
+        self._hotkey_edit.setText(combo)
+
     def _appearance_tab(self) -> QWidget:
         w = QWidget()
         f = QFormLayout(w)
@@ -215,5 +331,20 @@ class SettingsDialog(QDialog):
             "strict_pallet_conflict_mode",
             self.strict_conflict_mode.isChecked(),
         )
+
+        # Capture tab — saved source + Quick Capture hotkey.
+        src = self._capture_source_combo.currentData()
+        if isinstance(src, dict):
+            self.settings.set(
+                "screen_capture_source", self._source_to_settings(src),
+            )
+        new_combo = self._hotkey_edit.text().strip()
+        old_combo = self.settings.get("hotkey_quick_capture") or ""
+        self.settings.set("hotkey_quick_capture", new_combo)
+        # Rebind the live hotkey if the main window registered one.
+        if new_combo != old_combo:
+            hk = getattr(self.controller, "_quick_capture_hotkey", None)
+            if hk is not None:
+                hk.set_combo(new_combo)
 
         self.accept()
