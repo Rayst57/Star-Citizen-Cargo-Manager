@@ -172,11 +172,30 @@ def install_quick_capture(controller, main_window) -> QuickCaptureHotkey | None:
     combo = (controller.settings.get("hotkey_quick_capture") or "").strip()
     hk = QuickCaptureHotkey(parent=main_window)
 
+    def _toast(msg: str, ms: int = 2500) -> None:
+        """Flash a brief status-bar message so the user can see the
+        hotkey landed even when the cargo manager isn't focused."""
+        sb = getattr(main_window, "statusBar", None)
+        if callable(sb):
+            try:
+                sb().showMessage(msg, ms)
+            except Exception:                               # noqa: BLE001
+                pass
+
     def _on_triggered() -> None:
         from .dialogs.screen_capture import grab_source
         saved = controller.settings.get("screen_capture_source") or {}
+        if not saved:
+            _toast("⛔ Quick Capture: no source saved — pick one in Settings → Capture")
+            _log.info("quick_capture: hotkey fired but no source saved")
+            return
         img = grab_source(saved)
         if img is None or img.isNull():
+            label = saved.get("label", "?")
+            _toast(
+                f"⛔ Quick Capture: '{label}' isn't running. Open SC, "
+                f"or pick a monitor in Settings."
+            )
             _log.info(
                 "quick_capture: hotkey fired but capture source "
                 "couldn't be resolved (saved=%r)", saved,
@@ -184,6 +203,10 @@ def install_quick_capture(controller, main_window) -> QuickCaptureHotkey | None:
             return
         label = saved.get("label", "") if isinstance(saved, dict) else ""
         controller.capture_queue.push(img, source_label=label)
+        _toast(
+            f"📸 Captured from '{label}' — "
+            f"{len(controller.capture_queue)} in queue"
+        )
         _log.info(
             "quick_capture: queued screenshot from '%s' (depth=%d)",
             label, len(controller.capture_queue),

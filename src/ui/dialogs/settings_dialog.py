@@ -289,17 +289,79 @@ class SettingsDialog(QDialog):
         hotkey_w.setLayout(hotkey_row)
         f.addRow("Quick Capture hotkey", hotkey_w)
 
+        # Live bind status — the hotkey is registered at app start AND
+        # whenever the user saves Settings; this label reports which
+        # combo (if any) is currently armed in the OS keyboard hook.
+        hk = getattr(self.controller, "_quick_capture_hotkey", None)
+        bound = hk.combo() if hk is not None else ""
+        if bound:
+            bind_text = f"✅ Hotkey active: '{bound}' (rebinds on Save)"
+            bind_color = "#9fd8ec"
+        else:
+            bind_text = (
+                "⛔ No hotkey is currently armed. Enter a combo above "
+                "and click Save."
+            )
+            bind_color = "#ff8a3c"
+        bind_status = QLabel(bind_text)
+        bind_status.setStyleSheet(f"color: {bind_color};")
+        bind_status.setWordWrap(True)
+        f.addRow("", bind_status)
+
+        # "Test capture now" — bypasses the hotkey and runs the same
+        # grab + queue path so the user can confirm the pipeline works
+        # without alt-tabbing into SC and back.
+        test_btn = QPushButton("Test capture now")
+        test_btn.setToolTip(
+            "Grabs the saved source immediately and queues it, the "
+            "exact path the global hotkey takes."
+        )
+        test_btn.clicked.connect(self._test_quick_capture)
+        f.addRow("", test_btn)
+
         hint = QLabel(
             "While in Star Citizen, press the hotkey to silently snap "
-            "the saved source — captures stack in the queue badge "
-            "(top-right of the main window). Open the queue to parse "
-            "each screenshot into a contract."
+            "the saved source — captures stack in the 📸 badge at the "
+            "top of the main window, and a status bar message confirms "
+            "each successful snap."
         )
         hint.setProperty("muted", True)
         hint.setWordWrap(True)
         f.addRow("", hint)
 
         return w
+
+    def _test_quick_capture(self) -> None:
+        """Run the same grab-and-queue path the global hotkey uses,
+        so the user can verify the setup without alt-tabbing."""
+        from PySide6.QtWidgets import QMessageBox
+        from ..dialogs.screen_capture import grab_source
+
+        saved = self.settings.get("screen_capture_source") or {}
+        if not saved:
+            QMessageBox.information(
+                self, "No source saved",
+                "Pick a source from the dropdown above and click Save "
+                "first. Then re-open Settings and Test again.",
+            )
+            return
+        img = grab_source(saved)
+        if img is None or img.isNull():
+            QMessageBox.warning(
+                self, "Capture failed",
+                f"Couldn't grab '{saved.get('label', '?')}'. Either "
+                f"the window isn't open or pygetwindow can't find it "
+                f"(Star Citizen in Fullscreen Exclusive is invisible "
+                f"— use a monitor source for that mode).",
+            )
+            return
+        label = saved.get("label", "")
+        self.controller.capture_queue.push(img, source_label=label)
+        QMessageBox.information(
+            self, "Test capture queued",
+            f"Captured '{label}' ({img.width()}×{img.height()}). "
+            f"Queue depth: {len(self.controller.capture_queue)}.",
+        )
 
     def _refresh_capture_sources(self) -> None:
         from ..dialogs.screen_capture import _list_sources
@@ -356,6 +418,11 @@ class SettingsDialog(QDialog):
         wanted_kind = saved.get("kind")
         wanted_label = (saved.get("label") or "").lower()
         wanted_title = (saved.get("title") or wanted_label).lower()
+        # Exact match — see screen_capture.resolve_saved_source for the
+        # "Star Citizen" / "Star Citizen Cargo Manager" footgun this
+        # avoids. Returns silently if the saved window is no longer
+        # there so the combo keeps its current selection rather than
+        # snapping to whichever same-prefix window was first.
         for i in range(self._capture_source_combo.count()):
             src = self._capture_source_combo.itemData(i)
             if not src or src.get("kind") != wanted_kind:
@@ -364,7 +431,7 @@ class SettingsDialog(QDialog):
             if wanted_kind == "monitor" and label == wanted_label:
                 self._capture_source_combo.setCurrentIndex(i)
                 return
-            if wanted_kind == "window" and wanted_title in label:
+            if wanted_kind == "window" and label == wanted_title:
                 self._capture_source_combo.setCurrentIndex(i)
                 return
 
