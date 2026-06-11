@@ -219,29 +219,53 @@ def advisories_for_result(
         # ── 3. Overflow / overcap ──────────────────────────────────────
         # If snapshot SCU sum per zone exceeds the zone's scu_capacity,
         # cargo physically overflowed — the packer couldn't fit everything.
+        # Aggregate the overflow across every overflowing zone at this
+        # stop into ONE "loadmaster attention required" advisory so the
+        # operator sees a single actionable headline naming the stop,
+        # zones, and total overflow SCU.
+        overflow_zones: list[tuple[str, int, int]] = []  # (zone, sum, cap)
+        overflow_cls: set[int] = set()
         for zlabel, zone_entries in by_zone.items():
             scu_sum = sum(e.scu_amount for e in zone_entries)
             cap = zone_capacity.get(zlabel, 0)
             if cap and scu_sum > cap:
-                cl_ids = sorted({e.cargo_line_id for e in zone_entries})
-                by_stop[stop_num].append(Advisory(
-                    stop_number=stop_num,
-                    severity="error",
-                    code="overflow",
-                    summary=(
-                        f"Zone {zlabel} overflows: {scu_sum} SCU > "
-                        f"{cap} SCU capacity"
-                    ),
-                    detail=(
-                        f"The plan tries to place {scu_sum} SCU into zone "
-                        f"{zlabel}, which only holds {cap} SCU. Some "
-                        f"pallets will not physically fit.\n\n"
-                        f"Lock pallets to specific positions or split "
-                        f"cargo into multiple zones."
-                    ),
-                    affected_zones=[zlabel],
-                    affected_cargo_lines=cl_ids,
-                ))
+                overflow_zones.append((zlabel, scu_sum, cap))
+                for e in zone_entries:
+                    overflow_cls.add(e.cargo_line_id)
+        if overflow_zones:
+            total_overflow = sum(
+                s - c for (_z, s, c) in overflow_zones
+            )
+            zone_labels = sorted(z for (z, _s, _c) in overflow_zones)
+            zones_str = ", ".join(zone_labels)
+            has_locks = _workday_has_locks(workday_id, conn)
+            extra = ""
+            if has_locks:
+                extra = (
+                    "\n\nLocks didn't free enough space — additional "
+                    "manual intervention required."
+                )
+            by_stop[stop_num].append(Advisory(
+                stop_number=stop_num,
+                severity="error",
+                code="overflow",
+                summary=(
+                    f"Loadmaster attention required — {total_overflow} "
+                    f"SCU couldn't be auto-packed at stop {stop_num}"
+                ),
+                detail=(
+                    f"The auto-packer can't fit all cargo into zones "
+                    f"{zones_str} at this stop "
+                    f"({total_overflow} SCU overflow).\n\n"
+                    f"Open the 3D View, place pallets manually (press R "
+                    f"to rotate a held pallet, drag across adjacent "
+                    f"zones for lateral spanning), then recompute. "
+                    f"Locked pallets are preserved across the recompute."
+                    f"{extra}"
+                ),
+                affected_zones=zone_labels,
+                affected_cargo_lines=sorted(overflow_cls),
+            ))
 
         # ── 4. Narrow conflict on board ────────────────────────────────
         onboard_conflict_cls = sorted({
@@ -358,6 +382,20 @@ def advisories_for_result(
 
 
 # ── helpers ────────────────────────────────────────────────────────────────
+
+
+def _workday_has_locks(workday_id: int, conn: sqlite3.Connection) -> bool:
+    """True iff at least one pallet_locks row exists for *workday_id*.
+
+    Used by the overflow advisory to surface a stronger "additional
+    intervention required" note when the loadmaster has already locked
+    pallets but overflow persists.
+    """
+    row = conn.execute(
+        "SELECT 1 FROM pallet_locks WHERE workday_id = ? LIMIT 1",
+        (workday_id,),
+    ).fetchone()
+    return row is not None
 
 
 def _workday_id_for(

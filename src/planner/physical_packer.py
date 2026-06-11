@@ -26,6 +26,132 @@ from typing import Any
 LARGE_SIZES = frozenset({8, 16, 24, 32})
 
 
+# ── Adjacency-walked footprint helper (cross-zone spanning) ─────────────
+
+def walk_footprint_zones(
+    anchor_zone: str,
+    local_x: int, local_y: int,
+    width: int, length: int,
+    zones: dict[str, dict],
+) -> list[dict] | None:
+    """Project the bay-space footprint of a pallet anchored at *anchor_zone*
+    (local_x, local_y) with *width* × *length* into the zones it touches.
+
+    Returns a list of dicts::
+
+        [{"zone_label": str, "local_x": int, "local_y": int,
+          "local_w": int, "local_l": int}, ...]
+
+    one per zone the footprint covers. Returns ``None`` if any cube of
+    the footprint falls outside every walled-connected zone — i.e. the
+    pallet would have to cross a hard bulkhead OR sit in a spine gap.
+
+    A neighbour is "walled-connected" iff the anchor (or any already-
+    reached zone) names it via left/right/front/back_zone_label AND the
+    neighbour's matching opposite adjacency points back. We require
+    BIDIRECTIONAL adjacency so a one-way declaration in a seed can't
+    accidentally enable a span.
+
+    *zones* keys are ``zone_label``; each value is a dict with
+    ``cube_offset_x``, ``cube_offset_y``, ``width_units``,
+    ``length_units``, ``left_zone_label``, ``right_zone_label``,
+    ``front_zone_label``, ``back_zone_label``.
+    """
+    anchor = zones.get(anchor_zone)
+    if anchor is None:
+        return None
+
+    # Compute bay-space footprint cube set.
+    bay_x0 = anchor["cube_offset_x"] + local_x
+    bay_y0 = anchor["cube_offset_y"] + local_y
+    bay_x1 = bay_x0 + width   # exclusive
+    bay_y1 = bay_y0 + length  # exclusive
+
+    # BFS over walled-connected neighbours starting from the anchor.
+    # A zone is "reachable" only when both sides of the adjacency
+    # confirm it (bidirectional).
+    reachable: set[str] = {anchor_zone}
+    frontier = [anchor_zone]
+    opposite = {
+        "left_zone_label":  "right_zone_label",
+        "right_zone_label": "left_zone_label",
+        "front_zone_label": "back_zone_label",
+        "back_zone_label":  "front_zone_label",
+    }
+    while frontier:
+        z_label = frontier.pop()
+        z = zones.get(z_label)
+        if z is None:
+            continue
+        for side, opp in opposite.items():
+            neighbour_label = z.get(side)
+            if not neighbour_label or neighbour_label in reachable:
+                continue
+            neighbour = zones.get(neighbour_label)
+            if neighbour is None:
+                continue
+            if neighbour.get(opp) != z_label:
+                continue  # one-way declaration — reject
+            reachable.add(neighbour_label)
+            frontier.append(neighbour_label)
+
+    # Walk every cube of the bay-space footprint. Each must land in
+    # exactly one reachable zone (and not in a gap).
+    chunks: dict[str, dict] = {}
+    for bx in range(bay_x0, bay_x1):
+        for by in range(bay_y0, bay_y1):
+            owner: str | None = None
+            for zl in reachable:
+                z = zones[zl]
+                zx0 = z["cube_offset_x"]
+                zy0 = z["cube_offset_y"]
+                zx1 = zx0 + z["width_units"]
+                zy1 = zy0 + z["length_units"]
+                if zx0 <= bx < zx1 and zy0 <= by < zy1:
+                    owner = zl
+                    break
+            if owner is None:
+                return None  # cube sits in a bulkhead / gap / off-ship
+            chunk = chunks.get(owner)
+            if chunk is None:
+                z = zones[owner]
+                chunk = {
+                    "zone_label": owner,
+                    "x0": bx - z["cube_offset_x"],
+                    "y0": by - z["cube_offset_y"],
+                    "x1": bx - z["cube_offset_x"] + 1,
+                    "y1": by - z["cube_offset_y"] + 1,
+                }
+                chunks[owner] = chunk
+            else:
+                z = zones[owner]
+                lx = bx - z["cube_offset_x"]
+                ly = by - z["cube_offset_y"]
+                chunk["x0"] = min(chunk["x0"], lx)
+                chunk["y0"] = min(chunk["y0"], ly)
+                chunk["x1"] = max(chunk["x1"], lx + 1)
+                chunk["y1"] = max(chunk["y1"], ly + 1)
+
+    # Convert chunks to the requested output shape. Anchor first.
+    ordered: list[dict] = []
+    if anchor_zone in chunks:
+        c = chunks.pop(anchor_zone)
+        ordered.append({
+            "zone_label": anchor_zone,
+            "local_x": c["x0"], "local_y": c["y0"],
+            "local_w": c["x1"] - c["x0"],
+            "local_l": c["y1"] - c["y0"],
+        })
+    for zl, c in chunks.items():
+        ordered.append({
+            "zone_label": zl,
+            "local_x": c["x0"], "local_y": c["y0"],
+            "local_w": c["x1"] - c["x0"],
+            "local_l": c["y1"] - c["y0"],
+        })
+    return ordered
+
+
 # ── Box catalog ──────────────────────────────────────────────────────────
 
 @lru_cache(maxsize=1)

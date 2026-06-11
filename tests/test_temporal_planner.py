@@ -1026,11 +1026,16 @@ def test_lock_validation_rejects_out_of_bounds(controller):
 
     cl_id = _cargo_line_id(controller, wid)
 
-    # Pick any C2 zone and look up its width; cube_x = width is OOB.
+    # Pick a zone with no right neighbour (right_zone_label IS NULL)
+    # so an OOB cube_x can't sneak through as a legal cross-zone span.
+    # On the C2 forward bay, F3 is starboard-most (right_zone_label
+    # NULL) — perfect for this assertion.
     zone_row = controller.conn.execute(
         "SELECT z.zone_label, z.width_units FROM ship_zones z "
         "JOIN workdays w ON w.ship_id = z.ship_id "
-        "WHERE w.id = ? LIMIT 1",
+        "WHERE w.id = ? AND z.right_zone_label IS NULL "
+        "AND z.left_zone_label IS NOT NULL "
+        "LIMIT 1",
         (wid,),
     ).fetchone()
     bad_x = zone_row["width_units"]  # one past the last valid index
