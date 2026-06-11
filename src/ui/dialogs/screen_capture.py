@@ -192,8 +192,14 @@ def resolve_saved_source(saved: dict) -> dict | None:
         wanted = (saved.get("title") or saved.get("label") or "").strip().lower()
         if not wanted:
             return None
+        # EXACT title match wins. We deliberately do NOT fall back to
+        # substring matching — that previously made "Star Citizen"
+        # accidentally resolve to "Star Citizen Cargo Manager" when
+        # our own window enumerated first. If the exact title isn't
+        # there (window closed, patch changed the title), return None
+        # so the caller can warn rather than capture the wrong app.
         for s in sources:
-            if s["kind"] == "window" and wanted in s["label"].lower():
+            if s["kind"] == "window" and s["label"].lower() == wanted:
                 return s
         return None
     return None
@@ -545,6 +551,8 @@ class ScreenCaptureDialog(QDialog):
         wanted_kind = saved.get("kind")
         wanted_label = (saved.get("label") or "").lower()
         wanted_title = (saved.get("title") or wanted_label).lower()
+        # Exact match only — substring matching used to grab "Star
+        # Citizen Cargo Manager" when the user saved "Star Citizen".
         for i in range(self.source_combo.count()):
             src = self.source_combo.itemData(i)
             if not src or src.get("kind") != wanted_kind:
@@ -553,7 +561,7 @@ class ScreenCaptureDialog(QDialog):
             if wanted_kind == "monitor" and label == wanted_label:
                 self.source_combo.setCurrentIndex(i)
                 return
-            if wanted_kind == "window" and wanted_title in label:
+            if wanted_kind == "window" and label == wanted_title:
                 self.source_combo.setCurrentIndex(i)
                 return
 
