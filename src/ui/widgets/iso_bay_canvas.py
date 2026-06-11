@@ -4,8 +4,8 @@ individual-pallet drag-and-drop locking and per-pallet rotation.
 
 The widget now uses a fully orthographic projection parameterised by
 camera ``yaw`` (rotation around world-Z) and ``pitch`` (tilt around the
-camera-X axis). The default state (yaw=0, pitch=~30°) reproduces the old
-fixed axonometric framing; the user can right-mouse-drag to orbit, scroll
+camera-X axis). The default state (yaw=30°, pitch=55°) is an angled
+bird's-eye look-down; the user can right-mouse-drag to orbit, scroll
 to zoom, and press **R** while dragging a pallet to flip its footprint
 (swap width and length).
 
@@ -78,10 +78,11 @@ ISO_Y = math.sin(math.radians(30))      # 0.5
 DEFAULT_CELL_W = 22                     # px per cube along world-X
 DEFAULT_CELL_H = 18                     # px per cube along world-Z (height)
 
-# Camera defaults — yaw=0 / pitch=30° matches the historical iso framing
-# closely enough that legacy callers see the same visual result.
-DEFAULT_YAW = 0.0
-DEFAULT_PITCH = math.radians(30)
+# Camera defaults — an angled bird's-eye: a touch of yaw so side faces
+# read as 3D, and pitch ~55° from straight-down (close to the classic
+# isometric elevation) so stack heights are obvious at a glance.
+DEFAULT_YAW = math.radians(30)
+DEFAULT_PITCH = math.radians(55)
 MIN_PITCH = 0.10
 MAX_PITCH = 1.40
 MIN_CELL_W = 8
@@ -439,22 +440,50 @@ class IsoBayCanvas(QWidget):
         mx = max(0, mx)
         return mx, my
 
+    def _projected_unit_bbox(self) -> tuple[float, float, float, float] | None:
+        """Screen-space bounding box of the ship's world AABB under the
+        current camera, in unit-cell coordinates (cell_w == 1, origin at
+        (0, 0)). Returns (min_x, min_y, max_x, max_y) or ``None`` when
+        no bays are loaded.
+        """
+        ex, ey = self._bay_world_extent()
+        if ex == 0 or ey == 0:
+            return None
+        ez = 0
+        for b in self._bays:
+            for z in b.zones:
+                ez = max(ez, getattr(z, "height_units", 4))
+        cy = math.cos(self._yaw)
+        sy = math.sin(self._yaw)
+        cp = math.cos(self._pitch)
+        sp = math.sin(self._pitch)
+        xs: list[float] = []
+        ys: list[float] = []
+        for wx in (0, ex):
+            for wy in (0, ey):
+                for wz in (0, ez):
+                    rx = wx * cy - wy * sy
+                    ry = wx * sy + wy * cy
+                    xs.append(rx)
+                    ys.append(ry * cp - wz * sp)
+        return min(xs), min(ys), max(xs), max(ys)
+
     def _fit_view(self) -> None:
         """Pick origin so the ship sits comfortably in the paint region.
 
         Cell sizes are driven by the user's zoom — this only chooses the
-        origin (which we want to keep stable when the user orbits).
+        origin. The projected bounding box is recentered under the
+        current camera, so the ship stays framed while orbiting.
         """
-        ex, ey = self._bay_world_extent()
-        if ex == 0 or ey == 0:
+        bbox = self._projected_unit_bbox()
+        if bbox is None:
             self._origin = QPointF(self.width() / 2,
                                    self._toolbar_h + 60 + self.height() / 3)
             return
-
-        # Keep the origin centered horizontally with some vertical room
-        # for high stacks above the ground plane.
-        ox = self.width() / 2
-        oy = self._toolbar_h + 60 + max(80, self.height() / 3)
+        x0, y0, x1, y1 = bbox
+        top = self._toolbar_h + 70  # toolbar + help-text strip
+        ox = self.width() / 2 - (x0 + x1) / 2 * self._cell_w
+        oy = top + (self.height() - top) / 2 - (y0 + y1) / 2 * self._cell_w
         self._origin = QPointF(ox, oy)
 
     def _initial_fit_zoom(self) -> None:
@@ -464,17 +493,15 @@ class IsoBayCanvas(QWidget):
         by comparing cell_w against its default — the moment the user
         scrolls the wheel they own the zoom).
         """
-        ex, ey = self._bay_world_extent()
-        if ex == 0 or ey == 0:
+        bbox = self._projected_unit_bbox()
+        if bbox is None:
             return
+        x0, y0, x1, y1 = bbox
         avail_w = max(40, self.width() - 32)
-        # Width of the projected ship at yaw=0 is roughly
-        # (ex*cos + ey*sin) which collapses to ex at yaw=0.
-        cy = abs(math.cos(self._yaw))
-        sy = abs(math.sin(self._yaw))
-        proj_w = max(1.0, ex * cy + ey * sy)
-        cw_by_w = avail_w / (proj_w + 4)
-        cell_w = max(MIN_CELL_W, min(int(cw_by_w), 28))
+        avail_h = max(40, self.height() - self._toolbar_h - 90)
+        cw_by_w = avail_w / max(1.0, x1 - x0 + 4)
+        cw_by_h = avail_h / max(1.0, y1 - y0 + 4)
+        cell_w = max(MIN_CELL_W, min(int(min(cw_by_w, cw_by_h)), 28))
         self._cell_w = cell_w
         self._cell_h = cell_w
 
