@@ -204,6 +204,17 @@ class AddContractDialog(QDialog):
         )
         self.screenshot_btn.clicked.connect(self._on_screenshot_clicked)
         button_row.addWidget(self.screenshot_btn)
+        # Track queue depth on the button label so the user can see
+        # at a glance how many Quick-Capture screenshots are waiting.
+        try:
+            self.controller.capture_queue.changed.connect(
+                self._update_screenshot_btn_label
+            )
+        except AttributeError:
+            pass
+        self._update_screenshot_btn_label(
+            len(getattr(self.controller, "capture_queue", []) or [])
+        )
         button_row.addStretch(1)
 
         bb = QDialogButtonBox(
@@ -278,10 +289,35 @@ class AddContractDialog(QDialog):
 
     # ── screenshot → vision prefill ────────────────────────────────────
 
+    def _update_screenshot_btn_label(self, depth: int) -> None:
+        """Reflect the current capture-queue depth on the button label
+        so the user can tell at a glance there's pending work."""
+        if depth > 0:
+            self.screenshot_btn.setText(
+                f"📷 From Captures ({depth} pending)"
+            )
+        else:
+            self.screenshot_btn.setText("📷 From Screenshot")
+
     def _on_screenshot_clicked(self) -> None:
         # Local import so the rest of the app doesn't pay the cost (or
         # take a hard dep on mss) when the user never opens the dialog.
         from .screen_capture import ScreenCaptureDialog
+        from .capture_queue_dialog import CaptureQueueDialog
+
+        # Pending Quick-Capture screenshots? Show the queue so the
+        # user can review and parse them. Empty queue → single-shot
+        # capture dialog (the original workflow).
+        if (hasattr(self.controller, "capture_queue")
+                and len(self.controller.capture_queue) > 0):
+            dlg = CaptureQueueDialog(
+                self.controller,
+                fill_target=self._apply_parsed_contract,
+                parent=self,
+            )
+            dlg.exec()
+            return
+
         dlg = ScreenCaptureDialog(self.controller, parent=self)
         dlg.contract_parsed.connect(self._apply_parsed_contract)
         dlg.exec()

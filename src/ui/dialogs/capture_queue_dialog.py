@@ -30,10 +30,23 @@ THUMB_WIDTH = 220
 
 
 class CaptureQueueDialog(QDialog):
-    def __init__(self, controller, parent=None):
+    """Review pending screenshots.
+
+    *fill_target* — when given, "Parse" runs the vision API and calls
+    ``fill_target(parsed_dict)`` with the result instead of spawning a
+    fresh AddContractDialog. Used when the queue is opened from inside
+    an already-open AddContract dialog: the caller wants its own
+    fields populated. "Parse all" in fill-target mode adds each
+    parsed contract straight to the database (the user is asking for
+    a batch, so the per-item review step is bypassed for everything
+    after the first one).
+    """
+
+    def __init__(self, controller, fill_target=None, parent=None):
         super().__init__(parent)
         self.controller = controller
         self.queue = controller.capture_queue
+        self._fill_target = fill_target
 
         self.setWindowTitle("Capture Queue")
         self.resize(640, 520)
@@ -44,6 +57,15 @@ class CaptureQueueDialog(QDialog):
         self.count_label = QLabel("0 pending")
         self.count_label.setProperty("heading", True)
         header.addWidget(self.count_label, 1)
+        self.parse_all_btn = QPushButton("Parse all")
+        self.parse_all_btn.setToolTip(
+            "Vision-parse every queued screenshot in order. When "
+            "launched from an Add Contract dialog the first parse "
+            "fills that dialog; any remaining captures are added "
+            "directly as contracts."
+        )
+        self.parse_all_btn.clicked.connect(self._on_parse_all)
+        header.addWidget(self.parse_all_btn)
         clear_btn = QPushButton("Clear all")
         clear_btn.setProperty("flat", True)
         clear_btn.clicked.connect(self._on_clear_all)
@@ -156,34 +178,50 @@ class CaptureQueueDialog(QDialog):
 
     # ── per-item actions ───────────────────────────────────────────────
 
-    def _parse_item(self, item) -> None:
-        """Run the vision parser on the queued image; on success pop
-        AddContractDialog and (when the user saves it) drop the entry
-        from the queue."""
+    def _vision_parse(self, item) -> dict | None:
+        """Run the vision API on one queued image. Returns the parsed
+        dict or None (after showing an error)."""
         from ...vision_parser import parse_contract_from_image
-        from .add_contract import AddContractDialog
         from .screen_capture import _qimage_to_png_bytes
-
         api_key = getattr(self.controller, "api_key", None)
         if not api_key:
             QMessageBox.warning(
                 self, "Missing API key",
                 "OpenAI API key not set — open Settings → OpenAI.",
             )
-            return
+            return None
         try:
             png = _qimage_to_png_bytes(item.image)
             data = parse_contract_from_image(png, api_key)
         except Exception as exc:                            # noqa: BLE001
             QMessageBox.warning(self, "Parse failed", str(exc))
-            return
+            return None
         if not isinstance(data, dict) or "error" in data:
             QMessageBox.warning(
                 self, "No contract found",
                 str(data.get("error") if isinstance(data, dict) else data),
             )
+            return None
+        return data
+
+    def _parse_item(self, item) -> None:
+        """Vision-parse one queued image. In fill-target mode the
+        parsed dict goes back to the caller dialog and the queue dialog
+        closes; in standalone mode a fresh AddContract opens."""
+        data = self._vision_parse(item)
+        if data is None:
             return
 
+        if self._fill_target is not None:
+            # Fill the AddContract that's already open behind us,
+            # then drop the queue entry and close so the caller can
+            # review and save.
+            self._fill_target(data)
+            self.queue.remove(item.id)
+            self.accept()
+            return
+
+        from .add_contract import AddContractDialog
         dlg = AddContractDialog(self.controller, parent=self)
         dlg._apply_parsed_contract(data)
         if dlg.exec():
@@ -193,6 +231,68 @@ class CaptureQueueDialog(QDialog):
                 QMessageBox.warning(self, "Add contract failed", str(exc))
                 return
             self.queue.remove(item.id)
+
+    def _on_parse_all(self) -> None:
+        """Process every queued screenshot in order. The first one
+        fills the caller dialog (when in fill-target mode); any
+        remaining captures are turned into contracts directly. In
+        standalone mode every capture opens AddContract in turn."""
+        items = self.queue.items()
+        if not items:
+            return
+        if QMessageBox.question(
+            self, "Parse all captures",
+            f"Vision-parse all {len(items)} screenshot(s) and add "
+            f"each as a contract? You won't get to review the ones "
+            f"after the first.",
+        ) != QMessageBox.StandardButton.Yes:
+            return
+
+        # Block UI signals while we churn through the batch so the
+        # rebuild doesn't fire on every removal.
+        self.parse_all_btn.setEnabled(False)
+        added = 0
+        failed: list[str] = []
+        first = True
+        from .add_contract import AddContractDialog
+        for item in items:
+            data = self._vision_parse(item)
+            if data is None:
+                failed.append(f"#{item.id}: parse failed")
+                continue
+            if first and self._fill_target is not None:
+                self._fill_target(data)
+                self.queue.remove(item.id)
+                first = False
+                continue
+            # Standalone mode (or after the first fill): construct a
+            # contract dict via a hidden AddContract dialog so we
+            # reuse its validation/mapping, then save directly.
+            try:
+                ac = AddContractDialog(self.controller, parent=self)
+                ac._apply_parsed_contract(data)
+                value = ac.value()
+                self.controller.add_contract(value)
+                added += 1
+                self.queue.remove(item.id)
+            except Exception as exc:                        # noqa: BLE001
+                failed.append(f"#{item.id}: {exc}")
+        self.parse_all_btn.setEnabled(True)
+
+        summary = []
+        if self._fill_target is not None and not first:
+            summary.append("1 capture filled the open Add Contract dialog.")
+        if added:
+            summary.append(f"{added} contract(s) added directly.")
+        if failed:
+            summary.append(f"{len(failed)} failure(s):\n  " + "\n  ".join(failed))
+        QMessageBox.information(
+            self, "Parse all complete",
+            "\n\n".join(summary) or "Nothing to do.",
+        )
+        if self._fill_target is not None:
+            # We've filled the caller — close so they can review.
+            self.accept()
 
     def _view_item(self, item) -> None:
         """Hand the image to a full ScreenCaptureDialog so the user

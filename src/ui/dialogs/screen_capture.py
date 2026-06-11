@@ -219,6 +219,56 @@ def resolve_saved_source(saved: dict) -> dict | None:
     return None
 
 
+def _focus_window_for_capture(title: str) -> bool:
+    """Bring the window with the exact *title* to the foreground so a
+    screen-region grab of its rect captures the window's contents
+    instead of whatever's covering it (the cargo manager, browser
+    pop-ups, etc.).
+
+    Star Citizen in Borderless / Fullscreen Windowed reads as a
+    normal top-level window; calling activate() raises it above any
+    overlay, then a brief sleep lets the DWM compose before mss reads
+    the rect. Returns True iff a matching window was activated.
+
+    No-op on non-Windows / when pygetwindow isn't available.
+    """
+    try:
+        import pygetwindow as gw
+    except ImportError:
+        return False
+    try:
+        candidates = gw.getAllWindows()
+    except Exception:                                       # noqa: BLE001
+        return False
+
+    wanted = title.strip().lower()
+    target = None
+    for w in candidates:
+        if (getattr(w, "title", "") or "").strip().lower() == wanted:
+            target = w
+            break
+    if target is None:
+        return False
+
+    try:
+        # restore() returns a minimized window; activate() raises and
+        # focuses. Both can raise on niche window-state combinations,
+        # so we catch broadly — the worst case is the overlay stays
+        # in the shot and the user has to alt-tab to SC manually.
+        if bool(getattr(target, "isMinimized", False)):
+            target.restore()
+        target.activate()
+    except Exception:                                       # noqa: BLE001
+        return False
+
+    # DWM needs a beat (~80-150 ms) to actually compose the newly-
+    # foregrounded window before mss reads the rect. Without the
+    # sleep we sometimes grab the previous front-most window.
+    import time
+    time.sleep(0.18)
+    return True
+
+
 def grab_source(
     saved: dict,
     return_reason: bool = False,
@@ -252,6 +302,20 @@ def grab_source(
             f"For a window: it's closed or minimized. For a monitor: "
             f"its index changed."
         ))
+
+    # For window sources, foreground the target before grabbing so any
+    # overlay (the cargo manager itself, browser pop-ups, etc.) doesn't
+    # end up baked into the screenshot.
+    focused = False
+    if src["kind"] == "window":
+        focused = _focus_window_for_capture(src["label"])
+        if focused:
+            # The window may have been resized/moved by another app
+            # since the last enumeration; re-resolve to get its
+            # current rect.
+            fresh = resolve_saved_source(saved)
+            if fresh is not None:
+                src = fresh
 
     rect = src["rect"]
     try:
