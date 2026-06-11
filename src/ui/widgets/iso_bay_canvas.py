@@ -4,8 +4,8 @@ individual-pallet drag-and-drop locking and per-pallet rotation.
 
 The widget now uses a fully orthographic projection parameterised by
 camera ``yaw`` (rotation around world-Z) and ``pitch`` (tilt around the
-camera-X axis). The default state (yaw=0, pitch=~30°) reproduces the old
-fixed axonometric framing; the user can right-mouse-drag to orbit, scroll
+camera-X axis). The default state (yaw=30°, pitch=55°) is an angled
+bird's-eye look-down; the user can right-mouse-drag to orbit, scroll
 to zoom, and press **R** while dragging a pallet to flip its footprint
 (swap width and length).
 
@@ -78,10 +78,11 @@ ISO_Y = math.sin(math.radians(30))      # 0.5
 DEFAULT_CELL_W = 22                     # px per cube along world-X
 DEFAULT_CELL_H = 18                     # px per cube along world-Z (height)
 
-# Camera defaults — yaw=0 / pitch=30° matches the historical iso framing
-# closely enough that legacy callers see the same visual result.
-DEFAULT_YAW = 0.0
-DEFAULT_PITCH = math.radians(30)
+# Camera defaults — an angled bird's-eye: a touch of yaw so side faces
+# read as 3D, and pitch ~55° from straight-down (close to the classic
+# isometric elevation) so stack heights are obvious at a glance.
+DEFAULT_YAW = math.radians(30)
+DEFAULT_PITCH = math.radians(55)
 MIN_PITCH = 0.10
 MAX_PITCH = 1.40
 MIN_CELL_W = 8
@@ -202,6 +203,11 @@ class IsoBayCanvas(QWidget):
 
         # locked pallets (cargo_line_id, pallet_index) -> orientation
         self._locks: dict[tuple[int, int], int] = {}
+
+        # True when the active drag was initiated by "Pick up" on a
+        # holding-table row instead of by clicking a rendered pallet —
+        # used to also remove the row from holding on successful drop.
+        self._pickup_active: bool = False
 
         # ── top toolbar ─────────────────────────────────────────────
         root = QVBoxLayout(self)
@@ -346,6 +352,88 @@ class IsoBayCanvas(QWidget):
         self._rebuild_geometry()
         self.update()
 
+    # ── public: pickup from holding sidebar ────────────────────────────
+
+    def start_pickup(self, cargo_line_id: int, pallet_index: int) -> None:
+        """Begin a "drag from holding" workflow for the given pallet.
+
+        Looks up the pallet's commodity / destination / size from the
+        controller, builds a synthetic _PalletShape pinned to the
+        cursor, and enters drag state. The next left-click anywhere on
+        the bay calls lock_pallet (with the existing force-push and
+        span-aware drop logic), then remove_from_holding.
+
+        Press R while the pickup is active to rotate the footprint.
+        """
+        from PySide6.QtGui import QCursor
+        # Resolve the pallet's metadata by re-running the same lookup
+        # the holding sidebar uses.
+        list_fn = getattr(self.controller, "list_holding_pallets", None)
+        if list_fn is None:
+            return
+        rows = list(list_fn())
+        row = next(
+            (r for r in rows
+             if int(r["cargo_line_id"]) == cargo_line_id
+             and int(r["pallet_index"]) == pallet_index),
+            None,
+        )
+        if row is None:
+            return
+        try:
+            from ...planner.palletizer import palletize
+            from ...planner.physical_packer import box_for
+        except ImportError:
+            return
+        sizes = palletize(int(row["cargo_line_scu"]),
+                          int(row["max_pallet_size"]))
+        if not (0 <= pallet_index < len(sizes)):
+            return
+        size = sizes[pallet_index]
+        box = box_for(size)
+
+        # Synthetic PalletRect — bay/zone fields don't matter for the
+        # drop logic, only cell_w/cell_l/cell_h drive the drop target,
+        # collision math, and stack height.
+        from ...app_controller import PalletRect
+        ghost_rect = PalletRect(
+            cargo_line_id=cargo_line_id,
+            zone_label="",
+            bay="",
+            cell_x=0, cell_y=0, cell_z=0,
+            cell_w=box["width"], cell_l=box["length"], cell_h=box["height"],
+            pallet_size=size,
+            color=row["delivery_color"] or "#3a4894",
+            is_conflicted=False,
+            label=str(size),
+            delivery_station_name=row["delivery_station_name"],
+            commodity_name=row["commodity_name"],
+            contract_number=row["contract_number"],
+            pallet_index=pallet_index,
+        )
+
+        # Build a placeholder _PalletShape — _drop_target only reads
+        # cell_w/cell_l from the rect, and the painter renders the ghost
+        # silhouette under the cursor on the next paint via _drag_cursor.
+        ghost_shape = self._build_cuboid_shape(
+            0, 0, 0, ghost_rect.cell_w, ghost_rect.cell_l, ghost_rect.cell_h,
+            ghost_rect,
+        )
+
+        # Initial cursor & drop target.
+        cursor_local = self.mapFromGlobal(QCursor.pos())
+        self._drag_shape = ghost_shape
+        self._drag_cursor = cursor_local
+        self._drag_orientation = 0
+        self._drag_base_wl = (box["width"], box["length"])
+        self._pickup_active = True
+        self._drag_target = self._drop_target(cursor_local)
+        self.drag_hint_label.setText(
+            "Click a cube to place — R to rotate, Esc to cancel"
+        )
+        self.setFocus()
+        self.update()
+
     # ── internal: stop selector ────────────────────────────────────────
 
     def _populate_stop_combo(self) -> None:
@@ -439,22 +527,50 @@ class IsoBayCanvas(QWidget):
         mx = max(0, mx)
         return mx, my
 
+    def _projected_unit_bbox(self) -> tuple[float, float, float, float] | None:
+        """Screen-space bounding box of the ship's world AABB under the
+        current camera, in unit-cell coordinates (cell_w == 1, origin at
+        (0, 0)). Returns (min_x, min_y, max_x, max_y) or ``None`` when
+        no bays are loaded.
+        """
+        ex, ey = self._bay_world_extent()
+        if ex == 0 or ey == 0:
+            return None
+        ez = 0
+        for b in self._bays:
+            for z in b.zones:
+                ez = max(ez, getattr(z, "height_units", 4))
+        cy = math.cos(self._yaw)
+        sy = math.sin(self._yaw)
+        cp = math.cos(self._pitch)
+        sp = math.sin(self._pitch)
+        xs: list[float] = []
+        ys: list[float] = []
+        for wx in (0, ex):
+            for wy in (0, ey):
+                for wz in (0, ez):
+                    rx = wx * cy - wy * sy
+                    ry = wx * sy + wy * cy
+                    xs.append(rx)
+                    ys.append(ry * cp - wz * sp)
+        return min(xs), min(ys), max(xs), max(ys)
+
     def _fit_view(self) -> None:
         """Pick origin so the ship sits comfortably in the paint region.
 
         Cell sizes are driven by the user's zoom — this only chooses the
-        origin (which we want to keep stable when the user orbits).
+        origin. The projected bounding box is recentered under the
+        current camera, so the ship stays framed while orbiting.
         """
-        ex, ey = self._bay_world_extent()
-        if ex == 0 or ey == 0:
+        bbox = self._projected_unit_bbox()
+        if bbox is None:
             self._origin = QPointF(self.width() / 2,
                                    self._toolbar_h + 60 + self.height() / 3)
             return
-
-        # Keep the origin centered horizontally with some vertical room
-        # for high stacks above the ground plane.
-        ox = self.width() / 2
-        oy = self._toolbar_h + 60 + max(80, self.height() / 3)
+        x0, y0, x1, y1 = bbox
+        top = self._toolbar_h + 70  # toolbar + help-text strip
+        ox = self.width() / 2 - (x0 + x1) / 2 * self._cell_w
+        oy = top + (self.height() - top) / 2 - (y0 + y1) / 2 * self._cell_w
         self._origin = QPointF(ox, oy)
 
     def _initial_fit_zoom(self) -> None:
@@ -464,17 +580,15 @@ class IsoBayCanvas(QWidget):
         by comparing cell_w against its default — the moment the user
         scrolls the wheel they own the zoom).
         """
-        ex, ey = self._bay_world_extent()
-        if ex == 0 or ey == 0:
+        bbox = self._projected_unit_bbox()
+        if bbox is None:
             return
+        x0, y0, x1, y1 = bbox
         avail_w = max(40, self.width() - 32)
-        # Width of the projected ship at yaw=0 is roughly
-        # (ex*cos + ey*sin) which collapses to ex at yaw=0.
-        cy = abs(math.cos(self._yaw))
-        sy = abs(math.sin(self._yaw))
-        proj_w = max(1.0, ex * cy + ey * sy)
-        cw_by_w = avail_w / (proj_w + 4)
-        cell_w = max(MIN_CELL_W, min(int(cw_by_w), 28))
+        avail_h = max(40, self.height() - self._toolbar_h - 90)
+        cw_by_w = avail_w / max(1.0, x1 - x0 + 4)
+        cw_by_h = avail_h / max(1.0, y1 - y0 + 4)
+        cell_w = max(MIN_CELL_W, min(int(min(cw_by_w, cw_by_h)), 28))
         self._cell_w = cell_w
         self._cell_h = cell_w
 
@@ -852,6 +966,14 @@ class IsoBayCanvas(QWidget):
         if event.button() != Qt.MouseButton.LeftButton:
             return
         pos = event.position().toPoint()
+        # If a "pick up from holding" pickup is in flight, treat the
+        # press as the COMMIT click: hand off to the release logic
+        # (which calls lock_pallet and remove_from_holding).
+        if self._pickup_active and self._drag_shape is not None:
+            self._drag_cursor = pos
+            self._drag_target = self._drop_target(pos)
+            self._commit_drop()
+            return
         idx = self._hit_test(pos)
         if idx is None:
             return
@@ -913,10 +1035,18 @@ class IsoBayCanvas(QWidget):
             (bay_x + dx, bay_y + dy, z + dz)
             for dx in range(w) for dy in range(l) for dz in range(h)
         }
+        # Bay-local cube coordinates (PalletRect.cell_x/cell_y) only mean
+        # the same thing inside a single bay — both the Aft Bay's R1 and
+        # the Forward Bay's F1 start at cube_offset_x=0, so a pallet at
+        # bay-local (0, 0, 0) in one bay collides with a pallet at (0, 0,
+        # 0) in the other unless we filter. Keep only same-bay rects.
+        target_bay = zm["bay"]
         displaced = []
         for p in self._pallets:
             if (getattr(p, "cargo_line_id", None) == dragged_cl
                     and getattr(p, "pallet_index", 0) == dragged_idx):
+                continue
+            if getattr(p, "bay", None) != target_bay:
                 continue
             pw = getattr(p, "cell_w", 1)
             pl = getattr(p, "cell_l", 1)
@@ -938,6 +1068,23 @@ class IsoBayCanvas(QWidget):
             return
         if event.button() != Qt.MouseButton.LeftButton:
             return
+        if self._drag_shape is None:
+            return
+        # Pickup-mode drags are committed on press, not release — the
+        # corresponding press already routed through _commit_drop and
+        # cleared the drag state, so the matching release is a no-op.
+        if self._pickup_active:
+            return
+        self._commit_drop()
+
+    def _commit_drop(self) -> None:
+        """Finalise the current drag — validate, run force-push, call
+        lock_pallet, and refresh.
+
+        Shared by ``mouseReleaseEvent`` (the normal drag-and-drop flow)
+        and ``mousePressEvent`` (when the user clicks somewhere on the
+        bay during a "Pick up from holding" pickup).
+        """
         if self._drag_shape is None:
             return
         shape = self._drag_shape
@@ -1035,6 +1182,27 @@ class IsoBayCanvas(QWidget):
             QMessageBox.warning(self, "Lock failed", str(e))
             self.update()
             return
+        # If this drop was a "pick up from holding" workflow, take the
+        # pallet off the holding table now that it has a real lock.
+        if self._pickup_active:
+            self._pickup_active = False
+            remove_fn = getattr(self.controller, "remove_from_holding", None)
+            if remove_fn is not None:
+                try:
+                    remove_fn(cl_id, p_idx)
+                except Exception:                       # noqa: BLE001
+                    pass
+        # Freeze every other on-board pallet at its current rendered
+        # position so the deterministic auto-packer can't shuffle them
+        # under us on the next refresh. This is what makes manual
+        # placement "stick" instead of erratically re-arranging.
+        freeze_fn = getattr(self.controller, "freeze_visible_layout", None)
+        if freeze_fn is not None:
+            try:
+                freeze_fn(stop_number=self._stop_number,
+                          exclude=[(cl_id, p_idx)])
+            except Exception:                           # noqa: BLE001
+                pass
         self.pallet_locked.emit(cl_id, p_idx, zone, x, y, z)
         self.refresh()
 
@@ -1051,6 +1219,17 @@ class IsoBayCanvas(QWidget):
                 rect.cell_w, rect.cell_l = bl, bw
             else:
                 rect.cell_w, rect.cell_l = bw, bl
+            self.update()
+            return
+        # Esc cancels an in-flight pickup so the pallet stays in holding.
+        if (event.key() == Qt.Key.Key_Escape
+                and self._pickup_active):
+            self._drag_shape = None
+            self._drag_target = None
+            self._drag_cursor = None
+            self._drag_orientation = 0
+            self._pickup_active = False
+            self.drag_hint_label.setText("")
             self.update()
             return
         super().keyPressEvent(event)
@@ -1321,10 +1500,11 @@ def open_iso_view(controller, parent=None):
     splitter = QSplitter(Qt.Orientation.Horizontal, dlg)
     canvas = IsoBayCanvas(controller, parent=splitter)
     holding = HoldingTableWidget(controller, parent=splitter)
-    # When the user clicks "Pick up" on a holding pallet, refresh the
-    # canvas so the next click in 3D can target a cube; the pallet is
-    # off any zone until it gets a new lock.
-    holding.pallet_picked.connect(lambda _cl, _idx: canvas.refresh())
+    # When the user clicks "Pick up" on a holding pallet, arm the
+    # canvas's pickup mode: a ghost pallet follows the cursor, and the
+    # next click in 3D locks the pallet there and removes it from
+    # holding. Esc cancels the pickup.
+    holding.pallet_picked.connect(canvas.start_pickup)
     splitter.addWidget(canvas)
     splitter.addWidget(holding)
     splitter.setStretchFactor(0, 3)

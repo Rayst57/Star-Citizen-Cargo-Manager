@@ -791,6 +791,17 @@ class AppController(QObject):
         snap_key = snap_key or 1
         entries = self._last_result.snapshots.get(snap_key, [])
 
+        # Holding pallets are off the ship — exclude them so the 3D view
+        # doesn't redraw them in their pre-holding cells (which is what
+        # made closing + reopening the dialog "re-arrange" them back).
+        holding_keys: set[tuple[int, int]] = set()
+        for r in self.conn.execute(
+            "SELECT cargo_line_id, pallet_index FROM pallet_holding "
+            "WHERE workday_id = ?",
+            (self.workday_id,),
+        ):
+            holding_keys.add((int(r["cargo_line_id"]), int(r["pallet_index"])))
+
         # Load zone metadata + ship_zones for placement math (incl. the
         # adjacency labels needed for cross-zone spanning).
         zone_meta = {
@@ -900,6 +911,10 @@ class AppController(QObject):
             start_idx = seen_index_for_cl.get(e.cargo_line_id, 0)
             for offset, size in enumerate(sizes):
                 pallet_idx = start_idx + offset
+                # Skip pallets that are sitting in holding — they're not
+                # physically on the ship and must not render.
+                if (e.cargo_line_id, pallet_idx) in holding_keys:
+                    continue
                 lock = locks_global.get((e.cargo_line_id, pallet_idx))
                 zone_for_pallet = lock[0] if lock is not None else e.zone_label
 
@@ -1950,6 +1965,110 @@ class AppController(QObject):
         self._set_dirty()
         self.contracts_changed.emit()
         self.route_changed.emit()
+
+    def freeze_visible_layout(
+        self,
+        stop_number: int | None = None,
+        exclude: list[tuple[int, int]] | None = None,
+    ) -> int:
+        """Persist a pallet_locks row for every PalletRect currently
+        rendered at *stop_number* that doesn't already have a lock.
+
+        This is the "don't shuffle the rest of the bay when I move one
+        pallet" hammer. The 3D editor calls it after every successful
+        drop, so once the user starts manually placing pallets the
+        deterministic auto-packer can't churn the surrounding layout
+        on the next ``get_pallet_rects`` call.
+
+        Spanning rects (``spans_zones`` non-empty) are skipped because
+        they already have a lock by construction and their bay-space
+        ``cell_x/cell_y`` doesn't unambiguously round-trip back to a
+        single anchor zone.
+
+        *exclude* is a list of ``(cargo_line_id, pallet_index)`` keys
+        to skip — used by the canvas to avoid re-locking the pallet
+        the user just dropped (which already got its own ``lock_pallet``
+        call with the right orientation).
+
+        Returns the number of freshly-frozen pallets.
+        """
+        self._require_workday()
+        rects = self.get_pallet_rects(stop_number=stop_number)
+        if not rects:
+            return 0
+
+        # Existing locks — don't bother re-locking these.
+        already_locked: set[tuple[int, int]] = set()
+        for r in self.conn.execute(
+            "SELECT cargo_line_id, pallet_index FROM pallet_locks "
+            "WHERE workday_id = ?",
+            (self.workday_id,),
+        ):
+            already_locked.add(
+                (int(r["cargo_line_id"]), int(r["pallet_index"])),
+            )
+
+        # Zone-offset lookup: PalletRect.cell_x/cell_y are bay-local
+        # (cube_offset_x + zone-local x); lock_pallet wants zone-local.
+        zone_offsets = {
+            r["zone_label"]: (r["cube_offset_x"], r["cube_offset_y"])
+            for r in self.conn.execute(
+                """
+                SELECT z.zone_label, z.cube_offset_x, z.cube_offset_y
+                FROM ship_zones z
+                JOIN workdays w ON w.ship_id = z.ship_id
+                WHERE w.id = ?
+                """,
+                (self.workday_id,),
+            )
+        }
+
+        skip = set(exclude or [])
+        from .planner.physical_packer import box_for
+
+        n_frozen = 0
+        for r in rects:
+            key = (r.cargo_line_id, r.pallet_index)
+            if key in skip or key in already_locked:
+                continue
+            # Spanning rects already have a manual lock by definition;
+            # the get_pallet_rects path would have skipped them above
+            # if we re-rendered, but defensively bail anyway.
+            if getattr(r, "spans_zones", None):
+                continue
+            offs = zone_offsets.get(r.zone_label)
+            if offs is None:
+                continue
+            cube_x = r.cell_x - offs[0]
+            cube_y = r.cell_y - offs[1]
+            # Derive orientation from rendered footprint vs natural box.
+            box = box_for(r.pallet_size)
+            nat_w, nat_l = box["width"], box["length"]
+            if (r.cell_w, r.cell_l) == (nat_w, nat_l):
+                orientation = 0
+            elif (r.cell_w, r.cell_l) == (nat_l, nat_w):
+                orientation = 1
+            else:
+                # Unexpected — skip rather than lock at a wrong shape.
+                continue
+            try:
+                self.lock_pallet(
+                    r.cargo_line_id, r.pallet_index,
+                    r.zone_label, cube_x, cube_y, r.cell_z,
+                    orientation=orientation,
+                )
+            except ToolError:
+                # Out-of-bounds or other lock_pallet rejection — skip
+                # silently; the auto-packer will keep packing it.
+                continue
+            n_frozen += 1
+
+        if n_frozen:
+            _log.info(
+                "freeze_visible_layout: locked %d pallet(s) at stop %s",
+                n_frozen, stop_number,
+            )
+        return n_frozen
 
     # ── pallet holding (force-push waiting area) ────────────────────────
 
