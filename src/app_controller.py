@@ -825,9 +825,13 @@ class AppController(QObject):
                 for cl_id in d.cargo_line_ids:
                     cl_conflict_info[cl_id] = (amb_sizes, partners)
 
-        # Load per-workday pallet locks. Locks are keyed by
-        # (cargo_line_id, pallet_index); each zone uses only the locks
-        # whose zone_label matches.
+        # Load per-workday pallet locks, keyed GLOBALLY by
+        # (cargo_line_id, pallet_index). A lock relocates its pallet to
+        # the lock's zone for rendering even when the (possibly stale,
+        # pre-recompute) snapshot still files the cargo line under a
+        # different zone — without this, dragging a pallet to another
+        # zone in the 3D view silently rendered it back in its old
+        # zone until the next recompute.
         lock_rows = self.conn.execute(
             """
             SELECT cargo_line_id, pallet_index, zone_label,
@@ -837,22 +841,38 @@ class AppController(QObject):
             """,
             (self.workday_id,),
         ).fetchall()
-        # Value is (cube_x, cube_y, cube_z, orientation).
-        locks_by_zone: dict[str, dict[tuple[int, int], tuple[int, int, int, int]]] = {}
+        # Value is (zone_label, cube_x, cube_y, cube_z, orientation).
+        locks_global: dict[tuple[int, int], tuple[str, int, int, int, int]] = {}
         for r in lock_rows:
-            locks_by_zone.setdefault(r["zone_label"], {})[
-                (r["cargo_line_id"], r["pallet_index"])
-            ] = (r["cube_x"], r["cube_y"], r["cube_z"], r["orientation"])
+            locks_global[(r["cargo_line_id"], r["pallet_index"])] = (
+                r["zone_label"], r["cube_x"], r["cube_y"], r["cube_z"],
+                r["orientation"],
+            )
 
         rects: list[PalletRect] = []
 
-        # Group entries by zone so we place each zone's contents in a single
-        # large→small pass.
-        entries_by_zone: dict[str, list] = {}
+        # Explode snapshot entries into per-pallet units, assigning each
+        # pallet to its LOCKED zone when a lock exists (else the
+        # snapshot's zone). pallet_index is the 0-based position within
+        # the cargo line's full deterministic breakdown; per-cl_id
+        # consumed-index tracking keeps indices unique when a line has
+        # multiple snapshot rows (post-split merges).
+        # unit = (entry, pallet_idx, size, lock_or_None)
+        units_by_zone: dict[str, list[tuple]] = {}
+        seen_index_for_cl: dict[int, int] = {}
         for e in entries:
-            entries_by_zone.setdefault(e.zone_label, []).append(e)
+            sizes = _parse_breakdown(e.pallet_breakdown) or [e.scu_amount]
+            start_idx = seen_index_for_cl.get(e.cargo_line_id, 0)
+            for offset, size in enumerate(sizes):
+                pallet_idx = start_idx + offset
+                lock = locks_global.get((e.cargo_line_id, pallet_idx))
+                zone_for_pallet = lock[0] if lock is not None else e.zone_label
+                units_by_zone.setdefault(zone_for_pallet, []).append(
+                    (e, pallet_idx, size, lock)
+                )
+            seen_index_for_cl[e.cargo_line_id] = start_idx + len(sizes)
 
-        for zone_label, zone_entries in entries_by_zone.items():
+        for zone_label, zone_units in units_by_zone.items():
             zone = zone_meta.get(zone_label)
             if not zone:
                 continue
@@ -860,43 +880,27 @@ class AppController(QObject):
             zl = zone["length_units"]
             zh = zone["scu_capacity"] // (zw * zl) if zw * zl else 4
 
-            zone_locks = locks_by_zone.get(zone_label, {})
-
-            # Build the (entry, size, pallet_index) keyed list for the
-            # packer. pallet_index is the 0-based position of *this*
-            # pallet within the cargo line's full deterministic
-            # breakdown. We track per-cl_id "consumed" indices so two
-            # entries for the same line (which can happen after splits
-            # are merged into a single snapshot row) don't reuse the
-            # same index.
             placements: list[tuple] = []  # (key, size) where key=(entry, pallet_index)
             locked_entries: list[tuple] = []  # (key, size, w, l, h, x, y, z)
-            seen_index_for_cl: dict[int, int] = {}
-            for entry in zone_entries:
-                sizes = _parse_breakdown(entry.pallet_breakdown) or [entry.scu_amount]
-                start_idx = seen_index_for_cl.get(entry.cargo_line_id, 0)
-                for offset, size in enumerate(sizes):
-                    pallet_idx = start_idx + offset
-                    key = (entry, pallet_idx)
-                    lock = zone_locks.get((entry.cargo_line_id, pallet_idx))
-                    if lock is not None:
-                        # Lookup the footprint for the lock.
-                        box = box_for(size)
-                        w, l, h = box["width"], box["length"], box["height"]
-                        lock_orientation = lock[3] if len(lock) > 3 else 0
-                        if lock_orientation == 1 and box.get("rotatable"):
-                            # User requested a horizontal rotation.
-                            w, l = l, w
-                        elif w > zw and box.get("rotatable") and l <= zw:
-                            # Auto-rotate fallback for orientation=0
-                            # when the natural footprint won't fit.
-                            w, l = l, w
-                        locked_entries.append(
-                            (key, size, w, l, h, lock[0], lock[1], lock[2])
-                        )
-                    else:
-                        placements.append((key, size))
-                seen_index_for_cl[entry.cargo_line_id] = start_idx + len(sizes)
+            for entry, pallet_idx, size, lock in zone_units:
+                key = (entry, pallet_idx)
+                if lock is not None:
+                    # Lookup the footprint for the lock.
+                    box = box_for(size)
+                    w, l, h = box["width"], box["length"], box["height"]
+                    lock_orientation = lock[4]
+                    if lock_orientation == 1 and box.get("rotatable"):
+                        # User requested a horizontal rotation.
+                        w, l = l, w
+                    elif w > zw and box.get("rotatable") and l <= zw:
+                        # Auto-rotate fallback for orientation=0
+                        # when the natural footprint won't fit.
+                        w, l = l, w
+                    locked_entries.append(
+                        (key, size, w, l, h, lock[1], lock[2], lock[3])
+                    )
+                else:
+                    placements.append((key, size))
 
             if locked_entries:
                 # Stamp the locked pallets, then pack the rest around them.

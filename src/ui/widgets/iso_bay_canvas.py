@@ -673,10 +673,24 @@ class IsoBayCanvas(QWidget):
         return None
 
     def _drop_target(self, pos: QPoint) -> tuple[str, int, int, int] | None:
-        """Reverse-project *pos* to a (zone, x, y, z) cube."""
+        """Reverse-project *pos* to a (zone, x, y, z) cube.
+
+        The returned origin is CLAMPED so the dragged pallet's full
+        footprint stays inside the zone: dropping a 2-wide pallet on a
+        zone's last column snaps it flush against the wall instead of
+        failing validation. The cursor only needs to land anywhere on
+        the zone."""
         wx_f, wy_f = self.unproject_ground(pos.x(), pos.y())
         wx = int(math.floor(wx_f))
         wy = int(math.floor(wy_f))
+
+        # Footprint of the dragged pallet (already reflects the active
+        # R-key orientation since the rect's cell_w/cell_l are swapped
+        # on rotate).
+        fw = fl = 1
+        if self._drag_shape is not None:
+            fw = max(1, getattr(self._drag_shape.rect, "cell_w", 1))
+            fl = max(1, getattr(self._drag_shape.rect, "cell_l", 1))
 
         # Find which zone (if any) contains this world cell.
         for zone_label, zm in self._zone_meta.items():
@@ -685,11 +699,34 @@ class IsoBayCanvas(QWidget):
             if zx <= wx < zx + zw and zy <= wy < zy + zl:
                 local_x = wx - zx
                 local_y = wy - zy
-                z = self._lowest_open_z(zone_label, local_x, local_y)
+                # Snap the origin back from the far edges so the whole
+                # footprint fits. If the zone is narrower than the
+                # footprint the origin clamps to 0 and lock_pallet's
+                # validation (with its auto-rotate fallback) decides.
+                local_x = min(local_x, max(0, zw - fw))
+                local_y = min(local_y, max(0, zl - fl))
+                z = self._lowest_open_z(zone_label, local_x, local_y, fw, fl)
+                # When the stack is already at the zone's height limit,
+                # stacking isn't possible — target ground level instead
+                # so the drop runs the force-push displacement flow
+                # (push the blockers to holding) rather than failing
+                # the height validation outright.
+                fh = 1
+                if self._drag_shape is not None:
+                    fh = max(1, getattr(self._drag_shape.rect, "cell_h", 1))
+                if z + fh > zm.get("height", 4):
+                    z = 0
                 return zone_label, local_x, local_y, z
         return None
 
-    def _lowest_open_z(self, zone_label: str, local_x: int, local_y: int) -> int:
+    def _lowest_open_z(
+        self, zone_label: str, local_x: int, local_y: int,
+        fw: int = 1, fl: int = 1,
+    ) -> int:
+        """Stack height at the (local_x, local_y) origin for a pallet
+        of footprint fw x fl — the max top across EVERY column the
+        footprint covers, so a wide pallet dropped half-on a stack
+        rests on the stack instead of interpenetrating it."""
         top = 0
         zm = self._zone_meta.get(zone_label)
         if not zm:
@@ -703,8 +740,10 @@ class IsoBayCanvas(QWidget):
                 continue
             if self._drag_shape and p is self._drag_shape.rect:
                 continue
-            if (p.cell_x <= target_cx < p.cell_x + p.cell_w
-                    and p.cell_y <= target_cy < p.cell_y + p.cell_l):
+            # Rect-overlap between the dragged footprint and pallet p.
+            if (p.cell_x < target_cx + fw and target_cx < p.cell_x + p.cell_w
+                    and p.cell_y < target_cy + fl
+                    and target_cy < p.cell_y + p.cell_l):
                 top = max(top, p.cell_z + p.cell_h)
         return top
 

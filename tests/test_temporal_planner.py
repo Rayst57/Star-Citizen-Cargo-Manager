@@ -1039,3 +1039,67 @@ def test_lock_validation_rejects_out_of_bounds(controller):
         controller.lock_pallet(
             cl_id, 0, zone_row["zone_label"], bad_x, 0, 0,
         )
+
+
+def test_cross_zone_lock_renders_immediately_without_recompute(controller):
+    """Regression: dragging a pallet to a DIFFERENT zone in the 3D
+    view stores the lock under the new zone, but the renderer used to
+    look locks up only within the snapshot's (stale) zone — so the
+    pallet silently rendered back in its old spot until the next
+    recompute. The lock must relocate the pallet's rendering at once.
+    """
+    wid = controller.start_workday(_seraphim(controller), None, False)
+    controller.add_contract({
+        "pickup_station": "Yellow Core",
+        "max_pallet_size": 8,
+        "deliveries": [
+            {"destination": "Everus Harbor", "commodity": "Tungsten",
+             "scu": 16},
+        ],
+    })
+    result = run_recompute(wid, controller.conn)
+    controller._last_result = result
+    assign_destination_colors(wid, controller.conn)
+
+    stop = max(result.snapshots.keys(),
+               key=lambda sn: sum(e.scu_amount for e in result.snapshots[sn]))
+    rects = controller.get_pallet_rects(stop_number=stop)
+    assert rects, "Expected pallets on board"
+    src = rects[0]
+    src_zone = src.zone_label
+
+    # Pick a different zone on the ship as the target.
+    other = controller.conn.execute(
+        """
+        SELECT z.zone_label FROM ship_zones z
+        JOIN workdays w ON w.ship_id = z.ship_id
+        WHERE w.id = ? AND z.zone_label != ?
+        LIMIT 1
+        """,
+        (wid, src_zone),
+    ).fetchone()["zone_label"]
+
+    controller.lock_pallet(src.cargo_line_id, src.pallet_index,
+                           other, 0, 0, 0)
+
+    # NO recompute — rendering must already honor the lock.
+    rects2 = controller.get_pallet_rects(stop_number=stop)
+    moved = [r for r in rects2
+             if r.cargo_line_id == src.cargo_line_id
+             and r.pallet_index == src.pallet_index]
+    assert len(moved) == 1
+    assert moved[0].zone_label == other, (
+        f"Locked pallet should render in {other}, got "
+        f"{moved[0].zone_label} — stale-snapshot zone won."
+    )
+
+    # Re-lock to a third position (back in the source zone): the
+    # pallet must follow — moving more than once is fine.
+    controller.lock_pallet(src.cargo_line_id, src.pallet_index,
+                           src_zone, 0, 0, 0)
+    rects3 = controller.get_pallet_rects(stop_number=stop)
+    moved3 = [r for r in rects3
+              if r.cargo_line_id == src.cargo_line_id
+              and r.pallet_index == src.pallet_index]
+    assert len(moved3) == 1
+    assert moved3[0].zone_label == src_zone
