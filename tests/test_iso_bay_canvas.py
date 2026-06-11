@@ -398,3 +398,73 @@ def test_pallet_rotation_swaps_footprint(qapp):
     assert orientation == 1, (
         f"Expected orientation=1 after R press, got {orientation}"
     )
+
+
+# ── 5. Face visibility + painter's depth regressions ──────────────────
+#
+# These guard the camera math that produced the "inside-out cubes"
+# render: the visible-face picker selected BACK faces (view vector had
+# flipped signs and swapped sin/cos) and the depth sort drew NEAR
+# pallets first so far ones painted over them.
+
+def _toward_camera(canvas) -> tuple[float, float, float]:
+    """World-space toward-camera vector for the canvas's current
+    yaw/pitch. In the yaw-rotated frame the view axis is (0, sp, cp)
+    — displacement along it leaves the screen position unchanged and
+    Z is positive because the camera looks down."""
+    import math
+    sy = math.sin(canvas._yaw)
+    cy = math.cos(canvas._yaw)
+    sp = math.sin(canvas._pitch)
+    cp = math.cos(canvas._pitch)
+    return (sy * sp, cy * sp, cp)
+
+
+def test_visible_side_faces_point_at_camera(controller):
+    """Every rendered side face's outward normal must have a positive
+    dot product with the toward-camera vector — otherwise we're
+    painting the inside of the box."""
+    _seed_tiny_workday(controller)
+    canvas = IsoBayCanvas(controller)
+    canvas.refresh()
+    # Try several camera angles including the default.
+    for yaw in (0.3, 1.2, 2.5, 4.0, 5.5):
+        canvas._yaw = yaw
+        canvas._rebuild_geometry()
+        view = _toward_camera(canvas)
+        for shape in canvas._shapes:
+            for normal in (shape.side_a_normal, shape.side_b_normal):
+                dot = (normal[0] * view[0] + normal[1] * view[1]
+                       + normal[2] * view[2])
+                assert dot > -1e-9, (
+                    f"yaw={yaw}: face normal {normal} faces AWAY from "
+                    f"the camera (dot={dot:.3f}) — inside-out cube."
+                )
+
+
+def test_depth_sort_draws_far_pallets_first(controller):
+    """The shape list must be ordered back-to-front: a pallet stacked
+    ON TOP of another (same x,y, higher z) must come later in the
+    list (drawn over its base), and a pallet closer to the camera
+    must come after one farther away."""
+    _seed_tiny_workday(controller)
+    canvas = IsoBayCanvas(controller)
+    canvas.refresh()
+    # Stacking: depth key must increase with wz at a fixed (x, y).
+    d_low = canvas._depth_for(3.0, 3.0, 0.0)
+    d_high = canvas._depth_for(3.0, 3.0, 2.0)
+    assert d_high > d_low, (
+        "A pallet stacked higher must be NEARER (larger depth key) "
+        "so it draws after — i.e. on top of — its base."
+    )
+    # Nearness along the ground: at default yaw, larger rotated-Y is
+    # lower on screen = closer to the camera.
+    import math
+    sy = math.sin(canvas._yaw)
+    cy = math.cos(canvas._yaw)
+    d_far = canvas._depth_for(-10 * sy, -10 * cy, 0.0)
+    d_near = canvas._depth_for(10 * sy, 10 * cy, 0.0)
+    assert d_near > d_far
+    # And the rendered list is ascending on depth_key.
+    keys = [s.depth_key for s in canvas._shapes]
+    assert keys == sorted(keys)

@@ -14,7 +14,7 @@ import logging
 import sqlite3
 import sys
 import traceback
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -23,7 +23,9 @@ from PySide6.QtCore import QObject, QThread, Signal
 from .planner.advisory import Advisory, advisories_for_result
 from .planner.canonicalize import canonical_commodity, canonical_station
 from .planner.conflicts import ConflictGroup
-from .planner.physical_packer import best_pack, box_for, pack_with_locks
+from .planner.physical_packer import (
+    best_pack, box_for, pack_with_locks, walk_footprint_zones,
+)
 from .planner.recompute import RecomputeResult, recompute as run_recompute
 from .planner.route import RouteStop
 from .palletizer_color import assign_destination_colors
@@ -165,6 +167,10 @@ class PalletRect:
     # Colors of the OTHER destinations sharing this pallet's ambiguous
     # size — used to render stripes in those destinations' colors.
     conflict_partner_colors: list[str] = None
+    # Other zone labels this pallet's footprint also covers (cross-zone
+    # spanning). Empty for the common single-zone case. The anchor zone
+    # is NOT included — only the additional ones.
+    spans_zones: list[str] = field(default_factory=list)
 
     def __post_init__(self):
         if self.conflict_partner_colors is None:
@@ -785,14 +791,17 @@ class AppController(QObject):
         snap_key = snap_key or 1
         entries = self._last_result.snapshots.get(snap_key, [])
 
-        # Load zone metadata + ship_zones for placement math
+        # Load zone metadata + ship_zones for placement math (incl. the
+        # adjacency labels needed for cross-zone spanning).
         zone_meta = {
             r["zone_label"]: dict(r)
             for r in self.conn.execute(
                 """
                 SELECT z.zone_label, z.bay_label, z.width_units, z.length_units,
                        z.cube_offset_x, z.cube_offset_y, z.scu_capacity,
-                       z.ship_forward_y
+                       z.ship_forward_y,
+                       z.left_zone_label, z.right_zone_label,
+                       z.front_zone_label, z.back_zone_label
                 FROM ship_zones z
                 JOIN workdays w ON w.ship_id = z.ship_id
                 WHERE w.id = ?
@@ -825,9 +834,13 @@ class AppController(QObject):
                 for cl_id in d.cargo_line_ids:
                     cl_conflict_info[cl_id] = (amb_sizes, partners)
 
-        # Load per-workday pallet locks. Locks are keyed by
-        # (cargo_line_id, pallet_index); each zone uses only the locks
-        # whose zone_label matches.
+        # Load per-workday pallet locks, keyed GLOBALLY by
+        # (cargo_line_id, pallet_index). A lock relocates its pallet to
+        # the lock's zone for rendering even when the (possibly stale,
+        # pre-recompute) snapshot still files the cargo line under a
+        # different zone — without this, dragging a pallet to another
+        # zone in the 3D view silently rendered it back in its old
+        # zone until the next recompute.
         lock_rows = self.conn.execute(
             """
             SELECT cargo_line_id, pallet_index, zone_label,
@@ -837,22 +850,102 @@ class AppController(QObject):
             """,
             (self.workday_id,),
         ).fetchall()
-        # Value is (cube_x, cube_y, cube_z, orientation).
-        locks_by_zone: dict[str, dict[tuple[int, int], tuple[int, int, int, int]]] = {}
+        # Value is (zone_label, cube_x, cube_y, cube_z, orientation).
+        locks_global: dict[tuple[int, int], tuple[str, int, int, int, int]] = {}
         for r in lock_rows:
-            locks_by_zone.setdefault(r["zone_label"], {})[
-                (r["cargo_line_id"], r["pallet_index"])
-            ] = (r["cube_x"], r["cube_y"], r["cube_z"], r["orientation"])
+            locks_global[(r["cargo_line_id"], r["pallet_index"])] = (
+                r["zone_label"], r["cube_x"], r["cube_y"], r["cube_z"],
+                r["orientation"],
+            )
+
+        # ── Pre-compute spanning chunks for every lock ────────────────
+        # For each lock that spans multiple zones, ``span_chunks_for_lock``
+        # maps the lock key -> list of chunk dicts (one per touched zone).
+        # ``primary_chunk_for_lock`` records the anchor-zone chunk so the
+        # per-zone packer pins the lock's render in the anchor.
+        span_chunks_for_lock: dict[tuple[int, int], list[dict]] = {}
+        # zones-dict in the shape walk_footprint_zones expects.
+        zones_for_walk = {
+            zl: {
+                "cube_offset_x": zm["cube_offset_x"],
+                "cube_offset_y": zm["cube_offset_y"],
+                "width_units": zm["width_units"],
+                "length_units": zm["length_units"],
+                "left_zone_label":  zm.get("left_zone_label"),
+                "right_zone_label": zm.get("right_zone_label"),
+                "front_zone_label": zm.get("front_zone_label"),
+                "back_zone_label":  zm.get("back_zone_label"),
+            }
+            for zl, zm in zone_meta.items()
+        }
 
         rects: list[PalletRect] = []
 
-        # Group entries by zone so we place each zone's contents in a single
-        # large→small pass.
-        entries_by_zone: dict[str, list] = {}
+        # Explode snapshot entries into per-pallet units, assigning each
+        # pallet to its LOCKED zone when a lock exists (else the
+        # snapshot's zone). pallet_index is the 0-based position within
+        # the cargo line's full deterministic breakdown; per-cl_id
+        # consumed-index tracking keeps indices unique when a line has
+        # multiple snapshot rows (post-split merges).
+        # unit = (entry, pallet_idx, size, lock_or_None)
+        units_by_zone: dict[str, list[tuple]] = {}
+        # When a lock spans neighbour zones, ``spanning_locks_by_zone``
+        # records the non-anchor chunks so the packer in those zones can
+        # reserve the cubes without emitting a duplicate rect.
+        # Maps zone_label -> list of (chunk_dict, size, w, l, h, anchor_key).
+        spanning_locks_by_zone: dict[str, list[tuple]] = {}
+        seen_index_for_cl: dict[int, int] = {}
         for e in entries:
-            entries_by_zone.setdefault(e.zone_label, []).append(e)
+            sizes = _parse_breakdown(e.pallet_breakdown) or [e.scu_amount]
+            start_idx = seen_index_for_cl.get(e.cargo_line_id, 0)
+            for offset, size in enumerate(sizes):
+                pallet_idx = start_idx + offset
+                lock = locks_global.get((e.cargo_line_id, pallet_idx))
+                zone_for_pallet = lock[0] if lock is not None else e.zone_label
 
-        for zone_label, zone_entries in entries_by_zone.items():
+                # Pre-flight: if this lock has a footprint that spans
+                # into adjacent zones, record per-zone chunks now so the
+                # render loop below stamps them as reserved in every
+                # touched zone (the anchor's chunk follows the normal
+                # locked_entries path).
+                if lock is not None:
+                    box = box_for(size)
+                    pw, pl = box["width"], box["length"]
+                    lock_orientation = lock[4]
+                    if lock_orientation == 1 and box.get("rotatable"):
+                        pw, pl = pl, pw
+                    elif (pw > zone_meta.get(lock[0], {}).get("width_units", pw)
+                          and box.get("rotatable")):
+                        anchor_w = zone_meta[lock[0]]["width_units"]
+                        if pl <= anchor_w:
+                            pw, pl = pl, pw
+                    chunks = walk_footprint_zones(
+                        lock[0], lock[1], lock[2], pw, pl, zones_for_walk,
+                    )
+                    if chunks and len(chunks) > 1:
+                        span_chunks_for_lock[(e.cargo_line_id, pallet_idx)] = chunks
+                        ph = box["height"]
+                        for ch in chunks:
+                            if ch["zone_label"] == lock[0]:
+                                continue
+                            spanning_locks_by_zone.setdefault(
+                                ch["zone_label"], [],
+                            ).append((
+                                ch, size, ch["local_w"], ch["local_l"], ph,
+                                (e.cargo_line_id, pallet_idx),
+                            ))
+
+                units_by_zone.setdefault(zone_for_pallet, []).append(
+                    (e, pallet_idx, size, lock)
+                )
+            seen_index_for_cl[e.cargo_line_id] = start_idx + len(sizes)
+
+        # Make sure every zone touched by a spanning lock (even one with
+        # no snapshot units of its own) shows up in the per-zone loop.
+        for zl in spanning_locks_by_zone:
+            units_by_zone.setdefault(zl, [])
+
+        for zone_label, zone_units in units_by_zone.items():
             zone = zone_meta.get(zone_label)
             if not zone:
                 continue
@@ -860,43 +953,73 @@ class AppController(QObject):
             zl = zone["length_units"]
             zh = zone["scu_capacity"] // (zw * zl) if zw * zl else 4
 
-            zone_locks = locks_by_zone.get(zone_label, {})
-
-            # Build the (entry, size, pallet_index) keyed list for the
-            # packer. pallet_index is the 0-based position of *this*
-            # pallet within the cargo line's full deterministic
-            # breakdown. We track per-cl_id "consumed" indices so two
-            # entries for the same line (which can happen after splits
-            # are merged into a single snapshot row) don't reuse the
-            # same index.
             placements: list[tuple] = []  # (key, size) where key=(entry, pallet_index)
             locked_entries: list[tuple] = []  # (key, size, w, l, h, x, y, z)
-            seen_index_for_cl: dict[int, int] = {}
-            for entry in zone_entries:
-                sizes = _parse_breakdown(entry.pallet_breakdown) or [entry.scu_amount]
-                start_idx = seen_index_for_cl.get(entry.cargo_line_id, 0)
-                for offset, size in enumerate(sizes):
-                    pallet_idx = start_idx + offset
-                    key = (entry, pallet_idx)
-                    lock = zone_locks.get((entry.cargo_line_id, pallet_idx))
-                    if lock is not None:
-                        # Lookup the footprint for the lock.
-                        box = box_for(size)
-                        w, l, h = box["width"], box["length"], box["height"]
-                        lock_orientation = lock[3] if len(lock) > 3 else 0
-                        if lock_orientation == 1 and box.get("rotatable"):
-                            # User requested a horizontal rotation.
-                            w, l = l, w
-                        elif w > zw and box.get("rotatable") and l <= zw:
-                            # Auto-rotate fallback for orientation=0
-                            # when the natural footprint won't fit.
-                            w, l = l, w
-                        locked_entries.append(
-                            (key, size, w, l, h, lock[0], lock[1], lock[2])
+            # ``locked_render_flags`` parallels locked_entries: True when
+            # the entry should emit a PalletRect, False when it's a
+            # "shadow" chunk of a spanning lock anchored elsewhere — we
+            # need it reserved here but not duplicated as a render.
+            locked_render_flags: list[bool] = []
+            for entry, pallet_idx, size, lock in zone_units:
+                key = (entry, pallet_idx)
+                if lock is not None:
+                    # Lookup the footprint for the lock.
+                    box = box_for(size)
+                    w, l, h = box["width"], box["length"], box["height"]
+                    lock_orientation = lock[4]
+                    if lock_orientation == 1 and box.get("rotatable"):
+                        # User requested a horizontal rotation.
+                        w, l = l, w
+                    elif w > zw and box.get("rotatable") and l <= zw:
+                        # Auto-rotate fallback for orientation=0
+                        # when the natural footprint won't fit.
+                        w, l = l, w
+                    # If the lock spans, the anchor zone only sees its
+                    # own chunk of the footprint; the per-zone packer
+                    # reserves the actual chunk dimensions, not the
+                    # whole-pallet ones.
+                    span_chunks = span_chunks_for_lock.get(
+                        (entry.cargo_line_id, pallet_idx),
+                    )
+                    if span_chunks:
+                        anchor_chunk = next(
+                            (c for c in span_chunks
+                             if c["zone_label"] == zone_label),
+                            None,
                         )
-                    else:
-                        placements.append((key, size))
-                seen_index_for_cl[entry.cargo_line_id] = start_idx + len(sizes)
+                        if anchor_chunk is not None:
+                            locked_entries.append((
+                                key, size,
+                                anchor_chunk["local_w"],
+                                anchor_chunk["local_l"], h,
+                                anchor_chunk["local_x"],
+                                anchor_chunk["local_y"], lock[3],
+                            ))
+                            locked_render_flags.append(True)
+                            continue
+                    locked_entries.append(
+                        (key, size, w, l, h, lock[1], lock[2], lock[3])
+                    )
+                    locked_render_flags.append(True)
+                else:
+                    placements.append((key, size))
+
+            # Stamp in spanning shadow chunks from locks anchored in
+            # OTHER zones. They reserve cubes here but do not render.
+            for chunk, size, sw, sl, sh, anchor_key in (
+                spanning_locks_by_zone.get(zone_label, [])
+            ):
+                # Find the anchor lock's cube_z (vertical position).
+                anchor_lock = locks_global.get(anchor_key)
+                lz = anchor_lock[3] if anchor_lock else 0
+                # Use a synthetic key so the rest of the pipeline doesn't
+                # try to look up an "entry" from this shadow chunk.
+                shadow_key = ("__span_shadow__", anchor_key)
+                locked_entries.append((
+                    shadow_key, size, sw, sl, sh,
+                    chunk["local_x"], chunk["local_y"], lz,
+                ))
+                locked_render_flags.append(False)
 
             if locked_entries:
                 # Stamp the locked pallets, then pack the rest around them.
@@ -936,12 +1059,74 @@ class AppController(QObject):
                 )
 
             for (key, size, w, l, h, cell_x, cell_y, cell_z) in placement_result or []:
+                # Shadow chunks of a spanning lock reserve cubes here
+                # without emitting a rect — the anchor zone draws the
+                # full cuboid.
+                if (isinstance(key, tuple) and len(key) == 2
+                        and key[0] == "__span_shadow__"):
+                    continue
                 entry, pallet_idx = key
                 color = color_map.get(entry.delivery_station_name, "#888888")
                 amb_sizes, partner_colors = cl_conflict_info.get(
                     entry.cargo_line_id, (set(), [])
                 )
                 is_pallet_conflict = size in amb_sizes
+
+                # Spanning anchor: emit one PalletRect with the FULL
+                # bay-space footprint (so the iso canvas projects the
+                # cuboid across all touched zones) and record the other
+                # zones in ``spans_zones``.
+                span_chunks = span_chunks_for_lock.get(
+                    (entry.cargo_line_id, pallet_idx),
+                )
+                if span_chunks and len(span_chunks) > 1:
+                    # Compute bay-space bounding box of the union.
+                    anchor_zm = zone_meta[zone_label]
+                    full_bay_x0 = anchor_zm["cube_offset_x"] + cell_x
+                    full_bay_y0 = anchor_zm["cube_offset_y"] + cell_y
+                    full_bay_x1 = full_bay_x0
+                    full_bay_y1 = full_bay_y0
+                    other_zones: list[str] = []
+                    for ch in span_chunks:
+                        czm = zone_meta.get(ch["zone_label"])
+                        if czm is None:
+                            continue
+                        cx0 = czm["cube_offset_x"] + ch["local_x"]
+                        cy0 = czm["cube_offset_y"] + ch["local_y"]
+                        cx1 = cx0 + ch["local_w"]
+                        cy1 = cy0 + ch["local_l"]
+                        full_bay_x0 = min(full_bay_x0, cx0)
+                        full_bay_y0 = min(full_bay_y0, cy0)
+                        full_bay_x1 = max(full_bay_x1, cx1)
+                        full_bay_y1 = max(full_bay_y1, cy1)
+                        if ch["zone_label"] != zone_label:
+                            other_zones.append(ch["zone_label"])
+                    rects.append(PalletRect(
+                        cargo_line_id=entry.cargo_line_id,
+                        zone_label=zone_label,
+                        bay=zone["bay_label"],
+                        cell_x=full_bay_x0,
+                        cell_y=full_bay_y0,
+                        cell_z=cell_z,
+                        cell_w=full_bay_x1 - full_bay_x0,
+                        cell_l=full_bay_y1 - full_bay_y0,
+                        cell_h=h,
+                        pallet_size=size,
+                        color=color,
+                        is_conflicted=is_pallet_conflict,
+                        label=f"{size}",
+                        delivery_station_name=entry.delivery_station_name,
+                        commodity_name=entry.commodity_name,
+                        contract_number=entry.contract_number,
+                        pickup_station_name=getattr(
+                            entry, "pickup_station_name", "",
+                        ),
+                        pallet_index=pallet_idx,
+                        ship_forward_y=zone.get("ship_forward_y", "high"),
+                        conflict_partner_colors=partner_colors if is_pallet_conflict else [],
+                        spans_zones=other_zones,
+                    ))
+                    continue
 
                 rects.append(PalletRect(
                     cargo_line_id=entry.cargo_line_id,
@@ -1653,16 +1838,54 @@ class AppController(QObject):
                 f"Cube coordinates must be non-negative; got "
                 f"({cube_x}, {cube_y}, {cube_z})."
             )
-        if cube_x + pw > zone["width_units"]:
+
+        # Horizontal footprint validation goes through walk_footprint_zones
+        # so a wide pallet that extends out of the anchor zone but into a
+        # walled-connected neighbour (cross-zone spanning) is accepted —
+        # while a footprint that would cross a bulkhead / spine gap is
+        # rejected. Vertical bounds (height) are anchor-zone-local because
+        # spanning is horizontal only.
+        zones = self._load_zones_dict_for_active_workday()
+        chunks = walk_footprint_zones(
+            zone_label, cube_x, cube_y, pw, pl, zones,
+        )
+        if chunks is None:
+            # Decide whether it's a bulkhead crossing or off-ship.
+            anchor = zones.get(zone_label)
+            off_ship = False
+            if anchor is not None:
+                bay_x1 = anchor["cube_offset_x"] + cube_x + pw
+                bay_y1 = anchor["cube_offset_y"] + cube_y + pl
+                bay_x0 = anchor["cube_offset_x"] + cube_x
+                bay_y0 = anchor["cube_offset_y"] + cube_y
+                # A cube is off-ship if NO zone (reachable or not) covers it.
+                def _any_zone_covers(bx: int, by: int) -> bool:
+                    for zd in zones.values():
+                        zx0 = zd["cube_offset_x"]
+                        zy0 = zd["cube_offset_y"]
+                        if (zx0 <= bx < zx0 + zd["width_units"]
+                                and zy0 <= by < zy0 + zd["length_units"]):
+                            return True
+                    return False
+                for bx in range(bay_x0, bay_x1):
+                    for by in range(bay_y0, bay_y1):
+                        if not _any_zone_covers(bx, by):
+                            off_ship = True
+                            break
+                    if off_ship:
+                        break
+            if off_ship:
+                raise ToolError(
+                    f"Pallet footprint {pw}x{pl}x{ph} at "
+                    f"({cube_x}, {cube_y}) on zone {zone_label} would "
+                    f"extend past the cargo bay."
+                )
             raise ToolError(
-                f"Pallet footprint {pw}x{pl}x{ph} at cube_x={cube_x} "
-                f"exceeds zone {zone_label} width ({zone['width_units']})."
+                f"Pallet footprint {pw}x{pl}x{ph} at ({cube_x}, {cube_y}) "
+                f"on zone {zone_label} would cross a bulkhead into a "
+                f"non-adjacent zone."
             )
-        if cube_y + pl > zone["length_units"]:
-            raise ToolError(
-                f"Pallet footprint {pw}x{pl}x{ph} at cube_y={cube_y} "
-                f"exceeds zone {zone_label} length ({zone['length_units']})."
-            )
+
         if cube_z + ph > zone["height_units"]:
             raise ToolError(
                 f"Pallet footprint {pw}x{pl}x{ph} at cube_z={cube_z} "
@@ -2278,6 +2501,50 @@ class AppController(QObject):
         cur = min(self._current_stop_index + 1, total) if total else 0
         self.stop_progress.emit(cur, total)
         self.scu_usage.emit(self.total_scu_in_use(), self.total_scu_capacity())
+
+    def _load_zones_dict_for_active_workday(self) -> dict[str, dict]:
+        """Return ``{zone_label: {...}}`` for the active workday's ship,
+        in the shape ``walk_footprint_zones`` expects.
+
+        Used by both ``lock_pallet`` (footprint validation) and
+        ``validate_span`` (iso-canvas drop-target).
+        """
+        if not self.workday_id:
+            return {}
+        rows = self.conn.execute(
+            """
+            SELECT z.zone_label,
+                   z.cube_offset_x, z.cube_offset_y,
+                   z.width_units, z.length_units,
+                   z.left_zone_label, z.right_zone_label,
+                   z.front_zone_label, z.back_zone_label
+            FROM ship_zones z
+            JOIN workdays w ON w.ship_id = z.ship_id
+            WHERE w.id = ?
+            """,
+            (self.workday_id,),
+        ).fetchall()
+        return {r["zone_label"]: dict(r) for r in rows}
+
+    def validate_span(
+        self,
+        anchor_zone: str,
+        local_x: int, local_y: int,
+        footprint_w: int, footprint_l: int,
+    ) -> bool:
+        """True if the footprint anchored at *anchor_zone* (local_x, local_y)
+        with the given width/length is a legal cross-zone span (or fits
+        entirely inside the anchor zone).
+
+        Thin wrapper around ``walk_footprint_zones`` so the iso canvas
+        can ask the controller whether to clamp the drop target back
+        into the anchor zone or to let it extend across neighbours.
+        """
+        zones = self._load_zones_dict_for_active_workday()
+        result = walk_footprint_zones(
+            anchor_zone, local_x, local_y, footprint_w, footprint_l, zones,
+        )
+        return result is not None
 
     def _resolve_station(self, ref: int | str) -> int:
         if isinstance(ref, int):

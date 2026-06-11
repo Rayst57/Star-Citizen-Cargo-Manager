@@ -325,12 +325,16 @@ class IsoBayCanvas(QWidget):
         sy = math.sin(self._yaw)
         cp = math.cos(self._pitch)
         sp = math.sin(self._pitch)
-        # The yaw'd Y axis in the rotated frame: ry = wx*sy + wy*cy.
-        # Depth = -(ry*cp + wz*sp) so larger = closer. Equivalently we
-        # can drop the sign and reverse the sort: we sort ascending by
-        # this quantity so far pallets (larger key) draw first.
+        # Nearness = position · toward-camera. The toward-camera axis
+        # in the yaw-rotated frame is (0, sp, cp): a displacement along
+        # it leaves the screen position unchanged (dy*cp == dz*sp), and
+        # its +Z component is positive because the camera looks down.
+        # So nearness = ry*sp + wz*cp — bigger ry (lower on screen) and
+        # bigger wz (higher stack) are both nearer. Shapes are sorted
+        # ASCENDING on this key so far pallets draw first and near
+        # pallets paint over them (painter's algorithm).
         ry = wx * sy + wy * cy
-        return -(ry * cp + wz * sp)
+        return ry * sp + wz * cp
 
     # ── camera control ──────────────────────────────────────────────────
 
@@ -544,21 +548,19 @@ class IsoBayCanvas(QWidget):
             v[(0, 0, 1)], v[(1, 0, 1)], v[(1, 1, 1)], v[(0, 1, 1)],
         ])
 
-        # View direction in world space — the vector FROM the camera
-        # TOWARD the scene. With yaw rotating world by yaw around Z and
-        # then pitch tilting by pitch around camera-X, a point's
-        # apparent screen-Y depth gradient is the same direction we
-        # used in _depth_for. Reuse it: a face is visible iff its
-        # outward normal has a POSITIVE dot with the camera-pointing
-        # direction (i.e. faces the viewer).
+        # Toward-camera vector in world space. In the yaw-rotated frame
+        # the view axis is (0, sp, cp): displacement along it leaves the
+        # screen position unchanged (dy*cp == dz*sp from the projection
+        # formula screen_y = ry*cp - wz*sp), and its Z component is
+        # positive because the camera looks down (top faces always
+        # visible). Un-rotating by yaw gives the world-space vector.
+        # A face is visible iff its outward normal has a POSITIVE dot
+        # with this vector.
         cy = math.cos(self._yaw)
         sy = math.sin(self._yaw)
         cp = math.cos(self._pitch)
         sp = math.sin(self._pitch)
-        # The camera-pointing vector in world space (pointing FROM scene
-        # TOWARD camera) is roughly (-sy*cp, -cy*cp, sp): rotating the
-        # screen-out vector (0, -1, 0) by inverse yaw/pitch.
-        view = (-sy * cp, -cy * cp, sp)
+        view = (sy * sp, cy * sp, cp)
 
         # Each side face has a known normal. Pick the two with the
         # largest positive view dot — those are the two visible sides.
@@ -671,23 +673,73 @@ class IsoBayCanvas(QWidget):
         return None
 
     def _drop_target(self, pos: QPoint) -> tuple[str, int, int, int] | None:
-        """Reverse-project *pos* to a (zone, x, y, z) cube."""
+        """Reverse-project *pos* to a (zone, x, y, z) cube.
+
+        The returned origin is CLAMPED so the dragged pallet's full
+        footprint stays inside the zone: dropping a 2-wide pallet on a
+        zone's last column snaps it flush against the wall instead of
+        failing validation. The cursor only needs to land anywhere on
+        the zone."""
         wx_f, wy_f = self.unproject_ground(pos.x(), pos.y())
         wx = int(math.floor(wx_f))
         wy = int(math.floor(wy_f))
 
+        # Footprint of the dragged pallet (already reflects the active
+        # R-key orientation since the rect's cell_w/cell_l are swapped
+        # on rotate).
+        fw = fl = 1
+        if self._drag_shape is not None:
+            fw = max(1, getattr(self._drag_shape.rect, "cell_w", 1))
+            fl = max(1, getattr(self._drag_shape.rect, "cell_l", 1))
+
         # Find which zone (if any) contains this world cell.
+        validate_fn = getattr(self.controller, "validate_span", None)
         for zone_label, zm in self._zone_meta.items():
             zx, zy = zm["world_x"], zm["world_y"]
             zw, zl = zm["width"], zm["length"]
             if zx <= wx < zx + zw and zy <= wy < zy + zl:
                 local_x = wx - zx
                 local_y = wy - zy
-                z = self._lowest_open_z(zone_label, local_x, local_y)
+                # If the unclamped footprint legally spans into adjacent
+                # walled-connected zones, DON'T clamp — let the pallet
+                # extend across the wall. Otherwise (truly off-ship or
+                # crossing a bulkhead) fall back to the clamp-inside-zone
+                # behaviour so the user still gets a snap target.
+                spans_ok = False
+                if validate_fn is not None:
+                    try:
+                        spans_ok = bool(
+                            validate_fn(zone_label, local_x, local_y, fw, fl)
+                        )
+                    except Exception:
+                        spans_ok = False
+                if not spans_ok:
+                    # Snap the origin back from the far edges so the whole
+                    # footprint fits.
+                    local_x = min(local_x, max(0, zw - fw))
+                    local_y = min(local_y, max(0, zl - fl))
+                z = self._lowest_open_z(zone_label, local_x, local_y, fw, fl)
+                # When the stack is already at the zone's height limit,
+                # stacking isn't possible — target ground level instead
+                # so the drop runs the force-push displacement flow
+                # (push the blockers to holding) rather than failing
+                # the height validation outright.
+                fh = 1
+                if self._drag_shape is not None:
+                    fh = max(1, getattr(self._drag_shape.rect, "cell_h", 1))
+                if z + fh > zm.get("height", 4):
+                    z = 0
                 return zone_label, local_x, local_y, z
         return None
 
-    def _lowest_open_z(self, zone_label: str, local_x: int, local_y: int) -> int:
+    def _lowest_open_z(
+        self, zone_label: str, local_x: int, local_y: int,
+        fw: int = 1, fl: int = 1,
+    ) -> int:
+        """Stack height at the (local_x, local_y) origin for a pallet
+        of footprint fw x fl — the max top across EVERY column the
+        footprint covers, so a wide pallet dropped half-on a stack
+        rests on the stack instead of interpenetrating it."""
         top = 0
         zm = self._zone_meta.get(zone_label)
         if not zm:
@@ -701,8 +753,10 @@ class IsoBayCanvas(QWidget):
                 continue
             if self._drag_shape and p is self._drag_shape.rect:
                 continue
-            if (p.cell_x <= target_cx < p.cell_x + p.cell_w
-                    and p.cell_y <= target_cy < p.cell_y + p.cell_l):
+            # Rect-overlap between the dragged footprint and pallet p.
+            if (p.cell_x < target_cx + fw and target_cx < p.cell_x + p.cell_w
+                    and p.cell_y < target_cy + fl
+                    and target_cy < p.cell_y + p.cell_l):
                 top = max(top, p.cell_z + p.cell_h)
         return top
 
@@ -828,24 +882,39 @@ class IsoBayCanvas(QWidget):
         self, zone: str, x: int, y: int, z: int,
         shape, orientation: int, dragged_cl: int, dragged_idx: int,
     ) -> list:
-        """Return the PalletRects in *zone* whose cubes intersect the
+        """Return the PalletRects whose bay-space cubes intersect the
         footprint of the dragged pallet at (x, y, z). Excludes the
         pallet being dragged. The footprint reflects the current
-        orientation (swapped w/l when orientation == 1)."""
+        orientation (swapped w/l when orientation == 1).
+
+        Generalised to walk every PalletRect on board — a spanning
+        pallet might displace pallets in any zone its footprint touches,
+        and a dragged spanning pallet might collide with pallets in
+        adjacent zones. We compare in BAY-SPACE coordinates because the
+        PalletRects already carry their cell_x/cell_y in bay space.
+        """
         rect = shape.rect
         w = getattr(rect, "cell_w", 1)
         l = getattr(rect, "cell_l", 1)
         h = getattr(rect, "cell_h", 1)
-        # The dragged rect's cell_w/cell_l have already been swapped
-        # by the R-key handler to reflect the active orientation.
+        # Translate the dragged origin (zone-local) to bay-space so the
+        # cube comparisons match the PalletRect cell_x/cell_y namespace.
+        zm = self._zone_meta.get(zone)
+        if zm is None:
+            return []
+        # The widget's _zone_meta tracks world_x/world_y which are
+        # bay-space offsets (see _zone_world_offset for the multi-bay
+        # gap fudge). For collision math we want the ship's bay-space
+        # coordinates from the underlying ship_zones row, which equals
+        # the PalletRect.cell_x/cell_y namespace. Build a quick lookup.
+        bay_x = self._zone_local_offset_x(zone, zm["bay"]) + x
+        bay_y = self._zone_local_offset_y(zone, zm["bay"]) + y
         target_cubes = {
-            (x + dx, y + dy, z + dz)
+            (bay_x + dx, bay_y + dy, z + dz)
             for dx in range(w) for dy in range(l) for dz in range(h)
         }
         displaced = []
         for p in self._pallets:
-            if getattr(p, "zone_label", None) != zone:
-                continue
             if (getattr(p, "cargo_line_id", None) == dragged_cl
                     and getattr(p, "pallet_index", 0) == dragged_idx):
                 continue
