@@ -325,12 +325,16 @@ class IsoBayCanvas(QWidget):
         sy = math.sin(self._yaw)
         cp = math.cos(self._pitch)
         sp = math.sin(self._pitch)
-        # The yaw'd Y axis in the rotated frame: ry = wx*sy + wy*cy.
-        # Depth = -(ry*cp + wz*sp) so larger = closer. Equivalently we
-        # can drop the sign and reverse the sort: we sort ascending by
-        # this quantity so far pallets (larger key) draw first.
+        # Nearness = position · toward-camera. The toward-camera axis
+        # in the yaw-rotated frame is (0, sp, cp): a displacement along
+        # it leaves the screen position unchanged (dy*cp == dz*sp), and
+        # its +Z component is positive because the camera looks down.
+        # So nearness = ry*sp + wz*cp — bigger ry (lower on screen) and
+        # bigger wz (higher stack) are both nearer. Shapes are sorted
+        # ASCENDING on this key so far pallets draw first and near
+        # pallets paint over them (painter's algorithm).
         ry = wx * sy + wy * cy
-        return -(ry * cp + wz * sp)
+        return ry * sp + wz * cp
 
     # ── camera control ──────────────────────────────────────────────────
 
@@ -544,21 +548,19 @@ class IsoBayCanvas(QWidget):
             v[(0, 0, 1)], v[(1, 0, 1)], v[(1, 1, 1)], v[(0, 1, 1)],
         ])
 
-        # View direction in world space — the vector FROM the camera
-        # TOWARD the scene. With yaw rotating world by yaw around Z and
-        # then pitch tilting by pitch around camera-X, a point's
-        # apparent screen-Y depth gradient is the same direction we
-        # used in _depth_for. Reuse it: a face is visible iff its
-        # outward normal has a POSITIVE dot with the camera-pointing
-        # direction (i.e. faces the viewer).
+        # Toward-camera vector in world space. In the yaw-rotated frame
+        # the view axis is (0, sp, cp): displacement along it leaves the
+        # screen position unchanged (dy*cp == dz*sp from the projection
+        # formula screen_y = ry*cp - wz*sp), and its Z component is
+        # positive because the camera looks down (top faces always
+        # visible). Un-rotating by yaw gives the world-space vector.
+        # A face is visible iff its outward normal has a POSITIVE dot
+        # with this vector.
         cy = math.cos(self._yaw)
         sy = math.sin(self._yaw)
         cp = math.cos(self._pitch)
         sp = math.sin(self._pitch)
-        # The camera-pointing vector in world space (pointing FROM scene
-        # TOWARD camera) is roughly (-sy*cp, -cy*cp, sp): rotating the
-        # screen-out vector (0, -1, 0) by inverse yaw/pitch.
-        view = (-sy * cp, -cy * cp, sp)
+        view = (sy * sp, cy * sp, cp)
 
         # Each side face has a known normal. Pick the two with the
         # largest positive view dot — those are the two visible sides.
